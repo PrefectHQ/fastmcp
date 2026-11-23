@@ -26,6 +26,10 @@ GUARDS = "tests/pbt/test_auth_url_guards.py"
 ELICIT = "fastmcp_slim/fastmcp/server/elicitation.py"
 ELICIT_TEST = "tests/pbt/test_elicitation.py"
 PARAMS_TEST = "tests/pbt/test_openapi_params.py"
+AUTHZ = "fastmcp_slim/fastmcp/server/middleware/authorization.py"
+CACHING = "fastmcp_slim/fastmcp/server/middleware/caching.py"
+RATE = "fastmcp_slim/fastmcp/server/middleware/rate_limiting.py"
+MW = "tests/pbt/test_middleware.py"
 
 MUTANTS: dict[str, list[dict[str, str]]] = {
     "uri_template": [
@@ -76,8 +80,8 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
     ],
     "schema_fixes": [
         {
-            "name": "F1 undone: nested non-object default merged",
-            "fixes": "F1",
+            "name": "#6552 undone: nested non-object default merged",
+            "fixes": "#6552",
             "file": SCHEMA_TYPE,
             "old": "            if not isinstance(nested_default, Mapping):\n"
             "                nested_default = None\n",
@@ -85,16 +89,16 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F1 undone: root non-object default merged",
-            "fixes": "F1",
+            "name": "#6552 undone: root non-object default merged",
+            "fixes": "#6552",
             "file": SCHEMA_TYPE,
             "old": 'elif isinstance(schema.get("default"), Mapping):',
             "new": 'elif "default" in schema:',
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F3 undone: positions read from the closure",
-            "fixes": "F3",
+            "name": "#6553 undone: positions read from the closure",
+            "fixes": "#6553",
             "file": SCHEMA_TYPE,
             "old": "positions_type, tail_type = get_args(source)\n"
             "        resolved_prefix = get_args(positions_type)",
@@ -102,16 +106,16 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F5 undone: placeholders inherit validate_default",
-            "fixes": "F5",
+            "name": "#6572 undone: placeholders inherit validate_default",
+            "fixes": "#6572",
             "file": SCHEMA_TYPE,
             "old": "default=None,\n                    validate_default=False,",
             "new": "default=None,",
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F2 undone: a broken merged default is never dropped",
-            "fixes": "F2",
+            "name": "#6582 undone: a broken merged default is never dropped",
+            "fixes": "#6582",
             "file": SCHEMA_TYPE,
             "old": "            if not broken:\n                raise\n",
             "new": "            raise\n",
@@ -127,7 +131,7 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": MACHINE,
         },
         {
-            "name": "F4 undone: unversioned never matches a requested version",
+            "name": "#6582 docs undone: unversioned never matches a requested version",
             "file": "fastmcp_slim/fastmcp/utilities/versions.py",
             "old": "        if version is None:\n            return match_none\n",
             "new": "        if version is None:\n            return False\n",
@@ -233,12 +237,12 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": "tests/pbt/test_oauth_proxy_machine.py",
         },
         {
-            "name": "revoked access token's mapping kept (undoes F10)",
+            "name": "revoked access token's mapping kept (undoes #6620)",
             "file": OAUTH,
             "old": "            await self._jti_mapping_store.delete(key=token.fastmcp_jti)",
             "new": "            pass",
             "test": "tests/pbt/test_oauth_proxy_machine.py",
-            "fixes": "F10",
+            "fixes": "#6620",
         },
         {
             "name": "revoked refresh token leaves its grant's access tokens live",
@@ -414,6 +418,127 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "old": "                    explode=bool(header_lookup[k].explode)",
             "new": "                    explode=False",
             "test": PARAMS_TEST,
+        },
+    ],
+    "middleware": [
+        {
+            "name": "tool listing not filtered",
+            "file": AUTHZ,
+            "old": (
+                "                if await run_auth_checks(self.auth, ctx):\n"
+                "                    authorized_tools.append(tool)"
+            ),
+            "new": "                if True:\n                    authorized_tools.append(tool)",
+            "test": f"{MW}::test_listing_and_calling_agree",
+        },
+        {
+            "name": "prompt listing not filtered",
+            "file": AUTHZ,
+            "old": (
+                "                if await run_auth_checks(self.auth, ctx):\n"
+                "                    authorized_prompts.append(prompt)"
+            ),
+            "new": "                if True:\n                    authorized_prompts.append(prompt)",
+            "test": f"{MW}::test_listing_and_calling_agree",
+        },
+        {
+            "name": "tool denial names only its own layer's scopes",
+            "file": AUTHZ,
+            "old": (
+                "                missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)\n"
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for tool '{tool_name}': \"\n"
+            ),
+            "new": (
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for tool '{tool_name}': \"\n"
+            ),
+            "test": f"{MW}::test_a_denial_names_every_scope_the_chain_still_needs",
+        },
+        {
+            "name": "resource denial names only its own layer's scopes",
+            "file": AUTHZ,
+            "old": (
+                "                missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)\n"
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for resource '{uri}': \"\n"
+            ),
+            "new": (
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for resource '{uri}': \"\n"
+            ),
+            "test": f"{MW}::test_a_denial_names_every_scope_the_chain_still_needs",
+        },
+        {
+            "name": "prompt denial names only its own layer's scopes",
+            "file": AUTHZ,
+            "old": (
+                "                missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)\n"
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for prompt '{prompt_name}': \"\n"
+            ),
+            "new": (
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for prompt '{prompt_name}': \"\n"
+            ),
+            "test": f"{MW}::test_a_denial_names_every_scope_the_chain_still_needs",
+        },
+        {
+            "name": "cache ignores the requested version",
+            "file": CACHING,
+            "old": "    return f\"__version__:{_get_arguments_str({'version': version})}\"",
+            "new": "    return DEFAULT_VERSION_CACHE_KEY",
+            "test": f"{MW}::test_a_cached_server_answers_like_an_uncached_one",
+        },
+        {
+            "name": "cache shared across callers",
+            "file": CACHING,
+            "old": "    return _hash_cache_key(token.token)",
+            "new": "    return ANONYMOUS_AUTH_KEY",
+            "test": f"{MW}::test_a_cached_server_answers_like_an_uncached_one",
+        },
+        {
+            "name": "cache ignores tool arguments",
+            "file": CACHING,
+            "old": (
+                '        f"{auth_key}:{modern_protocol}:{_get_component_version_cache_key(msg)}:{msg.name}:"\n'
+                '        f"{_get_arguments_str(msg.arguments)}"'
+            ),
+            "new": '        f"{auth_key}:{modern_protocol}:{_get_component_version_cache_key(msg)}:{msg.name}:"',
+            "test": f"{MW}::test_a_cached_server_answers_like_an_uncached_one",
+        },
+        {
+            "name": "bucket refills past capacity",
+            "file": RATE,
+            "old": "            self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)",
+            "new": "            self.tokens = self.tokens + elapsed * self.refill_rate",
+            "test": f"{MW}::test_token_bucket_admits_no_more_than_burst_plus_rate",
+        },
+        {
+            "name": "idle buckets pruned before they refill",
+            "file": RATE,
+            "old": "            idle_timeout = self.burst_capacity / self.max_requests_per_second",
+            "new": "            idle_timeout = self.burst_capacity / self.max_requests_per_second / 4",
+            "test": f"{MW}::test_token_bucket_admits_no_more_than_burst_plus_rate",
+        },
+        {
+            "name": "sliding window admits one extra",
+            "file": RATE,
+            "old": "            if len(self.requests) < self.max_requests:",
+            "new": "            if len(self.requests) <= self.max_requests:",
+            "test": f"{MW}::test_sliding_window_admits_no_more_than_its_max",
         },
     ],
 }
