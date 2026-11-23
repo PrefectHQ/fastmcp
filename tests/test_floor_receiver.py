@@ -207,7 +207,13 @@ RUN = {
     "flow": "fastmcp-triage-intake",
     "created": "2026-11-23T07:35:12.000001+00:00",
     "start": "2026-11-23T07:35:19+00:00",
-    "params": {"config": {"issues": [6712, 6713], "sender": "jane"}, "token": "x"},
+    "params": {
+        "batch": {
+            "groups": [{"items": [{"issue_number": 6712}, {"issue_number": 6713}]}]
+        },
+        "spec": {"pr_number": 6714},
+        "token": "x",
+    },
 }
 
 
@@ -226,7 +232,8 @@ def test_prefect_run_needs_the_token_and_publishes_only_safe_fields(
     assert put["collection"] == "io.prefect.fastmcp.floor.run"
     assert put["rkey"] == "20261123T073512-0b6a8d2e"
     record = put["record"]
-    assert record["numbers"] == [6712, 6713]
+    assert record["numbers"] == [6712, 6713, 6714]
+    assert record["at"] == "2026-11-23T07:35:20.123456Z"
     assert set(record) == {
         "$type",
         "flow",
@@ -242,3 +249,17 @@ def test_prefect_run_needs_the_token_and_publishes_only_safe_fields(
 
 def post_prefect(post, payload: dict, token: str | None):
     return post("prefect", payload, path="/prefect", bearer=token)
+
+
+def test_state_changes_within_one_second_keep_their_order(receiver, monkeypatch):
+    post, pds = receiver
+    monkeypatch.setenv("PREFECT_TOKEN", "tok")
+    done = {
+        **RUN,
+        "event": "prefect.flow-run.Completed",
+        "occurred": "2026-11-23T07:35:20.9+00:00",
+    }
+    post_prefect(post, done, token="tok")
+    pds.stored = pds.puts()[0]["record"]
+    late = {**RUN, "occurred": "2026-11-23T07:35:20.1+00:00"}
+    assert post_prefect(post, late, token="tok")[1] == "older than what is stored"

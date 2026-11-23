@@ -108,8 +108,12 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
 CI_EVENTS = {"push"}
 
 
-def stamp(value: str | None) -> str | None:
-    """A GitHub or Prefect timestamp as the floor's UTC ISO form, or None."""
+def stamp(value: str | None, precise: bool = False) -> str | None:
+    """A GitHub or Prefect timestamp as the floor's UTC ISO form, or None.
+
+    precise keeps microseconds, for `at` fields that order state changes:
+    two changes within one second must still compare in order.
+    """
     if not value:
         return None
     try:
@@ -118,7 +122,8 @@ def stamp(value: str | None) -> str | None:
         return None
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
-    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    form = "%Y-%m-%dT%H:%M:%S.%fZ" if precise else "%Y-%m-%dT%H:%M:%S.000Z"
+    return moment.astimezone(UTC).strftime(form)
 
 
 def to_ci(payload: dict) -> tuple[str, dict] | None:
@@ -138,7 +143,7 @@ def to_ci(payload: dict) -> tuple[str, dict] | None:
         "url": run.get("html_url", ""),
         "startedAt": stamp(run.get("run_started_at")),
         # when GitHub last changed the run; an older delivery never overwrites a newer one
-        "at": stamp(run.get("updated_at")),
+        "at": stamp(run.get("updated_at"), precise=True),
     }
     # zero-padded run ids sort the same as numbers, so listRecords gives newest first
     return f"{run['id']:016d}", {k: v for k, v in record.items() if v is not None}
@@ -153,20 +158,32 @@ FLOWS = {
     "fastmcp-verify-contribution",
     "fastmcp-triage-sweep",
 }
-NUMBER_KEYS = {"issues", "pull_requests", "issue", "pull_request", "number", "pr"}
+# intake: config.issues / config.pull_requests; stack batch:
+# batch.groups[].items[].issue_number; contribution: spec.issue_number / pr_number
+NUMBER_KEYS = {
+    "issues",
+    "pull_requests",
+    "issue_number",
+    "pr_number",
+    "number",
+}
 
 
 def item_numbers(params: object, depth: int = 0) -> list[int]:
     """Issue and PR numbers a flow run was started for, from its parameters."""
     found: list[int] = []
-    if depth > 3 or not isinstance(params, dict):
+    if depth > 5:
         return found
-    for key, value in params.items():
-        if key in NUMBER_KEYS:
-            values = value if isinstance(value, list) else [value]
-            found += [v for v in values if isinstance(v, int) and 0 < v < 10**6]
-        elif isinstance(value, dict):
+    if isinstance(params, list):
+        for value in params[:20]:
             found += item_numbers(value, depth + 1)
+    elif isinstance(params, dict):
+        for key, value in params.items():
+            if key in NUMBER_KEYS and not isinstance(value, dict):
+                values = value if isinstance(value, list) else [value]
+                found += [v for v in values if isinstance(v, int) and 0 < v < 10**6]
+            elif isinstance(value, dict | list):
+                found += item_numbers(value, depth + 1)
     return list(dict.fromkeys(found))[:10]
 
 
@@ -180,7 +197,7 @@ def to_run(body: dict) -> tuple[str, dict] | None:
     run_id = str(body.get("id") or "")
     state = str(body.get("event") or "").rsplit(".", 1)[-1]
     created = stamp(body.get("created"))
-    at = stamp(body.get("occurred"))
+    at = stamp(body.get("occurred"), precise=True)
     if flow not in FLOWS or not created or not at or not state.isalpha():
         return None
     if not re.fullmatch(r"[0-9a-f-]{36}", run_id):

@@ -179,6 +179,9 @@ def get_record(collection: str, rkey: str, session: dict) -> dict | None:
         raise PdsError("com.atproto.repo.getRecord", exc.code, None) from None
 
 
+NEWER_ONLY = threading.Lock()
+
+
 def write(collection: str, rkey: str, record: dict, newer_only: bool = False) -> bool:
     """Put one record, logging in again once if the session went stale.
 
@@ -186,11 +189,15 @@ def write(collection: str, rkey: str, record: dict, newer_only: bool = False) ->
     dropped: webhooks can arrive out of order, and a late "in progress" must
     not overwrite "completed". Returns whether it was written.
     """
-    session = SESSION.get()
     if newer_only:
-        stored = get_record(collection, rkey, session)
-        if stored and str(stored.get("at", "")) > str(record.get("at", "")):
-            return False
+        # one read-check-write at a time, so two overlapping deliveries for the
+        # same run can't both pass the check (the app runs one instance)
+        with NEWER_ONLY:
+            stored = get_record(collection, rkey, SESSION.get())
+            if stored and str(stored.get("at", "")) > str(record.get("at", "")):
+                return False
+            return write(collection, rkey, record)
+    session = SESSION.get()
     body = {
         "repo": session["did"],
         "collection": collection,
