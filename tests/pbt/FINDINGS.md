@@ -22,7 +22,6 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | tool transforms: rename, hide, defaults, required, two layers, deferred config (2026-11-21) | 1k cases, 5-minute campaign | 4/4: 10, 9, 8 and 8 of 10 seeds at 200 cases | F9 |
 | OpenAPI tool sends the described request (2026-11-21) | 1k cases | 4/4 (explode default 9/10, pipe delimiter 9/10, boolean text 10/10, path quoting 10/10) | clean (K4) |
 | OAuth proxy machine: codes, refresh, revocation, concurrent redemption (2026-11-21) | 1k histories | 3/3 at 10/10 seeds (an "already used" check is not planted: the lock and re-read mask it) | F10 |
-| auth URL guards: SSRF blocklist and pinning, redirect URI patterns, client redirects, CIMD scopes and cache headers (2026-11-22) | 5k cases each | 11/11: nine at 10/10 seeds; userinfo and raw-backslash checks removed at 8/10 | F11, F12 |
 
 F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
 report fixed and the harness checks those shapes again. F2 is fixed by keeping
@@ -408,44 +407,6 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
   revocation failures as a warning and still succeeds; RFC 7009 lets the
   server answer 503 instead.
 
-### F11. a registered redirect URI at the root path accepts every path on its host
-
-- status: open, held for nate's decision (a fix narrows what existing
-  patterns accept).
-- property: auth URL guards — a pattern with no wildcard matches only itself
-  (`test_an_exact_pattern_matches_only_itself`).
-- minimal: `matches_allowed_pattern("https://a.example/x", "https://a.example/")`
-  is `True`; so is `https://a.example` (empty path).
-- frequency: every exact pattern whose path is `/` or empty.
-- reachable: yes, two ways. A CIMD document's `redirect_uris` are matched as
-  patterns (`oauth_proxy/models.py`), so a client that registers
-  `https://client.example/` lets an authorization request name any path on
-  that origin. An operator's `allowed_client_redirect_uris` entry without a
-  wildcard behaves the same. An attacker who finds an open redirect or a page
-  they control on that origin can have the code delivered there.
-- cause: `_match_path` treats a root pattern path as "match anything", meant
-  for wildcard patterns like `http://localhost:*`, but applies it to exact
-  patterns too. The query check already distinguishes the two (`"*" in
-  pattern`); the path check does not.
-- against: MCP clients must use PKCE, so a leaked code alone does not redeem,
-  and the client chose to register a root URI.
-- related, not reachable: `CIMDFetcher.validate_redirect_uri` strips trailing
-  slashes before matching (`?x=1/` matches `?x=1`), but nothing in the server
-  calls it, only tests.
-
-### F12. a registered redirect URI that already carries `state` or `code` sends it twice
-
-- status: open, low. Found by the adversarial review of this harness, then
-  made a property (`test_client_redirect_carries_each_parameter_once`).
-- minimal: `build_client_redirect("https://c.example/cb?state=a", {"state": "b"}, iss="i")`
-  is `https://c.example/cb?state=a&state=b&iss=i`.
-- reachable: only for a client that registers a redirect URI with `state`,
-  `code` or `error` in its query, which no real client does.
-- cause: `build_client_redirect` collapses repeats of `iss` only; other
-  response parameters are appended after the registered query.
-- against: the client's own registration causes it, and the failure is
-  closed (a client reading the first `state` rejects the response).
-
 ## model corrections (harness was wrong, not fastmcp)
 
 - a mounted child's own `disable()` cannot be overridden by the parent's
@@ -549,21 +510,3 @@ the same options.
 | typescript-sdk@5ee54ee | yes, `ProxyOAuthServerProvider` passes upstream tokens through (`packages/server/src/server/auth/providers/proxyProvider.ts`) | dead: the client holds the upstream token, which the upstream revoked |
 | python-sdk@77001c9, go-sdk@a6e937f, rust-sdk@165f8fd | no proxy provider | n/a |
 | fastmcp | yes, issues its own JWTs mapped to one upstream record per grant | F10: live again |
-
-### F11: a registered redirect URI at the root path
-
-| implementation | registered `https://a.example/`, requested `https://a.example/x` |
-|---|---|
-| RFC 6749 3.1.2.3, OAuth 2.1 | exact string comparison: reject |
-| python-sdk (`mcp/shared/auth.py` `validate_redirect_uri`, installed version) | `redirect_uri not in self.redirect_uris`: reject |
-| typescript-sdk@1.32.2 (`server/auth/handlers/authorize.js` `redirectUriMatches`) | exact match, loopback port relaxation only: reject |
-| go-sdk, rust-sdk | not checked |
-| fastmcp | accept, for CIMD documents and exact operator patterns |
-
-### F12: response parameters already in the registered redirect URI
-
-| implementation | registered `…/cb?state=a`, response state `b` |
-|---|---|
-| RFC 6749 3.1 | a response parameter "MUST NOT be included more than once" |
-| typescript-sdk@1.32.2 (`authorize.js` error path) | `searchParams.set`: one `state=b` |
-| fastmcp | `state=a&state=b` |

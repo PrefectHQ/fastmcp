@@ -360,6 +360,7 @@ def exact_uris(draw) -> str:
 
 
 def _root_path_probe() -> bool:
+    """https://github.com/PrefectHQ/fastmcp/issues/6689"""
     return matches_allowed_pattern("https://a.example/x", "https://a.example/")
 
 
@@ -393,9 +394,9 @@ def test_an_exact_pattern_matches_only_itself(data):
     if (
         edit in ("changed path", "child path")
         and urlparse(uri).path == "/"
-        and still_open("F11", _root_path_probe)
+        and still_open("#6689", _root_path_probe)
     ):
-        event("known: F11")
+        event("known: #6689")
         return
     assert not matches_allowed_pattern(other, uri), f"{edit} still matches"
 
@@ -427,6 +428,7 @@ query_segments = st.lists(
 
 
 def _repeated_param_probe() -> bool:
+    """https://github.com/PrefectHQ/fastmcp/issues/6690"""
     out = build_client_redirect("https://c.example/cb?state=a", {"state": "b"}, iss="i")
     return out.count("state=") > 1
 
@@ -462,8 +464,8 @@ def test_client_redirect_carries_each_parameter_once(base, segments, params, iss
     registered_keys = {seg.split("=", 1)[0] for seg in segments}
     for key, value in params.items():
         values = [v for k, v in pairs if k == key]
-        if key in registered_keys and still_open("F12", _repeated_param_probe):
-            event("known: F12")
+        if key in registered_keys and still_open("#6690", _repeated_param_probe):
+            event("known: #6690")
             assert values[-1:] == [value]
             continue
         assert values == [value], f"{key} appears {len(values)} times"
