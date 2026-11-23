@@ -760,7 +760,16 @@ class FunctionResourceTemplate(ResourceTemplate):
         # Extract path and query parameters from URI template.
         # Allow hyphens in names and normalize to underscores so they
         # match Python function parameter names.
-        raw_path_params = set(re.findall(r"{([\w-]+)(?:\*)?}", uri_template))
+        raw_path_occurrences = re.findall(r"{([\w-]+)(?:\*)?}", uri_template)
+        raw_path_params = set(raw_path_occurrences)
+        if len(raw_path_params) != len(raw_path_occurrences):
+            repeated = sorted(
+                {p for p in raw_path_occurrences if raw_path_occurrences.count(p) > 1}
+            )
+            raise ValueError(
+                f"URI template repeats parameter(s) {', '.join(repeated)}; "
+                "each path parameter can appear only once."
+            )
         raw_query_params = extract_query_params(uri_template)
 
         # Refuse RFC 6570 level-3 operators other than the query forms

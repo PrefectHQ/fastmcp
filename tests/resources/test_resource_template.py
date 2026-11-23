@@ -1358,6 +1358,21 @@ class TestMalformedURITemplates:
                 name="collision",
             )
 
+    @pytest.mark.parametrize(
+        "uri_template",
+        [
+            "data://{tenant}/{tenant}",
+            "data://{tenant*}/{tenant}",
+            "data://x?a={tenant}&b={tenant}",
+        ],
+    )
+    def test_from_function_rejects_repeated_parameter(self, uri_template: str):
+        def handler(tenant: str) -> str:
+            return tenant
+
+        with pytest.raises(ValueError, match="repeats parameter"):
+            ResourceTemplate.from_function(fn=handler, uri_template=uri_template)
+
     def test_build_regex_still_works_for_valid_templates(self):
         regex = build_regex("test://{name}/{id}")
         assert regex is not None
