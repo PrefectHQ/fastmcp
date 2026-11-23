@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T01:31:25+00:00",
- "source_commit": "41f59cd441b8c277fb63df45c3f4db5291f281a9",
+ "generated_at": "2026-11-23T02:34:19+00:00",
+ "source_commit": "3fc20fc1724a24f78bcd590ebf954732fa151b46",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -335,9 +335,9 @@
    "module": "fastmcp.cli.client",
    "path": "fastmcp_slim/fastmcp/cli/client.py",
    "public": false,
-   "statements": 471,
+   "statements": 478,
    "hit": 0,
-   "functions": 26,
+   "functions": 27,
    "functions_hit": 0,
    "symbols": [],
    "tests": 0,
@@ -446,6 +446,18 @@
    "statements": 167,
    "hit": 0,
    "functions": 14,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.cli.events",
+   "path": "fastmcp_slim/fastmcp/cli/events.py",
+   "public": false,
+   "statements": 72,
+   "hit": 0,
+   "functions": 6,
    "functions_hit": 0,
    "symbols": [],
    "tests": 0,
@@ -1462,6 +1474,123 @@
    "functions": 0,
    "functions_hit": 0,
    "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.events",
+   "path": "fastmcp_slim/fastmcp/experimental/events/__init__.py",
+   "public": true,
+   "statements": 5,
+   "hit": 0,
+   "functions": 1,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.events._constants",
+   "path": "fastmcp_slim/fastmcp/experimental/events/_constants.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.events.client",
+   "path": "fastmcp_slim/fastmcp/experimental/events/client.py",
+   "public": true,
+   "statements": 60,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "EventsClientExtension",
+     "kind": "class",
+     "statements": 55,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.events.extension",
+   "path": "fastmcp_slim/fastmcp/experimental/events/extension.py",
+   "public": true,
+   "statements": 102,
+   "hit": 0,
+   "functions": 11,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "Event",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "EventBatch",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "EventPoll",
+     "kind": "class",
+     "statements": 0,
+     "hit": 0
+    },
+    {
+     "name": "EventsExtension",
+     "kind": "class",
+     "statements": 102,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.events.models",
+   "path": "fastmcp_slim/fastmcp/experimental/events/models.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.events.subscription",
+   "path": "fastmcp_slim/fastmcp/experimental/events/subscription.py",
+   "public": true,
+   "statements": 233,
+   "hit": 0,
+   "functions": 20,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "list_events",
+     "kind": "function",
+     "statements": 9,
+     "hit": 0
+    },
+    {
+     "name": "subscribe_events",
+     "kind": "function",
+     "statements": 1,
+     "hit": 0
+    }
+   ],
    "tests": 0,
    "test_ids": []
   },
@@ -4505,9 +4634,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 624,
-   "hit": 405,
+   "hit": 426,
    "functions": 57,
-   "functions_hit": 43,
+   "functions_hit": 45,
    "symbols": [],
    "tests": 4,
    "test_ids": [
