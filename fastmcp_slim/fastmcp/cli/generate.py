@@ -41,8 +41,8 @@ def _is_simple_type(schema: dict[str, Any]) -> bool:
     schema_type = schema.get("type")
     if isinstance(schema_type, list):
         # Union of types - simple only if all are simple
-        return all(t in _SIMPLE_TYPES for t in schema_type)
-    return schema_type in _SIMPLE_TYPES
+        return all(isinstance(t, str) and t in _SIMPLE_TYPES for t in schema_type)
+    return isinstance(schema_type, str) and schema_type in _SIMPLE_TYPES
 
 
 def _is_optional_string(schema: dict[str, Any]) -> bool:
@@ -700,8 +700,14 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
         return "string | null"
     schema_type = prop_schema.get("type", "string")
     if isinstance(schema_type, list):
-        labels = [_JSON_SCHEMA_TYPE_LABELS.get(t, t) for t in schema_type]
-        return " | ".join(labels)
+        labels = [
+            _JSON_SCHEMA_TYPE_LABELS.get(t, t)
+            for t in schema_type
+            if isinstance(t, str)
+        ]
+        return " | ".join(labels) or "any"
+    if not isinstance(schema_type, str):
+        return "any"
 
     label = _JSON_SCHEMA_TYPE_LABELS.get(schema_type, schema_type)
 
@@ -713,6 +719,11 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
             return f"array[{item_type}]"
 
     return label
+
+
+def _table_cell(text: str) -> str:
+    """Keep server-supplied text on one Markdown table row."""
+    return re.sub(r"[\r\n]+", " ", text).replace("|", "\\|")
 
 
 def _bash_quote(value: str) -> str:
@@ -782,7 +793,7 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     rows: list[str] = []
     for prop_name, prop_schema in properties.items():
         flag = f"`{param_flags[prop_name][0]}`"
-        type_label = _schema_type_label(prop_schema).replace("|", "\\|")
+        type_label = _table_cell(_schema_type_label(prop_schema))
         is_required = "yes" if prop_name in required else "no"
         description = prop_schema.get("description", "")
         _, needs_json = _schema_to_python_type(prop_schema)
@@ -790,7 +801,7 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
             description = (
                 f"{description} (JSON string)" if description else "JSON string"
             )
-        description = description.replace("\n", " ").replace("|", "\\|")
+        description = _table_cell(description)
         rows.append(f"| {flag} | {type_label} | {is_required} | {description} |")
 
     param_table = ""
