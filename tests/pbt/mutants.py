@@ -234,10 +234,20 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "fixes": "F10",
         },
         {
+            "name": "revoked refresh token leaves its grant's access tokens live",
+            "file": OAUTH,
+            "old": "        await self._upstream_token_store.delete(key=jti_mapping.upstream_token_id)",
+            "new": "        pass",
+            "test": "tests/pbt/test_oauth_proxy_machine.py",
+        },
+        {
             "name": "revoked refresh token kept",
             "file": OAUTH,
-            "old": "            await self._refresh_token_store.delete(key=_hash_token(token.token))",
-            "new": "            pass",
+            "old": (
+                "            await self._refresh_token_store.delete(key=_hash_token(token.token))\n"
+                "            await self._revoke_refresh_grant(token)\n"
+            ),
+            "new": "            pass\n",
             "test": "tests/pbt/test_oauth_proxy_machine.py",
         },
     ],

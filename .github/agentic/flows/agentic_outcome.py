@@ -127,6 +127,20 @@ def still_open(live: Live | None, number: int) -> bool:
     return not current or current.get("state") != "closed"
 
 
+def next_steps(
+    review: dict, issues: list[dict], live: Live | None = None
+) -> dict[int, str]:
+    """The next step for each open issue still waiting on a maintainer."""
+    steps: dict[int, str] = {}
+    for name in ATTENTION_BINS:
+        for item in review["bins"].get(name, []):
+            number = item.get("issue_number")
+            if isinstance(number, int) and number not in steps:
+                if still_open(live, number):
+                    steps[number] = action(name, item, live)
+    return steps
+
+
 def outcome_lines(
     review: dict, issues: list[dict], live: Live | None = None
 ) -> list[str]:

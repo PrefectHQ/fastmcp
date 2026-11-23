@@ -8,6 +8,14 @@ Triage used to stop at Slack. Two outcomes now become GitHub state:
   the `potential-duplicate` label. `auto-close-duplicates.yml` closes it after its
   3-day cooldown unless someone objects.
 
+Every assessed issue also gets labels that need no follow-up:
+
+- its area (`client`, `server`, `auth`, ...), when the assessment named one and the
+  issue has none yet;
+- `needs:triage` when the outcome waits on a maintainer: review a linked PR, prepare a
+  fix for a reproduced bug, decide a direction, or close for a reason other than a
+  duplicate.
+
 Nothing here closes an issue. Writes go out as the triage GitHub App, never a person,
 and `fastmcp_triage_config.github_writes` ("off", "dry_run", "on", or a mapping
 like {"labels": "on", "sweep": "dry_run"}; default "dry_run") is read on every run,
@@ -17,9 +25,14 @@ so turning writes on or off needs no deploy.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import get_args
+
+from flows.agentic_stack_plans import Area
 
 MRE_LABEL = "needs MRE"
 DUPLICATE_LABEL = "potential-duplicate"
+TRIAGE_LABEL = "needs:triage"
+AREA_LABELS = frozenset(get_args(Area))
 CONFIG_VARIABLE = "fastmcp_triage_config"
 MODES = ("off", "dry_run", "on")
 
@@ -133,15 +146,59 @@ def planned_writes(review: dict, live: Live) -> list[dict]:
     return writes
 
 
+def area_of(item: dict) -> str:
+    assessment = item.get("assessment")
+    area = item.get("area") or (
+        assessment.get("area") if isinstance(assessment, dict) else None
+    )
+    return area if isinstance(area, str) and area in AREA_LABELS else ""
+
+
+def waits_on_maintainer(bin_name: str, item: dict) -> bool:
+    if bin_name in {"existing_review", "decisions"}:
+        return True
+    if bin_name == "evidence":
+        return item.get("decision") == "reproduced"
+    if bin_name == "pruning":
+        return not (reviewed(item) and duplicate_target(item))
+    return False
+
+
+def triage_labels(review: dict, live: Live) -> list[dict]:
+    """Area and `needs:triage` labels for every assessed issue, without comments."""
+    writes: list[dict] = []
+    seen: set[int] = set()
+    for bin_name, items in (review.get("bins") or {}).items():
+        for item in items or []:
+            number = item.get("issue_number") if isinstance(item, dict) else None
+            if not isinstance(number, int) or number in seen:
+                continue
+            area = area_of(item)
+            waiting = waits_on_maintainer(bin_name, item)
+            if not area and not waiting:
+                continue
+            current = live(number)
+            if not writable(current):
+                continue
+            seen.add(number)
+            present = labels_of(current)
+            if area and not present & AREA_LABELS:
+                writes.append({"issue_number": number, "label": area})
+            if waiting and not present & {TRIAGE_LABEL, MRE_LABEL, DUPLICATE_LABEL}:
+                writes.append({"issue_number": number, "label": TRIAGE_LABEL})
+    return writes
+
+
 def apply_writes(writes: list[dict], request: Callable[..., object]) -> list[dict]:
     """Comment first, then label, so a label never appears without its explanation."""
     applied = []
     for write in writes:
         number = write["issue_number"]
-        request(
-            f"repos/PrefectHQ/fastmcp/issues/{number}/comments",
-            {"body": write["comment"]},
-        )
+        if write.get("comment"):
+            request(
+                f"repos/PrefectHQ/fastmcp/issues/{number}/comments",
+                {"body": write["comment"]},
+            )
         request(
             f"repos/PrefectHQ/fastmcp/issues/{number}/labels",
             {"labels": [write["label"]]},

@@ -266,12 +266,13 @@ def _build_client(
     timeout: float | None = None,
     auth: str | None = None,
     skills: bool = False,
+    events: bool = False,
 ) -> Client:
     """Build a ``Client`` from a resolved server spec.
 
     Applies ``auth='oauth'`` automatically for HTTP-based targets unless
     the caller explicitly passes ``--auth none`` to disable it. ``skills=True``
-    opts the client into the Skills extension.
+    opts the client into the Skills extension, ``events=True`` into Events.
 
     ``auth=None`` means "not specified" (use default), ``auth="none"``
     means "explicitly disabled".
@@ -326,8 +327,19 @@ def _build_client(
             timeout=timeout,
             auth=effective_auth,
             elicitation_handler=_terminal_elicitation_handler,
-            extensions=[SkillsClientExtension()] if skills else None,
+            extensions=_client_extensions(skills=skills, events=events),
         )
+
+
+def _client_extensions(*, skills: bool, events: bool) -> list[Any] | None:
+    extensions: list[Any] = []
+    if skills:
+        extensions.append(SkillsClientExtension())
+    if events:
+        from fastmcp.experimental.events import EventsClientExtension
+
+        extensions.append(EventsClientExtension())
+    return extensions or None
 
 
 # ---------------------------------------------------------------------------
@@ -1049,6 +1061,16 @@ async def call_command(
         fastmcp call http://server/mcp create --input-json '{"tags": ["a","b"]}'
         ```
     """
+
+    if command is not None and server_spec is not None:
+        # With --command there is no server spec, so the positionals bind one
+        # slot early: the target lands in `server_spec` and the first key=value
+        # argument in `target`. A `target` that is not key=value (or a JSON
+        # object) means a server spec was passed as well; leave that to
+        # resolve_server_spec to reject.
+        if not target or "=" in target or target.startswith("{"):
+            arguments = (target, *arguments) if target else arguments
+            server_spec, target = None, server_spec
 
     if not target:
         console.print(

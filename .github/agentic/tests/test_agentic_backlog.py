@@ -110,6 +110,19 @@ def test_event_intake_resolves_pull_requests_to_referenced_open_issues(github_se
     assert Intake(issues=[9]).scope() != config.scope()
 
 
+def test_event_intake_skips_closed_pull_requests(github_server):
+    read, responses, requests = github_server
+    responses["/repos/PrefectHQ/fastmcp/pulls/7"] = {
+        "number": 7,
+        "state": "closed",
+        "body": "Fixes #5",
+    }
+    responses["/repos/PrefectHQ/fastmcp/issues/5"] = issue(5)
+    result = inventory(read, Intake(pull_requests=[7], queue="events"), 1)
+    assert result["pending"] == []
+    assert "/repos/PrefectHQ/fastmcp/issues/5" not in requests
+
+
 def test_receipts_defer_but_do_not_certify_unchanged_contribution_history():
     now = datetime.now(UTC)
     config = Intake(refresh_minutes=60)
@@ -510,7 +523,7 @@ def test_different_manual_pr_request_does_not_resume_previous_pr(github_server):
         )
 
 
-def test_only_unrequeued_operational_work_raises_an_alert():
+def test_only_exhausted_unrequeued_operational_work_raises_an_alert():
     review = {
         "bins": {
             "operational": [
@@ -529,8 +542,17 @@ def test_only_unrequeued_operational_work_raises_an_alert():
             ]
         }
     }
-    assert attention(review) == [
+    assert attention(review, {1, 2, 3, 4}) == [
         "#3: 7 PRs link this issue; review handles at most 6",
         "#4: Review delivery failed: Independent review record is not readable yet",
     ]
-    assert attention({"bins": {"operational": review["bins"]["operational"][:2]}}) == []
+    # An issue with retries left stays quiet.
+    assert attention(review, {3}) == [
+        "#3: 7 PRs link this issue; review handles at most 6"
+    ]
+    operational = review["bins"]["operational"][:2]
+    assert attention({"bins": {"operational": operational}}, {1, 2}) == []
+    # A controller-wide failure names no issue; it alerts once any issue is exhausted.
+    batch = {"bins": {"operational": [{"reason": "Controller stopped", "run_id": "r"}]}}
+    assert attention(batch, {5}) == ["#?: Controller stopped"]
+    assert attention(batch, set()) == []

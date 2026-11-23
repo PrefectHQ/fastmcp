@@ -4,7 +4,6 @@ import argparse
 import json
 from copy import deepcopy
 from pathlib import Path
-from uuid import UUID
 
 from flows.agentic_stack_plans import (
     COMMON,
@@ -20,7 +19,6 @@ BRANCHES = {
     "record": ("evidence_needed", "prune", "maintainer", "skip"),
     "blocked": ("environment_failure",),
 }
-TERMINAL = ("completed", "failed", "crashed", "cancelled", "timed_out")
 
 
 MODEL_NAMES = {"gpt-6-luna": "Luna"}
@@ -31,7 +29,7 @@ def assessment_branch(value: dict) -> str:
     return next(name for name, choices in BRANCHES.items() if decision in choices)
 
 
-def build_triage_plan(models: dict, verify_id: UUID, finalize_id: UUID) -> dict:
+def build_triage_plan(models: dict) -> dict:
     orchestration = {
         "output_selection": "exactly_one",
         "evaluate_when": "all_required_inputs_produced",
@@ -57,17 +55,6 @@ def build_triage_plan(models: dict, verify_id: UUID, finalize_id: UUID) -> dict:
             "inputs": inputs,
             "outputs": outputs,
             "objective": objective,
-            "orchestration": deepcopy(orchestration),
-        }
-
-    def deployment(deployment_id: UUID, label: str) -> dict:
-        return {
-            "kind": "DeploymentNode",
-            "label": label,
-            "deployment": {"id": str(deployment_id)},
-            "wait": {"for": "child_flow_run", "until": "terminal"},
-            "inputs": {"parameters": deepcopy(object_port)},
-            "outputs": {name: deepcopy(object_port) for name in TERMINAL},
             "orchestration": deepcopy(orchestration),
         }
 
@@ -102,25 +89,6 @@ def build_triage_plan(models: dict, verify_id: UUID, finalize_id: UUID) -> dict:
         + "\n"
         + OBJECTIVES["reproduce"],
     )
-    verify = deployment(verify_id, "Verify existing contributions · deterministic")
-    verify["inputs"]["assessment"] = {"schema": Assessment.model_json_schema()}
-    finalize = deployment(finalize_id, "Retain decision and evidence · deterministic")
-    finalize["inputs"]["outcomes"] = {
-        "schema": {"type": "object"},
-        "expects": {
-            "shape": "source_map",
-            "cardinality": "zero_or_more",
-            "key_by": "edge",
-        },
-    }
-    finalize["orchestration"].update(
-        {
-            "evaluate_when": "all_reachable_terminal",
-            "on_upstream": {
-                state: "allow" for state in TERMINAL if state != "completed"
-            },
-        }
-    )
     edges = []
 
     def connect(source: dict, node: str, port: str) -> None:
@@ -140,43 +108,46 @@ def build_triage_plan(models: dict, verify_id: UUID, finalize_id: UUID) -> dict:
 
     plan_input("assess_request", "assess", "request")
     plan_input("reproduce_request", "reproduce", "request")
-    for node in ("verify", "finalize"):
-        plan_input("parameters", node, "parameters")
-    for branch in BRANCHES:
-        if branch in {"verify", "reproduce"}:
-            output("assess", branch, branch, "assessment")
-        output("assess", branch, "finalize", "outcomes")
-    output("reproduce", "result", "finalize", "outcomes")
-    for state in TERMINAL:
-        output("verify", state, "finalize", "outcomes")
+    output("assess", "reproduce", "reproduce", "assessment")
     return {
         "schema_version": "0.2",
         "kind": "ExecutionPlan",
         "inputs": {
-            "parameters": {**deepcopy(object_port), "required": True},
             "assess_request": {**deepcopy(object_port), "required": True},
             "reproduce_request": {**deepcopy(object_port), "required": True},
         },
         "nodes": {
             "assess": assess,
-            "verify": verify,
             "reproduce": reproduce,
-            "finalize": finalize,
         },
         "edges": edges,
+        # Exactly one assess branch is selected and reproduce runs only on its own
+        # branch, so no field is required. Intake verifies and bins the outcome:
+        # a DeploymentNode can't wait on an upstream output.
         "outputs": {
             "result": {
                 "fields": {
-                    "finalizer": {
+                    **{
+                        f"assess_{branch}": {
+                            "schema": {"type": "object"},
+                            "source": {
+                                "type": "node_output",
+                                "node": "assess",
+                                "output": branch,
+                            },
+                        }
+                        for branch in BRANCHES
+                    },
+                    "reproduction": {
                         "schema": {"type": "object"},
                         "source": {
                             "type": "node_output",
-                            "node": "finalize",
-                            "output": "completed",
+                            "node": "reproduce",
+                            "output": "result",
                         },
-                    }
+                    },
                 },
-                "required": ["finalizer"],
+                "required": [],
             },
         },
         "orchestration": {
@@ -187,8 +158,6 @@ def build_triage_plan(models: dict, verify_id: UUID, finalize_id: UUID) -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--verify-deployment", type=UUID, required=True)
-    parser.add_argument("--finalize-deployment", type=UUID, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--tier", help="named tier from stack-models.json")
     arguments = parser.parse_args()
@@ -200,7 +169,5 @@ if __name__ == "__main__":
         ),
         arguments.tier,
     )
-    plan = build_triage_plan(
-        models, arguments.verify_deployment, arguments.finalize_deployment
-    )
+    plan = build_triage_plan(models)
     arguments.output.write_text(json.dumps(plan, indent=2) + "\n")
