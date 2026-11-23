@@ -405,7 +405,7 @@ class OIDCProxy(OAuthProxy):
             enable_cimd: Whether to enable CIMD (Client ID Metadata Document) client support.
                 When True, clients can use their metadata document URL as client_id instead of
                 Dynamic Client Registration. Default is True.
-            identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
+            identity_assertion: Beta. Optional SEP-990 identity assertion (ID-JAG) configuration.
                 When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
                 carrying an ID-JAG issued by one of the configured trusted issuers.
         """

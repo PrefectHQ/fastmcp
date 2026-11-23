@@ -26,7 +26,7 @@ mcp = FastMCP("Team Skills")
 mcp.add_provider(SkillCatalogProvider([release_notes]))
 ```
 
-That's a skills server. A client that reads resources can read `skill://release-notes/SKILL.md` and `template.md` directly. Clients that speak the [Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) can also call `skills/list` and get each skill's description and a hashed manifest of its files, so a host can offer the skill without an install step. Few hosts do yet (VS Code 1.146 has it in preview), and FastMCP's support is experimental, but you get both from the same provider. For clients that only call tools, see [Clients that only call tools](#clients-that-only-call-tools). Run `fastmcp list server.py --skills` to see what you're serving.
+That's a skills server. A client that reads resources can read `skill://release-notes/SKILL.md` and `template.md` directly. Clients that speak the [Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) can also call `skills/list` and get each skill's description and a hashed manifest of its files, so a host can offer the skill without an install step. Few hosts do yet (VS Code 1.146 has it in preview), but you get both from the same provider. For clients that only call tools, see [Clients that only call tools](#clients-that-only-call-tools). Run `fastmcp list server.py --skills` to see what you're serving.
 
 ## Where skills come from
 

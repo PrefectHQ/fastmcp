@@ -335,6 +335,10 @@ mcp = FastMCP("my-server")
 mcp.add_middleware(UsageMiddleware(user_id_salt="a-secret-value"))
 ```
 
+<Note>
+The metric and attribute names follow the OpenTelemetry MCP semantic conventions, which are still in development upstream. These names may change in a future release to track the conventions, and the changelog will say when they do. If your dashboards or alerts depend on the exact names, pin your FastMCP version.
+</Note>
+
 Every `tools/call` and `prompts/get` request is recorded on the `mcp.server.operation.duration` histogram, in seconds. The metric follows the [MCP semantic conventions for `mcp.server.operation.duration`](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md#metric-mcpserveroperationduration) for those two methods; other MCP methods, such as `tools/list` or `resources/read`, are not recorded. The histogram's count is the number of calls, and it uses the bucket boundaries the conventions recommend, from 10 ms to 300 s. Each data point carries:
 
 | Attribute | Description |
