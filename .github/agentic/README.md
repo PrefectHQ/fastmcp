@@ -16,16 +16,23 @@ DeploymentNode in the plan can't wait on the assessment), and sends every
 public-facing outcome through the Sol `triage_review` node, which loads
 `.agents/skills/adversarial-review/SKILL.md` from the pinned revision.
 The batch records the outcome, and accepted reviews are posted as
-COMMENT reviews by the triage review app. Two reviewed outcomes also become GitHub
-labels (`flows/agentic_labels.py`), which the repository's closers act on: a request for a
-reproduction gets `needs MRE` (closed after 7 days without the author) and a duplicate gets
-`potential-duplicate` (closed after a 3-day cooldown). Nothing in this path assigns, closes
-or merges.
+COMMENT reviews by the triage review app. Triage labels each assessed issue with its area
+and, when the outcome waits on a person, `needs:triage` (`flows/agentic_labels.py`). It never
+starts a closing clock on its own: asking the reporter for a reproduction (`needs MRE`) or
+flagging a duplicate (`potential-duplicate`) is recorded as the issue's next step for the
+digest, and a maintainer decides. When triage isn't sure, it holds. Nothing in this path
+assigns, closes or merges.
 
-`cloud-triage-sweep` (`flows/agentic_sweep.py`, no model) labels inactive outside issues and
-PRs `sweep:close` every Monday and lists them in Slack. Removing the label keeps an item; a
-daily run closes the rest once the label has been on for 48 hours with no comment from a
-person.
+`cloud-triage-sweep` (`flows/agentic_sweep.py`, no model) lists inactive outside issues and PRs
+in Slack every Monday and labels nothing. A maintainer adds `sweep:close` to the ones that
+should go; a daily run closes them once the label has been on for 48 hours with no comment from
+a person.
+
+`cloud-triage-audit` (`flows/agentic_audit.py`) looks for triage's own mistakes every morning
+before the digest. It gathers the closing-clock labels and closures automation applied in the
+last day, every automated write a person undid since, and every open item whose clock is still
+running, and the `audit` agent judges each against the issue itself. Its report goes to Slack;
+it writes nothing to GitHub. The plan comes from `fastmcp_triage_config.audit`.
 
 `cloud-triage-memory-sync` (`flows/agentic_memory_sync.py`, no model) keeps a turbopuffer index of
 every issue, PR and human comment current, every 30 minutes. While `memory.mode` is "on", each

@@ -41,7 +41,7 @@ def test_repairing_triage_evidence_never_asks_the_reporter_for_a_reproducer():
     # #6692: the reviewer reproduced the bug itself and found the assessor had
     # mixed up the reporter and a commenter. repair_evidence meant "our record is
     # wrong", but it was posted as a public "couldn't reproduce" with needs MRE.
-    from flows.agentic_labels import planned_writes
+    from flows.agentic_labels import triage_labels
 
     review = {
         "decision": "repair_evidence",
@@ -63,10 +63,10 @@ def test_repairing_triage_evidence_never_asks_the_reporter_for_a_reproducer():
         "user": {"type": "User"},
         "labels": [],
     }
-    writes = planned_writes({"bins": {category: [result]}}, lambda _: open_issue)
-    assert all(write.get("label") != "needs MRE" for write in writes)
+    writes = triage_labels({"bins": {category: [result]}}, lambda _: open_issue)
+    assert [write["label"] for write in writes] == ["needs:triage"]
 
-    # An assessment that itself asked the reporter for evidence still does.
+    # An assessment that asked the reporter for evidence stays a proposal in evidence.
     category, result = apply_disposition(
         "evidence",
         {"issue_number": 7, "decision": "evidence_needed"},
