@@ -4,55 +4,44 @@ Experimental: this API may change in any release without a deprecation period.
 
 This is the SEP-3415 "emit-only" pattern: the server learns of an event when
 code calls `emit()`, not by reading a cursor-addressable upstream. Emitted
-events are kept in a bounded in-memory buffer per event type, and poll and push
-both read from it. The cursor is a position in that buffer, scoped to the
-process: after a restart, a client's old cursor is answered from the start of
-the new buffer with `truncated=True`.
+events go to an `EventLog`, and poll and push both read from it. The default
+log is a bounded in-memory buffer per event type, scoped to the process; a
+`DocketEventLog` keeps it in Redis instead.
 """
 
 from __future__ import annotations
 
 import inspect
 import uuid
-from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, get_type_hints
 
-import anyio
 from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
 from pydantic import BaseModel, ValidationError, validate_call
 
 from fastmcp.experimental.events.extension import Event, EventBatch, EventPoll
+from fastmcp.experimental.events.log import EventLog, LoggedEvent
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.utilities.json_schema import compress_schema
 
-
-@dataclass(frozen=True)
-class _Emitted:
-    position: int
-    event: Event
-    payload: BaseModel
+# How many logged events one poll reads at a time while it filters.
+_READ_CHUNK = 500
 
 
 class EmittedEvents:
-    """The buffer and filter behind one event type declared as a model.
+    """The filter behind one event type declared as a model, over its log.
 
     `matches`, when the model defines it, is an instance method whose keyword
-    parameters are the subscription arguments. It runs against each buffered
+    parameters are the subscription arguments. It runs against each logged
     event for each subscription, so filtering costs no per-subscriber state.
     """
 
-    def __init__(self, model: type[BaseModel], *, max_events: int) -> None:
-        if max_events < 1:
-            raise ValueError("max_events must be at least 1")
+    def __init__(self, name: str, model: type[BaseModel], log: EventLog) -> None:
+        self.name = name
         self.model = model
-        self._epoch = uuid.uuid4().hex[:12]
-        self._buffer: deque[_Emitted] = deque(maxlen=max_events)
-        self._next = 0
-        self._changed = anyio.Event()
+        self.log = log
         self._matcher: Callable[..., Any] | None = None
         self.input_schema: dict[str, Any] | None = None
         matches = model.__dict__.get("matches")
@@ -71,11 +60,7 @@ class EmittedEvents:
     def payload_schema(self) -> dict[str, Any]:
         return compress_schema(self.model.model_json_schema(), prune_titles=True)
 
-    def changed(self) -> anyio.Event:
-        """An event set by the next `append`, for push streams to wait on."""
-        return self._changed
-
-    def append(
+    async def append(
         self,
         payload: BaseModel,
         *,
@@ -90,62 +75,48 @@ class EmittedEvents:
             timestamp=timestamp or datetime.now(UTC),
             meta=meta,
         )
-        self._buffer.append(_Emitted(self._next, event, payload))
-        self._next += 1
-        changed, self._changed = self._changed, anyio.Event()
-        changed.set()
+        await self.log.append(self.name, LoggedEvent(event, payload))
 
-    def _cursor(self, position: int) -> str:
-        return f"{self._epoch}-{position}"
+    async def wait(self, cursor: str | None, timeout: float) -> bool:
+        """Wait up to `timeout` seconds for an emit after `cursor`."""
+        return await self.log.wait(self.name, cursor, timeout)
 
-    def _start(self, cursor: str) -> tuple[int, bool]:
-        """The first position after `cursor`, and whether events were skipped."""
-        oldest = self._buffer[0].position if self._buffer else self._next
-        epoch, _, raw = cursor.rpartition("-")
-        if epoch != self._epoch or not raw.isdigit():
-            # A cursor from another process (a restart, another replica) says
-            # nothing about this buffer: replay what it has, as a gap.
-            return oldest, True
-        start = int(raw)
-        if start > self._next:
-            return self._next, True
-        if start < oldest:
-            return oldest, True
-        return start, False
-
-    def check(self, poll: EventPoll) -> EventBatch:
+    async def check(self, poll: EventPoll) -> EventBatch:
         if poll.cursor is None:
-            return EventBatch(cursor=self._cursor(self._next))
-        start, truncated = self._start(poll.cursor)
+            return EventBatch(cursor=await self.log.head(self.name))
         floor = None
         if poll.max_age_ms is not None:
             floor = datetime.now(UTC) - timedelta(milliseconds=poll.max_age_ms)
         limit = poll.max_events
         events: list[Event] = []
-        for item in list(self._buffer):
-            if item.position < start:
-                continue
-            if limit is not None and len(events) >= limit:
-                # Resume at the first event this batch did not look at.
-                return EventBatch(
-                    events=events,
-                    cursor=self._cursor(item.position),
-                    has_more=True,
-                    truncated=truncated,
-                )
-            timestamp = item.event.timestamp
-            if floor is not None and timestamp is not None and timestamp < floor:
-                truncated = True
-                continue
-            if self._matches(item.payload, poll.arguments):
-                events.append(item.event)
-        return EventBatch(
-            events=events, cursor=self._cursor(self._next), truncated=truncated
-        )
+        cursor, truncated = poll.cursor, False
+        while True:
+            read = await self.log.read(self.name, cursor, count=_READ_CHUNK)
+            truncated = truncated or read.truncated
+            before = read.start
+            for after, item in read.entries:
+                if limit is not None and len(events) >= limit:
+                    # Resume at the first event this batch did not look at.
+                    return EventBatch(
+                        events=events, cursor=before, has_more=True, truncated=truncated
+                    )
+                before = after
+                timestamp = item.event.timestamp
+                if floor is not None and timestamp is not None and timestamp < floor:
+                    truncated = True
+                    continue
+                if self._matches(item, poll.arguments):
+                    events.append(item.event)
+            cursor = read.cursor
+            if not read.more:
+                return EventBatch(events=events, cursor=cursor, truncated=truncated)
 
-    def _matches(self, payload: BaseModel, arguments: dict[str, Any]) -> bool:
+    def _matches(self, item: LoggedEvent, arguments: dict[str, Any]) -> bool:
         if self._matcher is None:
             return True
+        payload = item.payload
+        if payload is None:
+            payload = self.model.model_validate(item.event.data)
         try:
             return bool(self._matcher(payload, **arguments))
         except ValidationError as error:

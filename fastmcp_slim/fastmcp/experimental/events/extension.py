@@ -9,6 +9,7 @@ import inspect
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar, cast
@@ -60,6 +61,7 @@ from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.experimental.events.emitted import EmittedEvents
+    from fastmcp.experimental.events.log import EventLog
 
 logger = get_logger(__name__)
 
@@ -167,14 +169,26 @@ class EventsExtension(ServerExtension):
         poll_interval_ms: int = 30_000,
         push: bool = True,
         emit_buffer: int = 1_000,
+        log: EventLog | None = None,
     ) -> None:
+        """
+        Args:
+            poll_interval_ms: How long clients wait between polls, and how
+                often a push stream re-runs a check function.
+            push: Whether to offer `events/stream`.
+            emit_buffer: How many emitted events per type the default
+                in-memory log keeps. Ignored when `log` is given.
+            log: Where emitted events are kept. Defaults to an
+                `InMemoryEventLog`; pass a `DocketEventLog` to keep them in
+                Redis, shared across replicas and restarts.
+        """
+        from fastmcp.experimental.events.log import InMemoryEventLog
+
         if poll_interval_ms < 0:
             raise ValueError("poll_interval_ms must not be negative")
-        if emit_buffer < 1:
-            raise ValueError("emit_buffer must be at least 1")
         self._poll_interval_ms = poll_interval_ms
         self._push = push
-        self._emit_buffer = emit_buffer
+        self._log = log if log is not None else InMemoryEventLog(emit_buffer)
         self._registrations: dict[str, _Registration] = {}
         self._models: dict[type[BaseModel], str] = {}
 
@@ -227,7 +241,7 @@ class EventsExtension(ServerExtension):
                     raise ValueError(
                         f"{source.__name__} is already the event {self._models[source]!r}."
                     )
-                emitted = EmittedEvents(source, max_events=self._emit_buffer)
+                emitted = EmittedEvents(name, source, self._log)
                 schema = schema if schema is not None else emitted.input_schema
                 payload = payload if payload is not None else emitted.payload_schema
                 summary = summary or inspect.getdoc(source)
@@ -280,7 +294,10 @@ class EventsExtension(ServerExtension):
             )
         emitted = self._registrations[name].emitted
         assert emitted is not None
-        emitted.append(payload, event_id=event_id, timestamp=timestamp, meta=meta)
+        await emitted.append(payload, event_id=event_id, timestamp=timestamp, meta=meta)
+
+    def lifespan(self) -> AbstractAsyncContextManager[None]:
+        return self._log.lifespan()
 
     def methods(self) -> Sequence[MethodBinding]:
         return (
@@ -456,9 +473,6 @@ class EventsExtension(ServerExtension):
             last_sent = time.monotonic()
 
         emitted = registration.emitted
-        # Taken before each check, so an emit that lands while the check runs
-        # still wakes the wait that follows it.
-        changed = emitted.changed() if emitted is not None else None
         batch = await self._check(
             registration,
             EventPoll(
@@ -505,14 +519,10 @@ class EventsExtension(ServerExtension):
                     if until_heartbeat <= 0:
                         await send("heartbeat", cursor=cursor)
                         continue
-                    if changed is None:
+                    if emitted is None:
                         await anyio.sleep(min(remaining, until_heartbeat))
-                        continue
-                    with anyio.move_on_after(min(remaining, until_heartbeat)):
-                        await changed.wait()
-                    if changed.is_set():
+                    elif await emitted.wait(cursor, min(remaining, until_heartbeat)):
                         break
-            changed = emitted.changed() if emitted is not None else None
             try:
                 batch = await self._check(
                     registration, EventPoll(arguments=arguments, cursor=cursor)
