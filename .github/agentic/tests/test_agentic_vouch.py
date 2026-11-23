@@ -158,7 +158,9 @@ def test_standing_ranks_orgs_by_tier():
         NOW,
     ):
         store.append(AFFILIATION, record)
-    found = Graph(store.records()).standing("alice")
+    found = Graph(store.records()).standing(
+        "alice", {"modelcontextprotocol": "mcp-spec"}
+    )
     assert found["tier"] == "mcp-spec"
     assert [o["org"] for o in found["orgs"]] == ["modelcontextprotocol", "acme"]
 
@@ -199,7 +201,9 @@ def test_sync_vouches_merges_then_looks_up_affiliations():
     store = MemoryStore()
     result = sync_graph(store, [merged(10, ALICE)], read, VouchConfig(mode="on"), NOW)
     assert result == {"vouches": 1, "affiliations_refreshed": 1}
-    assert Graph(store.records()).standing("alice")["tier"] == "maintainer"
+    found = Graph(store.records()).standing("alice", {"PrefectHQ": "maintainer"})
+    assert found["tier"] == "maintainer"
+    assert Graph(store.records()).standing("alice")["tier"] == "other"
     again = sync_graph(store, [merged(10, ALICE)], read, VouchConfig(mode="on"), NOW)
     assert again == {"vouches": 0, "affiliations_refreshed": 0}
 

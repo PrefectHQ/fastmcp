@@ -55,27 +55,8 @@ Kind = Literal["vouch", "denounce", "retract"]
 Tier = Literal["maintainer", "mcp-spec", "mcp-host", "downstream", "other"]
 TIERS: tuple[str, ...] = ("maintainer", "mcp-spec", "mcp-host", "downstream", "other")
 
-# GitHub org login -> tier. A starting guess nate can change in the config
-# Variable without a deploy; anything unlisted is "other".
-DEFAULT_ORGS: dict[str, Tier] = {
-    "prefecthq": "maintainer",
-    "modelcontextprotocol": "mcp-spec",
-    "anthropics": "mcp-host",
-    "openai": "mcp-host",
-    "microsoft": "mcp-host",
-    "google": "mcp-host",
-    "github": "mcp-host",
-    "cursor": "mcp-host",
-    "pydantic": "downstream",
-    "langchain-ai": "downstream",
-    "agno-agi": "downstream",
-    "arize-ai": "downstream",
-    "mlflow": "downstream",
-    "awslabs": "downstream",
-    "snowflake-labs": "downstream",
-    "neo4j-contrib": "downstream",
-    "qdrant": "downstream",
-}
+# GitHub org login -> tier lives only in the config Variable, never in code:
+# `{"vouch": {"orgs": {"some-org": "mcp-host"}}}`. Unlisted orgs are "other".
 
 
 class VouchConfig(BaseModel):
@@ -84,7 +65,7 @@ class VouchConfig(BaseModel):
     pds: str | None = None
     authority: str | None = None  # the space owner's DID
     handle: str | None = None
-    orgs: dict[str, Tier] = Field(default_factory=lambda: dict(DEFAULT_ORGS))
+    orgs: dict[str, Tier] = Field(default_factory=dict)
     # Affiliation lookups per sync run, so a backfill can't eat the token's budget.
     refresh_per_run: int = Field(default=100, ge=0, le=1000)
 
@@ -207,7 +188,7 @@ class Graph:
         affiliations = sorted(
             {r["org"] for r in person.affiliations.values() if r.get("present")}
         )
-        tiers = orgs or DEFAULT_ORGS
+        tiers = {org.lower(): tier for org, tier in (orgs or {}).items()}
         ranked = sorted(
             (
                 {"org": org, "tier": tiers.get(org.lower(), "other")}
