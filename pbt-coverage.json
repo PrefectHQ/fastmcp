@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T06:39:05+00:00",
- "source_commit": "8164b06531e0d2830c73d7a438f8d394a3802d6c",
+ "generated_at": "2026-11-23T06:47:24+00:00",
+ "source_commit": "12e6bba4bcb69ee5229e7d82c71fbb3bd9c0cfb4",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -3465,27 +3465,27 @@
    "module": "fastmcp.server.providers.openapi.components",
    "path": "fastmcp_slim/fastmcp/server/providers/openapi/components.py",
    "public": true,
-   "statements": 151,
-   "hit": 36,
-   "functions": 16,
-   "functions_hit": 6,
+   "statements": 156,
+   "hit": 39,
+   "functions": 17,
+   "functions_hit": 7,
    "symbols": [
     {
      "name": "OpenAPIResource",
      "kind": "class",
-     "statements": 24,
+     "statements": 21,
      "hit": 0
     },
     {
      "name": "OpenAPIResourceTemplate",
      "kind": "class",
-     "statements": 18,
+     "statements": 19,
      "hit": 0
     },
     {
      "name": "OpenAPITool",
      "kind": "class",
-     "statements": 42,
+     "statements": 39,
      "hit": 25
     }
    ],
@@ -3498,16 +3498,16 @@
    "module": "fastmcp.server.providers.openapi.provider",
    "path": "fastmcp_slim/fastmcp/server/providers/openapi/provider.py",
    "public": true,
-   "statements": 148,
-   "hit": 54,
+   "statements": 149,
+   "hit": 55,
    "functions": 17,
    "functions_hit": 9,
    "symbols": [
     {
      "name": "OpenAPIProvider",
      "kind": "class",
-     "statements": 147,
-     "hit": 53
+     "statements": 148,
+     "hit": 54
     }
    ],
    "tests": 1,
@@ -4634,7 +4634,7 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 624,
-   "hit": 435,
+   "hit": 421,
    "functions": 57,
    "functions_hit": 45,
    "symbols": [],
