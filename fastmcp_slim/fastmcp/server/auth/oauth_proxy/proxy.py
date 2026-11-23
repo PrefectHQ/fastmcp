@@ -107,6 +107,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     OAuthTransaction,
     ProxyDCRClient,
     RefreshTokenMetadata,
+    RotatedRefreshToken,
     UpstreamTokenSet,
     _hash_token,
 )
@@ -127,6 +128,11 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 _REFRESH_LOCK_CACHE_SIZE = 10_000
+
+# A rotated refresh token presented again within this many seconds is taken
+# as a duplicate (concurrent refreshes, a retry after a lost response) and
+# only rejected; later, it is a replay and ends the grant (OAuth 2.1 §4.3.1).
+_REFRESH_REUSE_GRACE_SECONDS = 60.0
 
 #: SEP-837: the client's declared `application_type`, recovered from the raw DCR
 #: request body by `_ApplicationTypeRegistrationHandler` before the SDK's
@@ -719,6 +725,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 key_value=self._client_storage,
                 pydantic_model=RefreshTokenMetadata,
                 default_collection="mcp-refresh-tokens",
+                raise_on_validation_error=True,
+            )
+        )
+
+        # Refresh tokens that were already rotated, keyed by token hash, so a
+        # later replay can end the grant (OAuth 2.1 §4.3.1).
+        self._rotated_refresh_store: PydanticAdapter[RotatedRefreshToken] = (
+            PydanticAdapter[RotatedRefreshToken](
+                key_value=self._client_storage,
+                pydantic_model=RotatedRefreshToken,
+                default_collection="mcp-rotated-refresh-tokens",
                 raise_on_validation_error=True,
             )
         )
@@ -1823,6 +1840,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_hash = _hash_token(refresh_token)
         metadata = await self._refresh_token_store.get(key=token_hash)
         if not metadata:
+            await self._end_grant_on_refresh_reuse(client, token_hash)
             logger.warning(
                 "Refresh token not found for client=%s (token_hash=%s); it was "
                 "already rotated, expired, or revoked. Rejecting with invalid_grant, "
@@ -1844,6 +1862,38 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             client_id=metadata.client_id,
             scopes=metadata.scopes,
             expires_at=metadata.expires_at,
+        )
+
+    async def _end_grant_on_refresh_reuse(
+        self, client: OAuthClientInformationFull, token_hash: str
+    ) -> None:
+        """End the grant of a rotated refresh token that is presented again.
+
+        OAuth 2.1 §4.3.1: a server that rotates refresh tokens should treat a
+        reused one as possibly stolen and revoke the tokens issued from it.
+        A reuse within `_REFRESH_REUSE_GRACE_SECONDS` of the rotation is taken
+        as a duplicate (two concurrent refreshes, or a retry after a lost
+        response) and only rejected; after it, the grant ends, so the
+        newer access and refresh tokens stop working for whoever holds them.
+        """
+        rotated = await self._rotated_refresh_store.get(key=token_hash)
+        if rotated is None or rotated.client_id != client.client_id:
+            return
+        if time.time() - rotated.rotated_at <= _REFRESH_REUSE_GRACE_SECONDS:
+            return
+
+        await self._rotated_refresh_store.delete(key=token_hash)
+        upstream_token_set = await self._upstream_token_store.get(
+            key=rotated.upstream_token_id
+        )
+        if upstream_token_set is not None and upstream_token_set.refresh_token:
+            await self._revoke_upstream(upstream_token_set.refresh_token)
+        await self._upstream_token_store.delete(key=rotated.upstream_token_id)
+        logger.warning(
+            "Rotated refresh token reused for client=%s (token_hash=%s); ended "
+            "its grant",
+            client.client_id,
+            token_hash[:8],
         )
 
     async def exchange_refresh_token(
@@ -2093,6 +2143,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         # Invalidate old refresh token (refresh token rotation - enforces one-time use)
         await self._jti_mapping_store.delete(key=refresh_jti)
+        # Remember it was rotated so a later replay ends the grant.
+        await self._rotated_refresh_store.put(
+            key=_hash_token(refresh_token.token),
+            value=RotatedRefreshToken(
+                client_id=client.client_id,
+                upstream_token_id=upstream_token_set.upstream_token_id,
+                rotated_at=time.time(),
+            ),
+            ttl=refresh_ttl,
+        )
         logger.debug(
             "Rotated refresh token (old JTI invalidated - one-time use enforced)"
         )
