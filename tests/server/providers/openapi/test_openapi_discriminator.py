@@ -356,3 +356,42 @@ class TestNestedDiscriminatorRequestBodies:
 
         pet = schema["$defs"]["Pet"]
         assert set(pet["properties"]) == {"petType"}
+
+    async def test_directly_referenced_subtype_keeps_only_its_own_fields(self):
+        """A subtype composes the unflattened parent, not its siblings' fields."""
+        spec = nested_discriminator_spec()
+        spec["components"]["schemas"]["PetEnvelope"]["properties"]["cat"] = {
+            "$ref": "#/components/schemas/Cat"
+        }
+
+        schema = await tool_schema(spec)
+
+        cat_props = {
+            prop
+            for member in schema["properties"]["cat"]["allOf"]
+            for prop in member["properties"]
+        }
+        assert cat_props == {"petType", "meowVolume"}
+        assert set(schema["properties"]["pet"]["properties"]) == {
+            "petType",
+            "meowVolume",
+            "packSize",
+        }
+
+    async def test_self_referencing_parent_keeps_subtypes_exact(self):
+        """A parent that references itself is flattened once, without recursion."""
+        spec = nested_discriminator_spec()
+        schemas = spec["components"]["schemas"]
+        schemas["Pet"]["properties"]["parent"] = {"$ref": "#/components/schemas/Pet"}
+
+        schema = await tool_schema(spec)
+
+        defs = schema["$defs"]
+        assert set(defs["Pet"]["properties"]) == {
+            "petType",
+            "parent",
+            "meowVolume",
+            "packSize",
+        }
+        assert defs["Cat"]["allOf"][0] == {"$ref": "#/$defs/PetBase"}
+        assert set(defs["PetBase"]["properties"]) == {"petType", "parent"}
