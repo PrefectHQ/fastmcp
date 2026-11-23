@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T06:47:24+00:00",
- "source_commit": "12e6bba4bcb69ee5229e7d82c71fbb3bd9c0cfb4",
+ "generated_at": "2026-11-23T06:50:45+00:00",
+ "source_commit": "8b4fd54c6d3070468454bf561a208e819ee8f887",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -2101,16 +2101,16 @@
    "module": "fastmcp.server.auth.oauth_proxy.proxy",
    "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py",
    "public": true,
-   "statements": 730,
-   "hit": 277,
-   "functions": 36,
-   "functions_hit": 19,
+   "statements": 767,
+   "hit": 299,
+   "functions": 40,
+   "functions_hit": 23,
    "symbols": [
     {
      "name": "OAuthProxy",
      "kind": "class",
-     "statements": 708,
-     "hit": 277
+     "statements": 745,
+     "hit": 299
     }
    ],
    "tests": 1,
@@ -4634,9 +4634,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 624,
-   "hit": 421,
+   "hit": 397,
    "functions": 57,
-   "functions_hit": 45,
+   "functions_hit": 42,
    "symbols": [],
    "tests": 4,
    "test_ids": [
