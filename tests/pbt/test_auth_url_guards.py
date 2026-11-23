@@ -359,11 +359,6 @@ def exact_uris(draw) -> str:
     return f"{scheme}://{host}{port}{path}{query}"
 
 
-def _root_path_probe() -> bool:
-    """https://github.com/PrefectHQ/fastmcp/issues/6689"""
-    return matches_allowed_pattern("https://a.example/x", "https://a.example/")
-
-
 def _changes(uri: str) -> st.SearchStrategy[tuple[str, str]]:
     """Edits that make a URI a different redirect target."""
     p = urlparse(uri)
@@ -391,12 +386,17 @@ def test_an_exact_pattern_matches_only_itself(data):
     assert matches_allowed_pattern(uri, uri), "a registered URI does not match itself"
     edit, other = data.draw(_changes(uri), label="edit")
     event(edit)
+    p = urlparse(uri)
     if (
         edit in ("changed path", "child path")
-        and urlparse(uri).path == "/"
-        and still_open("#6689", _root_path_probe)
+        and p.path == "/"
+        and p.hostname in ("localhost", "127.0.0.1")
+        and p.port is None
     ):
-        event("known: #6689")
+        # A loopback pattern without a port already accepts any port
+        # (RFC 8252 section 7.3), so its root path stays open too (#6703).
+        assert matches_allowed_pattern(other, uri)
+        event("open loopback root")
         return
     assert not matches_allowed_pattern(other, uri), f"{edit} still matches"
 
