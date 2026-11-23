@@ -662,6 +662,26 @@ class TestPages:
             "frame-ancestors 'none'; sandbox allow-scripts allow-forms"
         )
 
+    def test_proxy_closes_client_when_send_fails(self, monkeypatch: pytest.MonkeyPatch):
+        original_client = httpx2.AsyncClient
+        created: list[httpx2.AsyncClient] = []
+
+        def backend(request: httpx2.Request) -> httpx2.Response:
+            raise RuntimeError("non-connect send failure")
+
+        def client_factory(**kwargs: Any) -> httpx2.AsyncClient:
+            client = original_client(transport=httpx2.MockTransport(backend), **kwargs)
+            created.append(client)
+            return client
+
+        monkeypatch.setattr(apps_dev.httpx2, "AsyncClient", client_factory)
+
+        client = build_client(session=True)
+        with pytest.raises(RuntimeError, match="non-connect send failure"):
+            client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
+
+        assert [c.is_closed for c in created] == [True]
+
 
 class TestPickerForm:
     @pytest.mark.parametrize(
