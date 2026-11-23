@@ -220,3 +220,19 @@ def test_label_only_writes_skip_the_comment() -> None:
     assert calls == [
         ("repos/PrefectHQ/fastmcp/issues/5/labels", {"labels": ["client"]}),
     ]
+
+
+def test_assessor_must_answer_area_but_old_assessments_still_validate() -> None:
+    from flows.agentic_stack_plans import Assessment
+
+    assert "area" in Assessment.model_json_schema()["required"]
+    old = Assessment.model_validate(
+        {
+            "decision": "skip",
+            "reason": "Retained before areas existed",
+            "contract": "",
+            "prior_art": [],
+            "question": "",
+        }
+    )
+    assert old.area == ""

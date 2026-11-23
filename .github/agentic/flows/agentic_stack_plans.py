@@ -26,8 +26,14 @@ Area = Literal[
 ]
 
 
+def _require_area(schema: dict) -> None:
+    # Retained assessments from before areas existed still validate, but the
+    # assessor must always answer: an optional field is one it skips.
+    schema["required"] = [*schema.get("required", []), "area"]
+
+
 class Assessment(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_require_area)
     decision: Literal[
         "reproduce",
         "existing_review",
