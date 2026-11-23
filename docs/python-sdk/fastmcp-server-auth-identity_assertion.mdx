@@ -34,7 +34,7 @@ This module provides:
 
 ## Functions
 
-### `normalize_resource_url` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L474" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `normalize_resource_url` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L476" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 normalize_resource_url(url: str) -> str
@@ -48,7 +48,7 @@ the server's configured resource URL typically doesn't include them. This
 normalizes both sides for comparison by stripping query and fragment.
 
 
-### `server_url_has_query` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L487" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `server_url_has_query` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L489" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 server_url_has_query(url: str) -> bool
@@ -65,13 +65,15 @@ Check if a URL has query parameters.
 
 Configuration for server-side identity assertion (ID-JAG) support.
 
+Beta: this API may change in a future release.
+
 When attached to an :class:`~fastmcp.server.auth.oauth_proxy.OAuthProxy` via the
 ``identity_assertion`` parameter, the proxy's token endpoint accepts the RFC 7523
 ``jwt-bearer`` grant carrying an ID-JAG issued by one of the ``trusted_issuers``,
 and mints a short-lived FastMCP access token for the asserted subject.
 
 
-### `IdentityAssertionError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `IdentityAssertionError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L185" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Raised when an ID-JAG fails validation.
@@ -80,7 +82,7 @@ The message is for server-side logging only; the token endpoint maps this to a
 generic OAuth error response and does not leak the detail to the client.
 
 
-### `IdentityAssertionValidator` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L191" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `IdentityAssertionValidator` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L193" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Validates ID-JAG assertions for the SEP-990 jwt-bearer grant.
@@ -99,7 +101,7 @@ replicas; see the identity-assertion docs for the deployment caveat.
 
 **Methods:**
 
-#### `validate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L327" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/identity_assertion.py#L329" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate(self, assertion: str) -> dict
