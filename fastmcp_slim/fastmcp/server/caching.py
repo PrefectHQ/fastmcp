@@ -2,28 +2,25 @@
 
 A FastMCP server opts every SDK-cacheable result it emits into client-side
 caching by setting `cache_ttl` (seconds) and, optionally, `cache_scope` on the
-`FastMCP` constructor. The hint is uniform by construction: one server-level
-value applies to `tools/list`, `prompts/list`, `resources/list`,
-`resources/templates/list`, `resources/read`, and `server/discover` alike — no
-per-component surface and no aggregation.
+`FastMCP` constructor. By default, one server-level value applies to `tools/list`,
+`prompts/list`, `resources/list`, `resources/templates/list`, `resources/read`,
+and `server/discover`. Individual resource reads can override the server hint
+by returning a `ResourceResult` with per-read `ttl_ms` and `cache_scope` hints.
 
-FastMCP does not hand-set the wire fields. It passes the hint through to the SDK
-low-level `Server(cache_hints=...)`, whose runner fills `ttlMs`/`cacheScope` on
-every cacheable result via `apply_cache_hint`, leaving any field a handler set
-explicitly untouched. Honoring is modern-only and opt-in on the client: a hinted
-server is inert unless the client passes `cache=` and negotiates `2026-07-28`.
+FastMCP passes the server hint through to the SDK low-level `Server(cache_hints=...)`,
+whose runner fills `ttlMs`/`cacheScope` on every cacheable result via `apply_cache_hint`,
+leaving any field a handler set explicitly untouched. Honoring is modern-only and opt-in on
+the client: a hinted server is inert unless the client passes `cache=` and negotiates `2026-07-28`.
 """
 
 from __future__ import annotations
 
-from typing import Literal, get_args
+from typing import get_args
 
 from mcp.server.caching import CacheHint
 from mcp_types.methods import CacheableMethod
 
-CacheScope = Literal["public", "private"]
-"""Whether a cached result may be shared across authorization contexts
-(`"public"`) or reused only within the one that produced it (`"private"`)."""
+from fastmcp.utilities.types import CacheScope
 
 
 def build_cache_hints(

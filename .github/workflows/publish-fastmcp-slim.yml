@@ -1,9 +1,16 @@
 name: Publish fastmcp-slim to PyPI
 
+# The only way into PyPI. A published GitHub release starts this job, and the
+# `pypi` environment holds it until a required reviewer approves. Its success
+# fans out to fastmcp-tasks, fastmcp-remote, and fastmcp, which run on the
+# default branch in the `pypi-fanout` environment (deployments from the default
+# branch only) and refuse to publish without the matching fastmcp-slim on PyPI.
+# There is deliberately no workflow_dispatch: a manual run would build and
+# publish a dev version with no release behind it.
+
 on:
   release:
     types: [published]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,11 +20,13 @@ jobs:
   pypi-publish:
     name: Upload fastmcp-slim to PyPI
     runs-on: ubuntu-latest
+    environment: pypi
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Install uv

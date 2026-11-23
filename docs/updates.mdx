@@ -6,6 +6,38 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.2.5" description="November 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.5: Smoke Signals"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.5"
+cta="Read the release notes"
+>
+This release serves `subscriptions/listen` on 2026-07-28 connections, so clients can open a stream and receive tool, prompt and resource change events, and `FastMCP.notify_tools_changed()` and its siblings now push those events to listening clients. A new opt-in `UsageMiddleware` records per-user, per-tool usage as the OpenTelemetry `mcp.server.operation.duration` histogram for `tools/call` and `prompts/get`; add it before any error-handling middleware. An experimental Events extension (SEP-3415) lands in `fastmcp.experimental.events`, with poll and push delivery and a `fastmcp experimental events list|watch` CLI; it is opt-in, and its API may change in any release without a deprecation period.
+
+Thanks to our 25 contributors, including 6 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.2.4" description="November 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.4: Burn After Reading"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.4"
+cta="Read the release notes"
+>
+Fixes a race where two concurrent token requests could redeem one OAuth proxy authorization code or refresh token twice (GHSA-78c8-3jhx-5mg7), and keeps a revoked proxy access token from validating again after a refresh. Also, a tool transform that can't apply now hides only its own tool instead of breaking every listing, plus a few mounted and versioned component fixes. Thanks to our 4 contributors, including 2 first-time contributors.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.2.3" description="November 20, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.3: Trace Elements"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.3"
+cta="Read the release notes"
+>
+FastMCP 4.2.3 adds an opt-in `parent_task_spans` setting for background tasks: turn it on and each task's worker span nests inside the `tools/call` request that submitted it, so the whole job reads as one trace (off by default, where the worker still starts its own trace linked back to the request). It also fixes three output schema conversion bugs (non-object defaults, recursive `$ref`s in positional arrays, and placeholder validation for short positional arrays), and an OpenAPI tool called without a required path argument now returns a validation error instead of a server error. `fastmcp-tasks` now requires `pydocket>=0.29.1`. Thanks to our 4 contributors, including 2 first-time contributors.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.2.2" description="November 18, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.2.2: Tea for Two (Too)"

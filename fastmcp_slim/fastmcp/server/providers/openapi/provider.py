@@ -16,6 +16,7 @@ from fastmcp.prompts import Prompt
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.openapi.components import (
+    ForwardClientHeaders,
     OpenAPIResource,
     OpenAPIResourceTemplate,
     OpenAPITool,
@@ -89,6 +90,7 @@ class OpenAPIProvider(Provider):
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
         validate_output: bool = True,
+        forward_client_headers: ForwardClientHeaders = True,
     ):
         """Initialize provider by parsing OpenAPI spec and creating components.
 
@@ -109,6 +111,11 @@ class OpenAPIProvider(Provider):
                 extracted from the OpenAPI spec for response validation. If
                 False, a permissive schema is used instead, allowing any
                 response structure while still returning structured JSON.
+            forward_client_headers: Which headers of the incoming MCP request
+                are forwarded to the API when the outgoing request does not
+                set them. True (default) forwards all but credential,
+                connection and MCP transport headers; False forwards none; a
+                collection of names forwards only those.
         """
         super().__init__()
 
@@ -126,6 +133,7 @@ class OpenAPIProvider(Provider):
         self._client = client
         self._mcp_component_fn = mcp_component_fn
         self._validate_output = validate_output
+        self._forward_client_headers = forward_client_headers
 
         # Keep track of names to detect collisions
         self._used_names: dict[str, Counter[str]] = {
@@ -301,6 +309,7 @@ class OpenAPIProvider(Provider):
             parameters=combined_schema,
             output_schema=output_schema,
             tags=set(route.tags or []) | tags,
+            forward_client_headers=self._forward_client_headers,
         )
 
         if self._mcp_component_fn is not None:
@@ -334,6 +343,7 @@ class OpenAPIProvider(Provider):
             description=base_description,
             mime_type=_extract_mime_type_from_route(route),
             tags=set(route.tags or []) | tags,
+            forward_client_headers=self._forward_client_headers,
         )
 
         if self._mcp_component_fn is not None:
@@ -397,6 +407,7 @@ class OpenAPIProvider(Provider):
             parameters=template_params_schema,
             tags=set(route.tags or []) | tags,
             mime_type=_extract_mime_type_from_route(route),
+            forward_client_headers=self._forward_client_headers,
         )
 
         if self._mcp_component_fn is not None:

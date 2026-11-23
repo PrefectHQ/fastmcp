@@ -4,6 +4,7 @@ import pytest
 from mcp_types import Root
 
 from fastmcp import Client, Context, FastMCP
+from fastmcp.exceptions import ToolError
 
 
 @pytest.fixture
@@ -104,3 +105,29 @@ class TestClientRoots:
             result = await client.call_tool("list_roots", {})
 
         assert result.data == ["file:///callable-object"]
+
+    async def test_set_roots_updates_a_live_session(self, fastmcp_server: FastMCP):
+        """`set_roots` while connected takes effect without reconnecting."""
+        async with Client(
+            fastmcp_server, mode="legacy", roots=["file:///before"]
+        ) as client:
+            before = await client.call_tool("list_roots", {})
+            client.set_roots(["file:///after"])
+            after = await client.call_tool("list_roots", {})
+
+        assert before.data == ["file:///before"]
+        assert after.data == ["file:///after"]
+
+    async def test_set_roots_without_roots_at_connect_waits_for_reconnect(
+        self, fastmcp_server: FastMCP
+    ):
+        """A session negotiated without roots does not gain them mid-session."""
+        client = Client(fastmcp_server, mode="legacy")
+        async with client:
+            client.set_roots(["file:///later"])
+            with pytest.raises(ToolError, match="List roots not supported"):
+                await client.call_tool("list_roots", {})
+
+        async with client:
+            result = await client.call_tool("list_roots", {})
+        assert result.data == ["file:///later"]

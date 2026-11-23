@@ -17,9 +17,9 @@ upsert() {
   else api POST "/$kind/" --data "@$body" | jq -er .id; fi
 }
 
-DEPLOYMENTS=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize cloud-triage-sweep)
-# Runs that must finish before a deploy. The sweep is short and always has a
-# scheduled run queued, so it is registered but never waited on.
+DEPLOYMENTS=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize cloud-triage-sweep cloud-triage-memory-sync cloud-triage-digest)
+# Runs that must finish before a deploy. The sweep, memory sync and digest are short and
+# always have a scheduled run queued, so they are registered but never waited on.
 DRAIN=(cloud-stack-batch cloud-contribution-verification cloud-triage-intake cloud-triage-verify cloud-triage-finalize)
 TRIGGERS=(fastmcp-triage-on-github-issue fastmcp-triage-on-github-pr)
 json_list() { printf '%s\n' "$@" | jq -R . | jq -sc .; }
@@ -84,7 +84,9 @@ case "${1:-}" in
     git cat-file -e "$current^{commit}" 2>/dev/null || {
       echo "Live source $current is not in this checkout; fetch full history" >&2; exit 1;
     }
-    git diff --quiet "$current" "$revision" -- 'workflows/*.plan.json' workflows/stack-models.json || {
+    # The connected triage plan isn't committed as JSON: it's built from these modules.
+    git diff --quiet "$current" "$revision" -- 'workflows/*.plan.json' workflows/stack-models.json \
+      flows/agentic_stack_plans.py flows/agentic_triage_plan.py || {
       echo "Execution plans changed since $current; publish them and update the automations' plan versions by hand" >&2; exit 1;
     }
     validate

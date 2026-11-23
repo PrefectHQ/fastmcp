@@ -1,0 +1,156 @@
+---
+title: Events
+sidebarTitle: Events
+description: Let clients learn that something happened on your server by subscribing to event types.
+icon: bell
+tag: EXPERIMENTAL
+---
+
+<Warning>
+Events support is experimental and lives in `fastmcp.experimental.events`. The extension is new, and the names and signatures here may change in any release, without a deprecation period, as the specification and its clients settle. Webhook delivery (`events/subscribe`) is not implemented.
+</Warning>
+
+Tools answer when a client asks. Events cover the other direction: an alert fired, a build finished, an email arrived, and a client that is not in the middle of a request should find out. The MCP Events extension ([SEP-3415](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415)) defines event types a client can subscribe to, and FastMCP implements two of its delivery modes from one function you write.
+
+In poll delivery the client asks "what happened since this cursor?" on an interval. Every request carries the event name, the subscription's arguments and the cursor, so your server holds no subscription state. In push delivery the client opens one long-lived request per subscription and your server writes events to it as they happen.
+
+## Defining an event type
+
+Register an `EventsExtension`, then decorate one check function per event type. The function receives an `EventPoll` and returns an `EventBatch`: the events after the poll's cursor, and the cursor that follows them. A cursor of `None` means the client is subscribing now, so return no events and the current position.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
+
+mcp = FastMCP("Alerts")
+events = EventsExtension()
+mcp.add_extension(events)
+
+ALERTS: list[dict[str, str]] = []
+
+
+@events.event(name="alert.fired", description="An alert fired")
+def alert_fired(poll: EventPoll) -> EventBatch:
+    if poll.cursor is None:
+        return EventBatch(cursor=str(len(ALERTS)))
+    new_alerts = ALERTS[int(poll.cursor) :]
+    fired = [Event(data=alert, event_id=alert["id"]) for alert in new_alerts]
+    return EventBatch(events=fired, cursor=str(len(ALERTS)))
+```
+
+The cursor is opaque to the client and means whatever your upstream needs: a row ID, a timestamp, a history token. Derive it from durable state. A cursor that only makes sense inside one process breaks as soon as a second replica answers the next poll.
+
+Give each `Event` the upstream's stable identifier as `event_id`. Clients drop events whose ID they have already seen, and an ID FastMCP generates for you is different on every poll.
+
+Check functions may be sync or async. A sync function runs in a worker thread, as sync tools do, so a blocking upstream call does not stall the server's other requests.
+
+### Rejecting and ending subscriptions
+
+A check function rejects a subscription by raising `MCPError` from `mcp.shared.exceptions`, for example with the extension's `Forbidden` code (`-32024`) when the caller may not see the events it asked for. A poll answers with that error. A push stream answers its first check's error the same way, before the stream opens. After that, a `NotFound` (`-32023`), `Forbidden` (`-32024`) or `Unsupported` (`-32026`) error ends the subscription with `notifications/events/terminated`, which is how a server stops delivering once access is revoked. Any other error is reported to the client as a transient `notifications/events/error`, and the stream checks again on the next interval.
+
+## Subscription arguments
+
+`input_schema` is a JSON Schema for the arguments a client subscribes with, and `payload_schema` describes each event's `data`. FastMCP rejects a poll whose arguments do not match `input_schema` before your function runs, and passes valid ones as `poll.arguments`.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
+
+mcp = FastMCP("Alerts")
+events = EventsExtension()
+mcp.add_extension(events)
+
+ALERTS: list[dict[str, str]] = []
+SEVERITY_FILTER = {
+    "type": "object",
+    "properties": {"severity": {"type": "string", "enum": ["low", "high"]}},
+}
+
+
+@events.event(name="alert.fired", input_schema=SEVERITY_FILTER)
+def alert_fired(poll: EventPoll) -> EventBatch:
+    if poll.cursor is None:
+        return EventBatch(cursor=str(len(ALERTS)))
+    severity = poll.arguments.get("severity")
+    new_alerts = ALERTS[int(poll.cursor) :]
+    fired = [
+        Event(data=alert, event_id=alert["id"])
+        for alert in new_alerts
+        if severity is None or alert["severity"] == severity
+    ]
+    return EventBatch(events=fired, cursor=str(len(ALERTS)))
+```
+
+### Routing headers
+
+A property in `input_schema` may carry an `x-mcp-header` annotation, as tool parameters can. Over Streamable HTTP, clients then send that argument as an `Mcp-Param-{Name}` header on every poll and stream, so a load balancer or gateway can route or rate-limit by it without reading the body. FastMCP rejects a request whose header disagrees with its arguments with `HeaderMismatch` (`-32020`), and refuses to register an annotation the transport does not allow. The specification asks for that rejection, and for a mismatched `Mcp-Name` header, to be an HTTP `400`. The MCP Python SDK validates headers at the HTTP layer only for core methods, so FastMCP checks event requests in the handler and the error arrives as a JSON-RPC error on a `200` response. A FastMCP client that gets this error lists the event types again and retries once with the headers they now ask for. Header values are visible to intermediaries, so do not annotate arguments that may hold sensitive data.
+
+```python
+REGION_FILTER = {
+    "type": "object",
+    "properties": {"region": {"type": "string", "x-mcp-header": "Region"}},
+}
+```
+
+## Pacing and backlogs
+
+Every poll result tells the client how long to wait before the next one. The default is 30 seconds; set `EventsExtension(poll_interval_ms=...)` to change it for every event type, or `EventBatch(next_poll_ms=...)` to change it for one response.
+
+A client may cap a poll with `poll.max_events`. When more events remain than you return, set `has_more=True` and return the cursor after the last event you included, and the client polls again without waiting. When you had to start later than the cursor asked for, because it fell out of your retention window or `poll.max_age_ms` excluded older events, set `truncated=True` so the client knows it missed events.
+
+## Push delivery and hosting
+
+FastMCP serves push from the same check function: while a client holds an `events/stream` request open, the server runs the function on the poll interval and writes each event to the stream, with a heartbeat when nothing else has been sent. You write nothing extra, and every event type lists both `poll` and `push`.
+
+Push needs a server that can keep a response stream open. Stateless and serverless hosts that buffer responses or end them after a time limit cannot carry it, and neither can a host that runs no work between requests. An HTTP app created with `json_response=True` cannot either: FastMCP refuses the stream there and the client falls back to polling. On hosts like those, turn push off so clients are told to poll from the start:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.experimental.events import EventsExtension
+
+mcp = FastMCP("Alerts")
+mcp.add_extension(EventsExtension(push=False))
+```
+
+Poll works everywhere, because each poll is an ordinary request.
+
+The extension serves the event types of the server it is added to. A server mounted into another does not expose its event types through the parent, and a proxy does not forward them, so add the extension to the server that clients connect to.
+
+## Subscribing from a client
+
+A client opts into the extension with `EventsClientExtension`. The event calls are functions that take the client, not methods on it. `list_events()` returns the event types the server offers, and `subscribe_events()` subscribes to one of them. It uses push when the event type offers it and polls otherwise, and either way it skips events it has already yielded. Pass `delivery="poll"` or `delivery="push"` to choose.
+
+```python
+import asyncio
+
+from fastmcp import Client
+from fastmcp.experimental.events import (
+    EventsClientExtension,
+    list_events,
+    subscribe_events,
+)
+
+
+async def main() -> None:
+    extensions = [EventsClientExtension()]
+    async with Client("https://example.com/mcp", extensions=extensions) as client:
+        for event_type in await list_events(client):
+            print(event_type.name, event_type.description)
+
+        subscription = subscribe_events(client, "alert.fired", {"severity": "high"})
+        async for event in subscription:
+            print(event.event_id, event.data)
+
+
+asyncio.run(main())
+```
+
+The subscription lasts as long as the `async for` does. Its `cursor` attribute is the position to resume from, which moves once a whole batch of events has been yielded: store it, and pass it back as `subscribe_events(client, ..., cursor=...)` to resume after a restart without missing events. `poll_events_mcp()` sends a single `events/poll` request when you want to run the loop yourself.
+
+A push stream that is cut off, for example when a load balancer closes the connection or another replica takes over, is reopened from the subscription's cursor after a short random wait, and so is a stream that sends nothing for three heartbeat intervals. Events the new stream repeats are dropped by their `eventId`. The client tries up to four times in a row, waiting a random half to all of 1, 2, 4 and then 8 seconds, and a stream that delivered new events or stayed healthy for ten seconds resets the count; after that the `async for` raises the `MCPError` (`-32000`). The reopened stream uses the same client session, so this covers a stream that drops while the server stays reachable. A stdio server that exits ends the subscription at once. If an HTTP server cannot be reached, or it no longer knows the session after a restart, the error ends the subscription as it would end any other request, and you resubscribe from `cursor` with a new client.
+
+A push subscription can also end with an error that is not retried. When the server terminates it because a check reported `NotFound`, `Forbidden` or `Unsupported`, the `async for` raises that `MCPError`; rediscover the event type with `list_events()` before subscribing again. Any other error response, including one to a reopened stream, is raised as it is, except that a stream refused as `Unsupported` falls back to polling when you did not ask for push. When your loop falls so far behind that the client's buffer of pushed events overflows, it raises `EventBacklogFullError`. Events were lost, but `cursor` still points before them, so subscribing again from it repeats events rather than skipping them. Retrying with push does not get past a single batch larger than the buffer, because the cursor only advances when a batch completes, so a consumer that cannot keep up with a large backlog should use `delivery="poll"` with `max_events`.
+
+To try a server from the terminal, `fastmcp experimental events watch` does the same thing and prints each event; see [the CLI](/cli/client#watching-events).
+
+What happens when an event arrives is up to your application. The extension delivers events to the client; it does not decide whether an event starts an agent turn.

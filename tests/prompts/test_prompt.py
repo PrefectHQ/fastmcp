@@ -1,15 +1,17 @@
+from functools import partial
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import pytest
 from mcp import MCPError
 from mcp_types import (
+    INTERNAL_ERROR,
     INVALID_PARAMS,
     EmbeddedResource,
     ResourceLink,
     TextResourceContents,
 )
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ValidationError
@@ -317,18 +319,15 @@ class TestPromptTypeConversion:
 
     async def test_type_conversion_error_handling(self):
         """Test that informative errors are raised for invalid type conversions."""
-        from fastmcp.exceptions import PromptError
 
         def typed_prompt(numbers: list[int]) -> str:
             return f"Got {len(numbers)} numbers"
 
         prompt = Prompt.from_function(typed_prompt)
 
-        # Test with invalid JSON - should raise PromptError with type conversion details
-        with pytest.raises(PromptError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             await prompt.render(arguments={"numbers": "not valid json"})
 
-        # PromptError passes through unchanged
         assert "Could not convert argument 'numbers'" in str(exc_info.value)
         assert "list[int]" in str(exc_info.value)
 
@@ -549,6 +548,53 @@ class TestPromptArgumentDescriptions:
                     "Provide a value matching the following JSON schema:"
                     not in arg.description
                 )
+
+    def test_string_parameters_no_enhancement_with_postponed_annotations(self):
+        """String annotations, as `from __future__ import annotations` leaves them."""
+
+        def greet(name: "str", count: "int") -> str:
+            return name * count
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        arguments = {arg.name: arg for arg in prompt.arguments}
+        assert arguments["name"].description is None
+        assert arguments["count"].description == (
+            'Provide a value matching the following JSON schema: {"type":"integer"}. '
+            "Encode non-string values as JSON."
+        )
+
+    def test_callable_postponed_string_parameters_no_enhancement(self):
+        class Greeter:
+            def __call__(self, name: "str", count: "int") -> str:
+                return name * count
+
+        prompt = Prompt.from_function(Greeter())
+
+        assert prompt.arguments is not None
+        arguments = {arg.name: arg for arg in prompt.arguments}
+        assert arguments["name"].description is None
+        assert arguments["count"].description == (
+            'Provide a value matching the following JSON schema: {"type":"integer"}. '
+            "Encode non-string values as JSON."
+        )
+
+    def test_partial_postponed_string_parameters_no_enhancement(self):
+        def greet(name: "str", count: "int") -> str:
+            return name * count
+
+        prompt = Prompt.from_function(partial(greet, count=2))
+
+        assert prompt.arguments is not None
+        arguments = {arg.name: arg for arg in prompt.arguments}
+        assert arguments["name"].description is None
+        assert arguments["count"].description == (
+            'Provide a value matching the following JSON schema: {"type":"integer"}. '
+            "Encode non-string values as JSON."
+        )
+        assert arguments["name"].required is True
+        assert arguments["count"].required is False
 
     def test_docstring_populates_argument_descriptions(self):
         """Google-style docstrings should populate PromptArgument descriptions."""
@@ -916,6 +962,62 @@ class TestMissingRequiredArguments:
 
         assert exc_info.value.error.code == INVALID_PARAMS
         assert exc_info.value.error.message == "Missing required arguments: {'topic'}"
+
+
+class TestUnconvertibleArguments:
+    """An argument that can't be converted to its type is a client error."""
+
+    @pytest.mark.parametrize("mask_error_details", [False, True])
+    @pytest.mark.parametrize(
+        "arguments",
+        [{"count": "zz", "mode": "a"}, {"count": "1", "mode": "zzz"}],
+    )
+    async def test_get_prompt_unconvertible_argument_is_invalid_params(
+        self, mask_error_details: bool, arguments: dict[str, str]
+    ):
+        mcp = FastMCP(mask_error_details=mask_error_details)
+
+        @mcp.prompt
+        def summarize(count: int, mode: Literal["a", "b"]) -> str:
+            return f"{count} {mode}"
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("summarize", arguments)
+
+        assert exc_info.value.error.code == INVALID_PARAMS
+        assert exc_info.value.error.message.startswith("Could not convert argument")
+
+    @pytest.mark.parametrize("value", ["1", "hello"])
+    async def test_get_prompt_validator_type_error_remains_internal(self, value: str):
+        def broken(value: str) -> int:
+            raise TypeError("validator bug")
+
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def summarize(count: Annotated[int, BeforeValidator(broken)]) -> str:
+            return str(count)
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError) as exc_info:
+                await client.get_prompt("summarize", {"count": value})
+
+        assert exc_info.value.error.code == INTERNAL_ERROR
+
+    async def test_get_prompt_validator_expecting_json_input_still_converts(self):
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def summarize(
+            amount: Annotated[float, BeforeValidator(lambda v: round(v, 2))],
+        ) -> str:
+            return str(amount)
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("summarize", {"amount": "1.2345"})
+
+        assert result.messages[0].content.text == "1.23"
 
 
 class TestPromptFieldDefaults:
