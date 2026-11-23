@@ -15,7 +15,7 @@ from flows.agentic_triage_review import apply_disposition, requires_review
     [
         ("maintainer", "decisions"),
         ("skip", "unchanged"),
-        ("repair_evidence", "evidence"),
+        ("repair_evidence", "decisions"),
     ],
 )
 def test_disposition_routes_automatic_triage_to_its_action_queue(decision, destination):
@@ -34,8 +34,47 @@ def test_disposition_routes_automatic_triage_to_its_action_queue(decision, desti
     )
     assert category == destination
     assert result["triage_review_run_id"] == "review-run"
-    if decision == "repair_evidence":
-        assert result["decision"] == "evidence_needed"
+    assert result["decision"] == "reproduced"
+
+
+def test_repairing_triage_evidence_never_asks_the_reporter_for_a_reproducer():
+    # #6692: the reviewer reproduced the bug itself and found the assessor had
+    # mixed up the reporter and a commenter. repair_evidence meant "our record is
+    # wrong", but it was posted as a public "couldn't reproduce" with needs MRE.
+    from flows.agentic_labels import planned_writes
+
+    review = {
+        "decision": "repair_evidence",
+        "reason": "Both reported behaviors reproduced at the pinned base",
+        "next_action": "Identify the reporter and the assignment requester separately",
+        "findings": ["The record conflates the reporter and a commenter"],
+        "recommendations": [],
+    }
+    outcome = {"issue_number": 6692, "decision": "maintainer", "question": "Assign?"}
+    category, result = apply_disposition(
+        "decisions", outcome, review, "review-run", {"route": "triage"}
+    )
+    assert category == "decisions"
+    assert result["decision"] == "maintainer"
+    assert result["question"].endswith(review["next_action"])
+    open_issue = {
+        "number": 6692,
+        "state": "open",
+        "user": {"type": "User"},
+        "labels": [],
+    }
+    writes = planned_writes({"bins": {category: [result]}}, lambda _: open_issue)
+    assert all(write.get("label") != "needs MRE" for write in writes)
+
+    # An assessment that itself asked the reporter for evidence still does.
+    category, result = apply_disposition(
+        "evidence",
+        {"issue_number": 7, "decision": "evidence_needed"},
+        review,
+        "review-run",
+        {"route": "triage"},
+    )
+    assert (category, result["decision"]) == ("evidence", "evidence_needed")
 
 
 def test_prepare_disposition_carries_scope_controls_to_preparation():
