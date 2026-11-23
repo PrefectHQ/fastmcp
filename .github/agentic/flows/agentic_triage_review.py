@@ -26,25 +26,34 @@ def apply_disposition(
             + review["next_action"],
         }
     # Intake routes an issue to review_existing when a PR claims to fix it, even
-    # when native triage then files it under decisions; either is evidence.
-    if (
+    # when native triage then files it under decisions; either is evidence. A
+    # reviewer who finds a contribution intake didn't (a PR that only mentions
+    # the issue, say) hands it to a maintainer rather than failing the item.
+    unadmitted_review = (
         decision == "review_existing"
         and destination != "existing_review"
         and route.get("route") != "review_existing"
-    ):
-        raise ValueError(
-            "A contribution recommendation requires existing contribution evidence"
-        )
-    if decision == "propose_closure" and (
+    )
+    unsupported_closure = decision == "propose_closure" and (
         destination not in {"pruning", "existing_review", "decisions"}
         or not any(
             item["action"] in {"close_duplicate", "close_completed", "close_settled"}
             for item in review.get("recommendations", [])
         )
-    ):
-        raise ValueError(
-            "Closure disposition requires a concrete retained closure candidate"
+    )
+    if unadmitted_review or unsupported_closure:
+        ask = (
+            "Reviewer points to a contribution triage didn't admit"
+            if unadmitted_review
+            else "Reviewer proposes closure without a retained closure candidate"
         )
+        return "decisions", {
+            **outcome,
+            "adversarial_review": review,
+            "triage_review_run_id": run_id,
+            "next_step": review["next_action"],
+            "question": f"{ask}: " + review["next_action"],
+        }
     destinations = {
         "prepare_fix": "evidence",
         "review_existing": "existing_review",

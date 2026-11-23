@@ -65,14 +65,28 @@ def test_prepare_disposition_carries_scope_controls_to_preparation():
     assert result["question"].startswith(
         "Reviewer recommends a fix, but reproduction was not_reproduced: "
     )
-    with pytest.raises(ValueError, match="existing contribution"):
-        apply_disposition(
-            "evidence",
-            {},
-            {**review, "decision": "review_existing"},
-            "review-run",
-            {"route": "triage"},
-        )
+    # A contribution intake didn't admit (a PR that only mentions the issue)
+    # goes to a maintainer instead of failing the item.
+    category, result = apply_disposition(
+        "evidence",
+        {},
+        {**review, "decision": "review_existing"},
+        "review-run",
+        {"route": "triage"},
+    )
+    assert category == "decisions"
+    assert result["question"].startswith(
+        "Reviewer points to a contribution triage didn't admit: "
+    )
+    category, result = apply_disposition(
+        "evidence",
+        {},
+        {**review, "decision": "propose_closure", "recommendations": []},
+        "review-run",
+        {"route": "triage"},
+    )
+    assert category == "decisions"
+    assert result["question"].startswith("Reviewer proposes closure without")
 
 
 def test_review_existing_accepts_contributions_found_at_intake():
@@ -278,3 +292,25 @@ def test_triage_plan_follows_the_tier():
         for n in default["nodes"].values()
         if n["kind"] == "AgentNode"
     )
+
+
+def test_repeated_norm_check_keeps_the_first_evidence():
+    from flows.agentic_mutation_models import MutationRecommendation
+
+    evidence = {
+        "check": "prior_discussion",
+        "summary": "Maintainer asked for a fix",
+        "evidence_urls": ["https://github.com/PrefectHQ/fastmcp/issues/1"],
+    }
+    recommendation = MutationRecommendation.model_validate(
+        {
+            "action": "review_pr",
+            "target_number": 1,
+            "reason": "Linked fix",
+            "next_step": "Review it",
+            "norm_evidence": [evidence, {**evidence, "summary": "Again"}],
+        }
+    )
+    assert [item.summary for item in recommendation.norm_evidence] == [
+        "Maintainer asked for a fix"
+    ]
