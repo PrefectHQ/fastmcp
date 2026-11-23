@@ -452,7 +452,9 @@ def triage_intake(
     deadline = datetime.now(UTC) + timedelta(hours=2)
     with tempfile.TemporaryDirectory(prefix="fastmcp-intake-") as temporary:
         intake_tools(Path(temporary))
-        if config.sender and maintainer(config.sender):
+        # A maintainer's own PR needs no triage, but an issue they file (often
+        # through an agent) still gets assessed and labeled like anyone's.
+        if config.sender and config.pull_requests and maintainer(config.sender):
             return Completed(
                 data={"skipped": "maintainer_sender", "sender": config.sender},
                 message=f"Skipped: {config.sender} is a maintainer",
