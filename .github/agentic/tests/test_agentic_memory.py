@@ -247,7 +247,6 @@ def test_committed_plans_match_the_generator():
 def test_native_triage_plan_gives_the_assess_agent_memory_tools():
     import json
     from pathlib import Path
-    from uuid import uuid4
 
     from flows.agentic_triage_plan import build_triage_plan
 
@@ -256,7 +255,7 @@ def test_native_triage_plan_gives_the_assess_agent_memory_tools():
             Path(__file__).resolve().parents[1] / "workflows/stack-models.json"
         ).read_text()
     )
-    plan = build_triage_plan(models, uuid4(), uuid4())
+    plan = build_triage_plan(models)
     assess = plan["nodes"]["assess"]
     server = assess["mcp"]["mcpServers"]["triage_memory"]
     assert server["url"] == models["memory_server"]["url"]
@@ -266,4 +265,4 @@ def test_native_triage_plan_gives_the_assess_agent_memory_tools():
     assert all("mcp" not in node for node in others)
 
     models.pop("memory_server")
-    assert "mcp" not in build_triage_plan(models, uuid4(), uuid4())["nodes"]["assess"]
+    assert "mcp" not in build_triage_plan(models)["nodes"]["assess"]
