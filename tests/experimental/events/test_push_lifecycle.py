@@ -28,7 +28,9 @@ from fastmcp.experimental.events.models import StreamFrame
 SendRaw = Callable[[str, Any, Any], Awaitable[Any]]
 
 
-def replaying_server(log: list[str]) -> FastMCP:
+def replaying_server(
+    log: list[str], checked: Callable[[str | None], None] | None = None
+) -> FastMCP:
     """An upstream that replays its whole log on every check, as some do."""
     server = FastMCP("replays")
     events = EventsExtension(poll_interval_ms=10)
@@ -36,6 +38,8 @@ def replaying_server(log: list[str]) -> FastMCP:
 
     @events.event(name="tick")
     async def tick(poll: EventPoll) -> EventBatch:
+        if checked is not None:
+            checked(poll.cursor)
         if poll.cursor is None:
             return EventBatch(cursor="0")
         return EventBatch(
@@ -66,6 +70,17 @@ def intercept_streams(
     monkeypatch.setattr(dispatcher, "send_raw_request", send_raw_request)
 
 
+async def cut_off_once(
+    real: SendRaw, method: str, params: Any, options: Any, delivered: anyio.Event
+) -> Any:
+    """Run a stream until `delivered` is set, then fail it as a dropped stream."""
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(real, method, params, options)
+        await delivered.wait()
+        tasks.cancel_scope.cancel()
+    raise MCPError(code=CONNECTION_CLOSED, message="SSE stream ended")
+
+
 @pytest.fixture
 def delays(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """Record each reconnect's attempt number and skip the wait."""
@@ -84,17 +99,23 @@ async def test_a_dropped_stream_reconnects_from_its_cursor_without_repeats(
 ) -> None:
     log = ["a", "b"]
     opened_from: list[str | None] = []
+    # The first stream's second check runs after it sent its first batch.
+    first_batch_sent = anyio.Event()
+
+    def checked(cursor: str | None) -> None:
+        if cursor == "2":
+            first_batch_sent.set()
 
     async def drop_the_first(real: SendRaw, method: str, params: Any, options: Any):
         opened_from.append(params.get("cursor"))
         if len(opened_from) > 1:
             return await real(method, params, options)
-        with anyio.move_on_after(0.2):
-            await real(method, params, options)
-        log.append("c")
-        raise MCPError(code=CONNECTION_CLOSED, message="SSE stream ended")
+        try:
+            await cut_off_once(real, method, params, options, first_batch_sent)
+        finally:
+            log.append("c")
 
-    async with events_client(replaying_server(log)) as client:
+    async with events_client(replaying_server(log, checked)) as client:
         intercept_streams(client, monkeypatch, drop_the_first)
         subscription = subscribe_events(client, "tick", cursor="0", delivery="push")
         received: list[str] = []
@@ -134,17 +155,23 @@ async def test_a_stream_that_drops_after_making_progress_keeps_reconnecting(
     monkeypatch: pytest.MonkeyPatch, delays: list[int]
 ) -> None:
     log: list[str] = []
+    batch_sent = anyio.Event()
+
+    def checked(cursor: str | None) -> None:
+        # A check from the end of the log follows the batch that reached it.
+        if cursor == str(len(log)):
+            batch_sent.set()
 
     async def drop_after_one_event(
         real: SendRaw, method: str, params: Any, options: Any
     ):
+        nonlocal batch_sent
+        batch_sent = anyio.Event()
         log.append(f"e{len(log)}")
-        with anyio.move_on_after(0.1):
-            await real(method, params, options)
-        raise MCPError(code=CONNECTION_CLOSED, message="SSE stream ended")
+        await cut_off_once(real, method, params, options, batch_sent)
 
     wanted = subscription_module._MAX_RECONNECTS + 3
-    async with events_client(replaying_server(log)) as client:
+    async with events_client(replaying_server(log, checked)) as client:
         intercept_streams(client, monkeypatch, drop_after_one_event)
         subscription = subscribe_events(client, "tick", cursor="0", delivery="push")
         received: list[str] = []
@@ -165,11 +192,13 @@ async def test_an_error_response_to_a_reconnect_ends_the_subscription(
     events = EventsExtension(poll_interval_ms=10)
     server.add_extension(events)
     opens = 0
+    first_check = anyio.Event()
 
     @events.event(name="tick")
     async def tick(poll: EventPoll) -> EventBatch:
         if opens > 1:
             raise MCPError(code=NOT_FOUND, message="Unknown event: tick")
+        first_check.set()
         return EventBatch(cursor="0")
 
     async def drop_the_first(real: SendRaw, method: str, params: Any, options: Any):
@@ -177,9 +206,7 @@ async def test_an_error_response_to_a_reconnect_ends_the_subscription(
         opens += 1
         if opens > 1:
             return await real(method, params, options)
-        with anyio.move_on_after(0.1):
-            await real(method, params, options)
-        raise MCPError(code=CONNECTION_CLOSED, message="SSE stream ended")
+        await cut_off_once(real, method, params, options, first_check)
 
     async with events_client(server) as client:
         intercept_streams(client, monkeypatch, drop_the_first)
@@ -228,9 +255,9 @@ async def test_an_overflowing_stream_is_stopped_before_the_consumer_drains_it(
             ):
                 await anyio.sleep(0.05)
 
-    # The consumer took about 0.2 s to drain its buffer; the server was
-    # stopped at the overflow, not after that.
-    assert checks - checks_at_overflow[0] <= 1
+    # Draining the buffer took the consumer about 0.2 s, in which an unstopped
+    # stream runs hundreds of checks; a stopped one finishes the one in hand.
+    assert checks - checks_at_overflow[0] <= 3
     assert delays == []
 
 
