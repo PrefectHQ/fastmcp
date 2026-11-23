@@ -36,7 +36,6 @@ from flows.agentic_labels import (
     CONFIG_VARIABLE,
     apply_writes,
     mode,
-    planned_writes,
     summary,
     triage_labels,
 )
@@ -537,7 +536,7 @@ def announce(owner: UUID, state: dict) -> None:
 
 
 def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None:
-    """Label reviewed outcomes so the repository's closers act on them.
+    """Label assessed issues with their area and the maintainer queue.
 
     A failure here is reported on the run but never fails the intake: the
     outcome is already retained and announced.
@@ -548,8 +547,7 @@ def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None
         current_mode = mode(Variable.get(CONFIG_VARIABLE, default={}))
         if current_mode == "off":
             return
-        writes = planned_writes(state["review"], live_item)
-        writes += triage_labels(state["review"], live_item)
+        writes = triage_labels(state["review"], live_item)
         if writes and current_mode == "on":
             app = runtime.reviewer_app
             if app is None:
