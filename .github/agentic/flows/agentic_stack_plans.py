@@ -261,11 +261,16 @@ Return one decision:
 - existing_review: contributions exist. Put at most three unmerged PRs from
   context.route.pull_requests in verification_prs, the reporter's first, and say why.
   Closed gate-rejected PRs are still contributions.
-- evidence_needed: one precise request that would let someone reproduce it.
+- evidence_needed: one precise request that would let someone reproduce it. Only when the
+  report is missing something the reporter has; never for a report whose steps need a
+  service, account or deployment triage can't reach.
 - prune: the problem may be real but isn't worth carrying; say what it would cost.
 - maintainer: a concrete product decision that docs and history don't settle, stated in
   question. Also use it when a contributor says a fix is ready and waiting for assignment,
-  naming them, so nobody starts a competing fix.
+  naming them, so nobody starts a competing fix. Also use it for a report about hosted
+  Horizon behavior (a *.fastmcp.app server, auth.horizon.prefect.io) or another service
+  outside this repository: say what the report shows and who has to look. The reporter
+  can't give a local script for a service they don't run.
 - skip or environment_failure, with the reason.
 
 Set area to the one label that names the part of FastMCP the issue is about: auth, cli,
@@ -281,8 +286,11 @@ after observing the reported failure on unchanged source for the stated supporte
 Supply an uncommitted regression-only git diff including new tests (git add --intent-to-add),
 the exact command, observed output and paths. For configuration/docs, execute the supported
 setup and include its complete probe in observed; an empty regression_patch is then allowed.
-Do not fix source yet. Installation/import/tool failures are environment_failure. If not
-reproduced, make at most one focused version/config/history check before returning evidence.
+Do not fix source yet. Installation/import/tool failures are environment_failure. If the
+report depends on a service, account or deployment you can't reach (hosted Horizon, a
+third-party identity provider or client), return maintainer and say what it would take;
+that is not missing evidence. If not reproduced, make at most one focused
+version/config/history check before returning evidence.
 Bound each probe subprocess to 30 seconds. An MRE may be the final useful result.""",
     "digest": """You write the fastmcp triage workflow's Slack messages to its one maintainer.
 He reads them on his phone between other work. A message he can't act on is noise, and
