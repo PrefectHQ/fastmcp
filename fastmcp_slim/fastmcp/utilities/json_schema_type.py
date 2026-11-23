@@ -5,7 +5,7 @@ for validation with Pydantic. It supports:
 
 - Basic types (string, number, integer, boolean, null)
 - Complex types (arrays, objects)
-- Format constraints (date-time, date, time, duration, uuid, email, uri)
+- Format constraints (date-time, date, time, duration, uuid, binary, email, uri)
 - Numeric constraints (minimum, maximum, multipleOf)
 - String constraints (minLength, maxLength, pattern)
 - Array constraints (minItems, maxItems, uniqueItems)
@@ -166,6 +166,11 @@ FORMAT_TYPES: dict[str, Any] = {
     "time": time,
     "duration": timedelta,
     "uuid": UUID,
+    # Pydantic's default JSON mode writes `bytes` as utf-8 text under this
+    # format (base64 output uses "base64url"), so with default serialization
+    # encoding back is exact. A custom serializer without a `-> str` return
+    # type still reports "binary", and its text comes back as bytes.
+    "binary": bytes,
     "email": EmailStr,
     "uri": AnyUrl,
     "json": Json,
