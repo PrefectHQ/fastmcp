@@ -250,6 +250,27 @@ class TestCustomVerifier:
 
         assert provider.token_verifier is custom
 
+    def test_explicit_required_scopes_apply_with_custom_verifier(self):
+        custom = JWTVerifier(
+            jwks_uri="https://elsewhere.example.com/keys",
+            issuer=ISSUER,
+        )
+
+        provider = make_provider(token_verifier=custom, required_scopes=["tools/read"])
+
+        assert provider.required_scopes == ["tools/read"]
+
+    def test_custom_verifier_scopes_are_inherited_when_omitted(self):
+        custom = JWTVerifier(
+            jwks_uri="https://elsewhere.example.com/keys",
+            issuer=ISSUER,
+            required_scopes=["admin"],
+        )
+
+        provider = make_provider(token_verifier=custom)
+
+        assert provider.required_scopes == ["admin"]
+
     def test_custom_verifier_audience_is_never_rewritten(self):
         custom = JWTVerifier(
             jwks_uri="https://elsewhere.example.com/keys",

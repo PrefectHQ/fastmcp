@@ -178,6 +178,9 @@ class AuthplaneAuthProvider(RemoteAuthProvider):
             token_verifier=token_verifier,
             authorization_servers=[AnyHttpUrl(self.issuer)],
             base_url=AnyHttpUrl(str(base_url).rstrip("/")),
+            required_scopes=(
+                parsed_required_scopes if required_scopes is not None else None
+            ),
             scopes_supported=parsed_scopes_supported,
             resource_base_url=resource_base_url,
             resource_name=resource_name,
