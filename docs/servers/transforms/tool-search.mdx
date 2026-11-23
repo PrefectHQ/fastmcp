@@ -219,7 +219,7 @@ A custom serializer is any function, sync or async, that takes the sequence of m
 
 The `call_tool` proxy forwards calls to the real tool. When a client calls `call_tool(name="search_database", arguments={...})`, the proxy resolves `search_database` through the server's normal tool pipeline — including transforms and middleware — and executes it.
 
-The proxy rejects attempts to call the synthetic tools themselves. `call_tool(name="call_tool")` raises an error rather than recursing. It also refuses any name outside the catalog the client is allowed to see, such as an app-only or disabled tool, with an "Unknown tool" error, and it rejects pinned tools, so the proxy reaches exactly the tools search can return.
+The proxy rejects attempts to call the synthetic tools themselves. `call_tool(name="call_tool")` raises an error rather than recursing. It also refuses any name outside the catalog the client is allowed to see, such as an app-only or disabled tool, with an "Unknown tool" error. It also rejects any tool `list_tools` already shows under its own name, such as a pinned tool or one added by `ToolInjectionMiddleware`, so the proxy reaches only tools the search transform hides.
 
 The proxy's [annotations](/servers/tools#mcp-annotations) summarize those tools, taking the least permissive value of each hint. If every searchable tool is marked `readOnlyHint: true`, so is the proxy, and a host that auto-approves read-only tools can approve it too. One unannotated tool is enough to make the proxy a destructive write, because unset hints take the MCP defaults.
 
@@ -249,7 +249,7 @@ def delete_record(record_id: str) -> bool:
 mcp.add_transform(BM25SearchTransform(always_visible=["delete_record"]))
 ```
 
-The proxy's annotations and its pinned-tool check are computed from the tools the search transform sees. Add the search transform after any transform that renames or adds tools, such as `Namespace`, `ToolTransform`, or `PromptsAsTools`; a transform added later changes names and tools the proxy can't account for.
+The proxy's annotations are computed from the tools the search transform sees. Add the search transform after any transform that renames or adds tools, such as `Namespace`, `ToolTransform`, or `PromptsAsTools`; a transform added later changes names and tools the proxy can't account for.
 
 Those tools include ones that are disabled or restricted by auth, so a disabled write tool still makes the proxy a write. The hints can be stricter than what a caller can reach, never looser. To keep a disabled tool out of the proxy's hints, pin it with `always_visible`; a disabled tool is still left out of the listing.
 

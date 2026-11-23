@@ -413,9 +413,13 @@ class BaseSearchTransform(CatalogTransform):
                 tool.name == name for tool in await transform.get_tool_catalog(ctx)
             ):
                 raise NotFoundError(f"Unknown tool: {name!r}")
-            # Pinned tools are listed on their own, where a host can gate
-            # each one; the proxy's annotations don't account for them.
-            if name in transform._always_visible:
+            # A tool the server lists under its own name (pinned, or added
+            # outside this transform, like an injected tool) is one a host
+            # can gate by itself, and the proxy's annotations don't account
+            # for it. The proxy reaches only the tools this transform hides.
+            if name in transform._always_visible or any(
+                tool.name == name for tool in await ctx.fastmcp.list_tools()
+            ):
                 raise ValueError(
                     f"'{name}' is listed directly; call it directly rather than "
                     f"through {transform._call_tool_name}"

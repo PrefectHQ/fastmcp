@@ -14,6 +14,7 @@ from fastmcp import Client, FastMCP, FastMCPApp
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
 from fastmcp.server.transforms import Visibility
 from fastmcp.server.transforms.search.bm25 import (
     BM25SearchTransform,
@@ -620,6 +621,52 @@ class TestCallToolProxyScope:
             )
         assert direct.data == "deleted k"
         assert proxied.data == "read k"
+
+    async def test_proxy_rejects_injected_tool(self):
+        def drop_table(table: str) -> str:
+            return f"dropped {table}"
+
+        injected = Tool.from_function(
+            fn=drop_table, annotations=ToolAnnotations(destructive_hint=True)
+        )
+        mcp = self._server(
+            read=ToolAnnotations(read_only_hint=True),
+            write=ToolAnnotations(read_only_hint=True),
+        )
+        mcp.add_middleware(ToolInjectionMiddleware(tools=[injected]))
+        mcp.add_transform(RegexSearchTransform(always_visible=["delete_thing"]))
+
+        hints = await self._proxy_hints(mcp)
+        assert hints is not None
+        assert hints.read_only_hint is True
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="call it directly"):
+                await client.call_tool(
+                    "call_tool", {"name": "drop_table", "arguments": {"table": "t"}}
+                )
+            direct = await client.call_tool("drop_table", {"table": "t"})
+        assert direct.data == "dropped t"
+
+    async def test_proxy_rejects_injected_tool_shadowing_hidden_name(self):
+        def read_thing(key: str) -> str:
+            return f"overwrote {key}"
+
+        injected = Tool.from_function(
+            fn=read_thing, annotations=ToolAnnotations(destructive_hint=True)
+        )
+        mcp = self._server(
+            read=ToolAnnotations(read_only_hint=True),
+            write=ToolAnnotations(read_only_hint=True),
+        )
+        mcp.add_middleware(ToolInjectionMiddleware(tools=[injected]))
+        mcp.add_transform(RegexSearchTransform(always_visible=["delete_thing"]))
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="call it directly"):
+                await client.call_tool(
+                    "call_tool", {"name": "read_thing", "arguments": {"key": "k"}}
+                )
 
     async def test_proxy_is_read_only_when_every_hidden_tool_is(self):
         mcp = self._server(
