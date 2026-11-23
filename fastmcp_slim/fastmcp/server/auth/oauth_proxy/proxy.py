@@ -358,6 +358,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         fastmcp_access_token_expiry_seconds: int | None = None,
         # Token refresh threshold
         token_expiry_threshold_seconds: int = 0,
+        # Dynamic client registration lifetime
+        client_registration_ttl_seconds: int | None = None,
         # CIMD (Client ID Metadata Document) support
         enable_cimd: bool = True,
         # Identity assertion (SEP-990 ID-JAG) support
@@ -435,6 +437,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 protections unless the deployment supplies an equivalent CSP header.
                 This allows organizations with their own CSP policies to override or disable
                 the built-in CSP directives.
+            client_registration_ttl_seconds: How long a dynamically registered client
+                is kept in `client_storage` without getting tokens. Each successful
+                token exchange or refresh renews it, so active clients keep their
+                registration while abandoned ones expire. Registration is
+                unauthenticated, so without a lifetime every registration stays in a
+                persistent store forever. Defaults to None (never expire).
             fallback_access_token_expiry_seconds: Expiry time to use when upstream provider
                 doesn't return `expires_in` in the token response. If not set, uses smart
                 defaults: 1 hour if a refresh token is available (since we can refresh),
@@ -564,6 +572,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Extra parameters for authorization and token endpoints
         self._extra_authorize_params: dict[str, str] = extra_authorize_params or {}
         self._extra_token_params: dict[str, str] = extra_token_params or {}
+
+        if client_registration_ttl_seconds is not None and (
+            client_registration_ttl_seconds <= 0
+        ):
+            raise ValueError("client_registration_ttl_seconds must be positive")
+        self._client_registration_ttl_seconds: int | None = (
+            client_registration_ttl_seconds
+        )
 
         # Token expiry fallback (None means use smart default based on refresh token)
         self._fallback_access_token_expiry_seconds: int | None = (
@@ -1145,6 +1161,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         await self._client_store.put(
             key=client_info.client_id,
             value=proxy_client,
+            ttl=self._client_registration_ttl_seconds,
         )
 
         # The SDK's RegistrationHandler serializes this same `client_info` object
@@ -1360,6 +1377,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         )
 
     @override
+    async def _renew_client_registration(
+        self, client: OAuthClientInformationFull
+    ) -> None:
+        """Restart a stored registration's lifetime after the client got tokens."""
+        if self._client_registration_ttl_seconds is None or client.client_id is None:
+            return
+        stored = await self._client_store.get(key=client.client_id)
+        if stored is None or stored.cimd_document is not None:
+            return
+        await self._client_store.put(
+            key=client.client_id,
+            value=stored,
+            ttl=self._client_registration_ttl_seconds,
+        )
+
     async def exchange_authorization_code(
         self,
         client: OAuthClientInformationFull,
@@ -1581,6 +1613,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             access_jti[:8],
             refresh_jti[:8] if refresh_jti else "none",
         )
+
+        await self._renew_client_registration(client)
 
         # Return FastMCP-issued tokens (NOT upstream tokens!)
         return OAuthToken(
@@ -2115,6 +2149,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             new_access_jti[:8],
             new_refresh_jti[:8],
         )
+
+        await self._renew_client_registration(client)
 
         # Return new FastMCP tokens (both access AND refresh are new)
         return OAuthToken(
