@@ -308,7 +308,8 @@ def put_snapshot(
 def put_day(pds: str, did: str, token: str, record: dict, moved: dict | None) -> None:
     """Rewrite today's history record, adding this run's stage movements.
 
-    Counts are replaced by the latest run's; movements accumulate over the day.
+    Counts are replaced by the newest snapshot's; movements accumulate over the
+    day.
     Compare-and-swap keeps two overlapping runs from losing each other's.
     """
     for _ in range(3):
@@ -317,7 +318,8 @@ def put_day(pds: str, did: str, token: str, record: dict, moved: dict | None) ->
             "com.atproto.repo.getRecord",
             {"repo": did, "collection": f"{NSID}.day", "rkey": record["day"]},
         )
-        old = (current or {}).get("value", {}).get("flow", {})
+        stored = (current or {}).get("value", {})
+        old = stored.get("flow", {})
         totals = {
             name: {
                 k: old.get(name, {}).get(k, 0) + (moved or {}).get(name, {}).get(k, 0)
@@ -329,7 +331,16 @@ def put_day(pds: str, did: str, token: str, record: dict, moved: dict | None) ->
             "repo": did,
             "collection": f"{NSID}.day",
             "rkey": record["day"],
-            "record": {**record, "flow": totals},
+            # an older run that finishes last keeps the newer counts and only
+            # adds its movements
+            "record": {
+                **(
+                    stored
+                    if stored.get("updatedAt", "") > record.get("updatedAt", "")
+                    else record
+                ),
+                "flow": totals,
+            },
             "validate": False,
             "swapRecord": current["cid"] if current else None,
         }

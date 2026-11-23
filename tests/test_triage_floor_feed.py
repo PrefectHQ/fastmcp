@@ -225,3 +225,23 @@ def test_new_commits_are_pushed_not_updated():
         "sender": {"login": "jane", "type": "User"},
     }
     assert feed.to_event("pull_request_target", payload, NOW)["kind"] == "pushed"
+
+
+def test_an_older_run_keeps_the_newer_counts(monkeypatch):
+    stored = {
+        "cid": "c1",
+        "value": {
+            "day": "2026-11-22",
+            "ready": 9,
+            "updatedAt": "2026-11-22T06:00:00.000Z",
+        },
+    }
+    bodies = []
+    monkeypatch.setattr(feed, "xrpc_get", lambda *a, **k: stored)
+    monkeypatch.setattr(
+        feed, "xrpc", lambda pds, method, body, token=None: bodies.append(body) or {}
+    )
+    older = {"day": "2026-11-22", "ready": 4, "updatedAt": "2026-11-22T05:00:00.000Z"}
+    feed.put_day("https://pds", "did:plc:x", "t", older, {"ready": {"in": 1, "out": 0}})
+    assert bodies[0]["record"]["ready"] == 9
+    assert bodies[0]["record"]["flow"]["ready"] == {"in": 1, "out": 0}

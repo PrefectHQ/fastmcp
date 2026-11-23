@@ -47,6 +47,14 @@ class Item:
         self.bot = is_bot(raw.get("user"))
         self.created = parse_time(raw["created_at"])
         self.closed = parse_time(raw["closed_at"]) if raw.get("closed_at") else None
+        # closed_at holds only the latest close; rebuild every close and reopen
+        self.closes = [
+            (parse_time(e["created_at"]), e["event"] == "reopened")
+            for e in sorted(events, key=lambda e: e["created_at"])
+            if e["event"] in ("closed", "reopened")
+        ]
+        if not self.closes and self.closed:
+            self.closes = [(self.closed, False)]
         merged = (raw.get("pull_request") or {}).get("merged_at")
         self.merged = parse_time(merged) if merged else None
         events = sorted(events, key=lambda e: e["created_at"])
@@ -76,7 +84,7 @@ class Item:
         ]
 
     def open_at(self, at: datetime) -> bool:
-        return self.created <= at and (self.closed is None or self.closed > at)
+        return self.created <= at and state(self.closes, True, at)
 
     def stage_at(self, at: datetime) -> str | None:
         if not self.open_at(at):
@@ -116,9 +124,13 @@ def load(days: int) -> list[Item]:
         )
         for i in gh(path, paginate=True, timeout=300)
     }
+    # draft flags for every PR, closed ones too: a PR opened as a draft and
+    # closed without becoming ready has no draft event to go by
     drafts = {
         p["number"]
-        for p in gh(f"repos/{REPO}/pulls?state=open&per_page=100", paginate=True)
+        for p in gh(
+            f"repos/{REPO}/pulls?state=all&per_page=100", paginate=True, timeout=600
+        )
         if p.get("draft")
     }
     events: dict[int, list[dict]] = {}
@@ -127,10 +139,7 @@ def load(days: int) -> list[Item]:
         number = (e.get("issue") or {}).get("number")
         if number in raw:
             events.setdefault(number, []).append(e)
-    return [
-        Item(r, events.get(n, []), n in drafts and not r.get("closed_at"))
-        for n, r in raw.items()
-    ]
+    return [Item(r, events.get(n, []), n in drafts) for n, r in raw.items()]
 
 
 def records(items: list[Item], days: int, now: datetime) -> list[dict]:
