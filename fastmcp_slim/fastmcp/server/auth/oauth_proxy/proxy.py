@@ -1742,6 +1742,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             access_jti[:8],
         )
 
+        await self._renew_client_registration(client)
+
         # SEP-990: no refresh token — the IdP controls session lifetime.
         return OAuthToken(
             access_token=access_token,
