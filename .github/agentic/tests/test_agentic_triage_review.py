@@ -294,6 +294,32 @@ def test_triage_plan_follows_the_tier():
     )
 
 
+def test_triage_plan_gives_the_assessor_memory_tools():
+    models = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "workflows/stack-models.json"
+        ).read_text()
+    )
+    models["memory_server"] = {
+        "url": "https://memory.example/mcp",
+        "header_block_id": "b1",
+    }
+    plan = build_triage_plan(models, uuid4(), uuid4())
+    assess = plan["nodes"]["assess"]
+    server = assess["mcp"]["mcpServers"]["triage_memory"]
+    assert server["url"] == "https://memory.example/mcp"
+    assert server["headers"]["Authorization"] == {"$ref": {"block_document_id": "b1"}}
+    assert server["tools"] == ["search", "read"]
+    assert "triage_memory search" in assess["objective"]
+    assert "mcp" not in plan["nodes"]["reproduce"]
+    haiku = build_triage_plan(tier_models(models, "haiku"), uuid4(), uuid4())
+    assert haiku["nodes"]["assess"]["mcp"] == assess["mcp"]
+
+    models.pop("memory_server")
+    plain = build_triage_plan(models, uuid4(), uuid4())["nodes"]["assess"]
+    assert "mcp" not in plain and "triage_memory" not in plain["objective"]
+
+
 def test_repeated_norm_check_keeps_the_first_evidence():
     from flows.agentic_mutation_models import MutationRecommendation
 
