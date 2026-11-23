@@ -443,8 +443,13 @@ class _SchemaCacheLocalProvider(LocalProvider):
         if not isinstance(transform, Visibility):
             self._schema_cache.clear()
 
-    def add_tool(self, tool: Tool | Callable[..., Any]) -> Tool:
-        added = super().add_tool(tool)
+    def add_tool(
+        self,
+        tool: Tool | Callable[..., Any],
+        *,
+        default_task: bool | TaskConfig | None = None,
+    ) -> Tool:
+        added = super().add_tool(tool, default_task=default_task)
         # Seed from the version dispatch serves, not necessarily the one just
         # added: registering an older version after a newer one must not
         # replace the newer version's schema in the cache.
@@ -652,8 +657,8 @@ class FastMCP(
 
         if tools:
             for tool in tools:
-                if not isinstance(tool, Tool):
-                    tool = Tool.from_function(tool)
+                # add_tool() applies the server-wide tasks default to tools
+                # without an explicit task setting.
                 self.add_tool(tool)
 
         self.strict_input_validation: bool = (
@@ -2051,13 +2056,22 @@ class FastMCP(
         The tool function can optionally request a Context object by adding a parameter
         with the Context type annotation. See the @tool decorator for examples.
 
+        Plain functions, and functions whose `@tool` decorator left `task`
+        unset, inherit the server-wide default (`FastMCP(tasks=...)`) — the
+        same as tools registered via `@mcp.tool`. An already-constructed
+        `Tool` instance is registered as-is: its `task_config` is used as-is,
+        whether or not it was set explicitly (a `Tool` built without `task=`
+        carries `forbidden`, indistinguishable from an explicit `task=False`).
+
         Args:
             tool: The Tool instance or @tool-decorated function to register
 
         Returns:
             The tool instance that was added to the server.
         """
-        return self._local_provider.add_tool(tool)
+        return self._local_provider.add_tool(
+            tool, default_task=self._support_tasks_by_default
+        )
 
     async def notify_tools_changed(self) -> None:
         """Tell listening clients that this server's tool list changed.
