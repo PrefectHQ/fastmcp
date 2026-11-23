@@ -6,17 +6,27 @@ import hmac
 import anyio
 import mcp_types as mt
 import pytest
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.exceptions import AuthorizationError, NotFoundError, ToolError
+from fastmcp.exceptions import (
+    AuthorizationError,
+    MCPError,
+    NotFoundError,
+    PromptError,
+    ToolError,
+)
 from fastmcp.server.auth import AccessToken
+from fastmcp.server.context import reset_transport, set_transport
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware import usage as usage_module
+from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
 from fastmcp.server.middleware.usage import UsageMiddleware
 from fastmcp.tools.base import ToolResult
+from fastmcp.utilities.tests import asgi_client
 
 
 @pytest.fixture
@@ -74,22 +84,54 @@ def use_token(monkeypatch: pytest.MonkeyPatch, subject: str | None) -> None:
 
 
 class TestUsageMiddleware:
-    @pytest.mark.parametrize("method", ["tool", "prompt"])
-    async def test_unknown_names_share_one_series(self, meter_provider, reader, method):
+    async def test_unknown_tools_share_one_series(self, meter_provider, reader):
         mcp = make_server(
             UsageMiddleware(meter_provider=meter_provider, user_id="omit")
         )
         for name in ["missing-one", "missing-two", "missing-three"]:
             with pytest.raises(NotFoundError):
-                if method == "tool":
-                    await mcp.call_tool(name)
-                else:
-                    await mcp.render_prompt(name)
+                await mcp.call_tool(name)
 
         [point] = data_points(reader)
         assert point.count == 3
-        assert f"gen_ai.{method}.name" not in point.attributes
-        assert point.attributes["error.type"] == "NotFoundError"
+        assert "gen_ai.tool.name" not in point.attributes
+        # tools/call answers an unknown tool with an isError result.
+        assert point.attributes["error.type"] == "tool_error"
+        assert "rpc.status_code" not in point.attributes
+
+    async def test_unknown_prompts_share_one_series(self, meter_provider, reader):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+        for name in ["missing-one", "missing-two", "missing-three"]:
+            with pytest.raises(NotFoundError):
+                await mcp.render_prompt(name)
+
+        [point] = data_points(reader)
+        assert point.count == 3
+        assert "gen_ai.prompt.name" not in point.attributes
+        # prompts/get answers with -32602, which the semconv does not count
+        # as an error.
+        assert point.attributes["rpc.status_code"] == "-32602"
+        assert "error.type" not in point.attributes
+
+    async def test_error_handling_middleware_keeps_unknown_names_bounded(
+        self, meter_provider, reader
+    ):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+        mcp.add_middleware(ErrorHandlingMiddleware())
+        async with Client(mcp) as client:
+            for name in ["missing-one", "missing-two"]:
+                with pytest.raises(MCPError):
+                    await client.call_tool(name, {})
+
+        [point] = data_points(reader)
+        assert point.count == 2
+        assert "gen_ai.tool.name" not in point.attributes
+        assert point.attributes["error.type"] == "-32001"
+        assert point.attributes["rpc.status_code"] == "-32001"
 
     async def test_denied_names_share_one_series(self, meter_provider, reader):
         class DenyRequests(Middleware):
@@ -107,6 +149,7 @@ class TestUsageMiddleware:
         [point] = data_points(reader)
         assert point.count == 3
         assert "gen_ai.tool.name" not in point.attributes
+        assert point.attributes["error.type"] == "tool_error"
 
     @pytest.mark.parametrize("mode", ["auto", "legacy"])
     async def test_client_info_does_not_add_series(self, meter_provider, reader, mode):
@@ -198,24 +241,163 @@ class TestUsageMiddleware:
         [point] = data_points(reader)
         assert point.attributes["error.type"] == "cancelled"
 
-    async def test_records_tool_calls(self, meter_provider, reader):
+    @pytest.mark.parametrize("mode", ["auto", "legacy"])
+    async def test_records_tool_calls(self, meter_provider, reader, mode):
         mcp = make_server(
             UsageMiddleware(meter_provider=meter_provider, user_id_salt="salt")
         )
 
         async with Client(
-            mcp, client_info=mt.Implementation(name="test-client", version="1.0")
+            mcp,
+            mode=mode,
+            client_info=mt.Implementation(name="test-client", version="1.0"),
         ) as client:
             await client.call_tool("add", {"a": 1, "b": 2})
             await client.call_tool("add", {"a": 3, "b": 4})
 
         [point] = data_points(reader)
         assert point.count == 2
-        assert dict(point.attributes) == {
+        attributes = dict(point.attributes)
+        protocol_version = attributes.pop("mcp.protocol.version")
+        assert (protocol_version in MODERN_PROTOCOL_VERSIONS) == (mode == "auto")
+        assert attributes == {
             "mcp.method.name": "tools/call",
             "gen_ai.tool.name": "add",
+            "gen_ai.operation.name": "execute_tool",
             "fastmcp.server.name": "usage-test",
         }
+
+    async def test_records_http_transport(self, meter_provider, reader):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+
+        async with asgi_client(mcp) as client:
+            await client.call_tool("add", {"a": 1, "b": 2})
+
+        [point] = data_points(reader)
+        assert point.attributes["network.transport"] == "tcp"
+        assert point.attributes["network.protocol.name"] == "http"
+        assert point.attributes["network.protocol.version"] == "1.1"
+        assert "mcp.protocol.version" in point.attributes
+
+    async def test_records_stdio_transport(self, meter_provider, reader):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+
+        token = set_transport("stdio")
+        try:
+            async with Client(mcp) as client:
+                await client.call_tool("add", {"a": 1, "b": 2})
+        finally:
+            reset_transport(token)
+
+        [point] = data_points(reader)
+        assert point.attributes["network.transport"] == "pipe"
+        assert "network.protocol.name" not in point.attributes
+
+    async def test_in_memory_calls_have_no_network_attributes(
+        self, meter_provider, reader
+    ):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+
+        async with Client(mcp) as client:
+            await client.call_tool("add", {"a": 1, "b": 2})
+
+        [point] = data_points(reader)
+        assert not any(key.startswith("network.") for key in point.attributes)
+
+    async def test_json_rpc_errors_report_their_code(self, meter_provider, reader):
+        class RejectRequests(Middleware):
+            async def on_call_tool(self, context, call_next):
+                raise MCPError(code=-32001, message="busy")
+
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+        mcp.add_middleware(RejectRequests())
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError):
+                await client.call_tool("add", {"a": 1, "b": 2})
+
+        [point] = data_points(reader)
+        assert point.attributes["gen_ai.tool.name"] == "add"
+        assert point.attributes["error.type"] == "-32001"
+        assert point.attributes["rpc.status_code"] == "-32001"
+
+    @pytest.mark.parametrize("code", [-32700, -32600, -32601, -32602, -32002])
+    async def test_client_error_codes_are_not_errors(
+        self, meter_provider, reader, code
+    ):
+        class RejectRequests(Middleware):
+            async def on_call_tool(self, context, call_next):
+                raise MCPError(code=code, message="rejected")
+
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+        mcp.add_middleware(RejectRequests())
+        with pytest.raises(MCPError):
+            await mcp.call_tool("add", {"a": 1, "b": 2})
+
+        [point] = data_points(reader)
+        assert point.attributes["rpc.status_code"] == str(code)
+        assert "error.type" not in point.attributes
+
+    async def test_unhandled_exceptions_report_their_class(
+        self, meter_provider, reader
+    ):
+        class Explode(Middleware):
+            async def on_call_tool(self, context, call_next):
+                raise RuntimeError("boom")
+
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+        mcp.add_middleware(Explode())
+        with pytest.raises(RuntimeError):
+            await mcp.call_tool("add", {"a": 1, "b": 2})
+
+        [point] = data_points(reader)
+        assert point.attributes["error.type"] == "RuntimeError"
+        assert "rpc.status_code" not in point.attributes
+
+    async def test_prompt_errors_report_json_rpc_codes(self, meter_provider, reader):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+
+        @mcp.prompt
+        def broken() -> str:
+            raise PromptError("nope")
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError):
+                await client.get_prompt("broken")
+
+        [point] = data_points(reader)
+        assert point.attributes["gen_ai.prompt.name"] == "broken"
+        assert point.attributes["error.type"] == "-32603"
+        assert point.attributes["rpc.status_code"] == "-32603"
+
+    async def test_prompt_invalid_arguments_are_not_errors(
+        self, meter_provider, reader
+    ):
+        mcp = make_server(
+            UsageMiddleware(meter_provider=meter_provider, user_id="omit")
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError):
+                await client.get_prompt("greet")
+
+        [point] = data_points(reader)
+        assert point.attributes["gen_ai.prompt.name"] == "greet"
+        assert point.attributes["rpc.status_code"] == "-32602"
+        assert "error.type" not in point.attributes
 
     async def test_execution_not_found_keeps_tool_name(self, meter_provider, reader):
         mcp = make_server(
@@ -273,6 +455,8 @@ class TestUsageMiddleware:
         [point] = data_points(reader)
         assert point.attributes["mcp.method.name"] == "prompts/get"
         assert point.attributes["gen_ai.prompt.name"] == "greet"
+        assert "gen_ai.operation.name" not in point.attributes
+        assert "error.type" not in point.attributes
 
     async def test_ignores_list_requests(self, meter_provider, reader):
         mcp = make_server(
