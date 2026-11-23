@@ -37,6 +37,7 @@ from flows.agentic_labels import (
     mode,
     planned_writes,
     summary,
+    triage_labels,
 )
 from flows.agentic_outcome import outcome_lines, subjects
 from flows.agentic_review_app import LABEL_PERMISSIONS, review_client
@@ -451,7 +452,9 @@ def triage_intake(
     deadline = datetime.now(UTC) + timedelta(hours=2)
     with tempfile.TemporaryDirectory(prefix="fastmcp-intake-") as temporary:
         intake_tools(Path(temporary))
-        if config.sender and maintainer(config.sender):
+        # A maintainer's own PR needs no triage, but an issue they file (often
+        # through an agent) still gets assessed and labeled like anyone's.
+        if config.sender and config.pull_requests and maintainer(config.sender):
             return Completed(
                 data={"skipped": "maintainer_sender", "sender": config.sender},
                 message=f"Skipped: {config.sender} is a maintainer",
@@ -538,6 +541,7 @@ def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None
         if current_mode == "off":
             return
         writes = planned_writes(state["review"], live_item)
+        writes += triage_labels(state["review"], live_item)
         if writes and current_mode == "on":
             app = runtime.reviewer_app
             if app is None:
