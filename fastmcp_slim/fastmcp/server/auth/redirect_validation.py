@@ -126,14 +126,13 @@ def build_client_redirect(url: str, params: dict[str, str], *, iss: str) -> str:
     and the reason this helper exists instead of five call sites each
     reimplementing the same invariant by hand.
 
-    `params` is appended to `url` via `add_query_params` (verbatim, without
-    re-encoding the existing query -- see that function's docstring), and
-    `iss` is then set idempotently via `replace_query_param`: an existing
-    occurrence -- whether contributed by the registered redirect_uri or
-    already present in `url` -- is overwritten with the canonical value;
-    otherwise `iss` is appended. Any *further* `iss` the redirect_uri
+    Each of `params`, then `iss`, is set idempotently via
+    `replace_query_param` (without re-encoding the rest of the existing
+    query): an existing occurrence -- whether contributed by the registered
+    redirect_uri or already present in `url` -- is overwritten; otherwise
+    the parameter is appended. Any *further* occurrence the redirect_uri
     carried is dropped (see `_drop_repeated_query_param`), so the result
-    holds exactly one.
+    holds each parameter exactly once.
 
     `iss` is keyword-only and required so a caller cannot forget to pass
     it. `params` must not itself contain an `"iss"` key -- pass it via the
@@ -157,9 +156,12 @@ def build_client_redirect(url: str, params: dict[str, str], *, iss: str) -> str:
         raise ValueError(
             "params must not include 'iss' -- pass it via the 'iss' keyword"
         )
-    if params:
-        url = add_query_params(url, params)
-    return _drop_repeated_query_param(replace_query_param(url, "iss", iss), "iss")
+    # Every response parameter, not just `iss`, must appear once (RFC 6749
+    # §3.1), so a value the registered redirect_uri already carries is
+    # replaced rather than repeated.
+    for key, value in {**params, "iss": iss}.items():
+        url = _drop_repeated_query_param(replace_query_param(url, key, value), key)
+    return url
 
 
 def _parse_host_port(netloc: str) -> tuple[str | None, str | None]:

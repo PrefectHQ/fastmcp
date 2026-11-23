@@ -1126,3 +1126,28 @@ class TestResolveToolParamFlags:
         assert "--userId <value>" in content
         assert "| `--user-id` |" in content
         assert "| `--userId` |" in content
+
+
+class TestSkillParameterTableRows:
+    def _rows(self, properties: dict) -> list[str]:
+        tool = mcp_types.Tool(
+            name="t", input_schema={"type": "object", "properties": properties}
+        )
+        content = generate_skill_content(
+            server_name="s", cli_filename="cli.py", tools=[tool]
+        )
+        return [line for line in content.splitlines() if line.startswith("| `--")]
+
+    def test_crlf_description_stays_on_one_row(self):
+        rows = self._rows({"city": {"type": "string", "description": "A.\r\nB.\rC."}})
+        assert rows == ["| `--city` | string | no | A. B. C. |"]
+
+    def test_newline_in_type_stays_on_one_row(self):
+        rows = self._rows({"units": {"type": "metric\nimperial"}})
+        assert len(rows) == 1
+        assert "\r" not in rows[0] and "metric imperial" in rows[0]
+
+    def test_non_string_type_does_not_crash(self):
+        rows = self._rows({"z": {"type": {"nested": "string"}}, "w": {"type": [{}]}})
+        assert len(rows) == 2
+        assert all("| any |" in row for row in rows)

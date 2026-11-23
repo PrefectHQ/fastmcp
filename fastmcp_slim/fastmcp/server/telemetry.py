@@ -105,6 +105,29 @@ def get_protocol_span_attributes() -> dict[str, str]:
         attrs["mcp.protocol.version"] = req_ctx.protocol_version
     if req_ctx.request_id is not None:
         attrs["jsonrpc.request.id"] = req_ctx.request_id
+    attrs.update(get_network_span_attributes())
+    return attrs
+
+
+def get_network_span_attributes() -> dict[str, str]:
+    """Get the `network.*` attributes for the current request's transport.
+
+    HTTP requests report `tcp` plus the HTTP version; stdio reports `pipe`.
+    In-memory requests have no network transport, so they get none.
+    """
+    from fastmcp.server.context import _current_transport
+    from fastmcp.server.dependencies import fastmcp_request_ctx
+
+    req_ctx = fastmcp_request_ctx.get()
+    attrs: dict[str, str] = {}
+    if req_ctx is not None and req_ctx.request is not None:
+        attrs["network.transport"] = "tcp"
+        attrs["network.protocol.name"] = "http"
+        http_version = req_ctx.request.scope.get("http_version")
+        if http_version:
+            attrs["network.protocol.version"] = http_version
+    elif _current_transport.get() == "stdio":
+        attrs["network.transport"] = "pipe"
     return attrs
 
 

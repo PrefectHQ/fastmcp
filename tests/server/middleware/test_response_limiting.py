@@ -1,5 +1,6 @@
 """Tests for ResponseLimitingMiddleware."""
 
+import pydantic_core
 import pytest
 from mcp_types import ImageContent, TextContent
 from pydantic import BaseModel
@@ -203,3 +204,31 @@ class TestResponseLimitingMiddleware:
         content = result.content[0]
         assert isinstance(content, TextContent)
         content.text.encode("utf-8")
+
+    @pytest.mark.parametrize(
+        "payload",
+        ["A" * 10_000, '"quoted\\\\' * 2_000, "\x01" * 10_000],
+        ids=["ascii", "escapes", "control-chars"],
+    )
+    async def test_truncated_result_fits_max_size_when_serialized(
+        self, mcp_server: FastMCP, payload: str
+    ):
+        """Regression test for #5285: the truncated result must fit max_size."""
+        max_size = 1_000
+        middleware = ResponseLimitingMiddleware(max_size=max_size)
+        mcp_server.add_middleware(middleware)
+
+        @mcp_server.tool()
+        def emit() -> str:
+            return payload
+
+        async with Client(mcp_server) as client:
+            result = await client.call_tool("emit", {})
+
+        first = result.content[0]
+        assert isinstance(first, TextContent)
+        assert first.text.endswith(middleware.truncation_suffix)
+        truncated = middleware._truncate_to_result(payload)
+        assert len(pydantic_core.to_json(truncated, fallback=str)) <= max_size
+        # The cut keeps as much content as the limit allows.
+        assert len(first.text) > len(middleware.truncation_suffix)

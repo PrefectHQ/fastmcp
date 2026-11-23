@@ -115,7 +115,7 @@ async def test_pinned_call_to_the_listed_version_still_validates() -> None:
     @server.tool(name="liar", version="1.0")
     def liar() -> int:
         """Declares int, returns a string."""
-        return "oops"  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return "oops"  # type: ignore[return-value]  # ty:ignore[invalid-explicit-return]
 
     async with Client(server) as client:
         with pytest.raises(RuntimeError, match="Invalid structured content"):
@@ -129,7 +129,7 @@ async def test_unpinned_call_still_validates_a_non_conforming_result() -> None:
     @server.tool
     def liar() -> int:
         """Declares int, returns a string."""
-        return "oops"  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return "oops"  # type: ignore[return-value]  # ty:ignore[invalid-explicit-return]
 
     async with Client(server) as client:
         with pytest.raises(RuntimeError, match="Invalid structured content"):
@@ -175,7 +175,7 @@ async def test_pinned_call_does_not_exempt_a_nested_client_call() -> None:
     @inner.tool
     def liar() -> int:
         """Declares int, returns a string."""
-        return "oops"  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return "oops"  # type: ignore[return-value]  # ty:ignore[invalid-explicit-return]
 
     validated: list[bool] = []
 

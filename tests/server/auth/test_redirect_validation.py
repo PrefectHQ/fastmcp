@@ -119,6 +119,12 @@ class TestBuildClientRedirect:
     than hand-building a params dict with its own `"iss"` key.
     """
 
+    def test_registered_response_param_is_not_repeated(self):
+        result = build_client_redirect(
+            "https://c.example/cb?state=a&keep=1", {"state": "b"}, iss="i"
+        )
+        assert result == "https://c.example/cb?state=b&keep=1&iss=i"
+
     def test_appends_params_and_iss_when_absent(self):
         url = "https://client.example.com/callback"
 
