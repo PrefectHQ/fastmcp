@@ -192,7 +192,7 @@ async def test_memory_backend_does_not_request_credentials():
     assert type(result.data) is int
 
 
-def test_streaming_credential_providers_are_rejected():
+def test_streaming_credential_providers_are_accepted():
     class RefreshingCredentials(StreamingCredentialProvider):
         def get_credentials(self) -> tuple[str, str]:
             return "tasks", "secret"
@@ -204,8 +204,9 @@ def test_streaming_credential_providers_are_rejected():
         def is_streaming(self) -> bool:
             return True
 
-    with pytest.raises(ValueError, match="Streaming credential providers"):
-        TasksExtension(credential_provider=RefreshingCredentials())
+    provider = RefreshingCredentials()
+    ext = TasksExtension(credential_provider=provider)
+    assert ext._credential_provider is provider
 
 
 async def test_provider_and_url_credentials_are_rejected():

@@ -109,16 +109,6 @@ class TasksExtension(ServerExtension):
         execution_ttl: timedelta | None = None,
         parent_task_spans: bool | None = None,
     ) -> None:
-        if credential_provider is not None:
-            from redis.credentials import StreamingCredentialProvider
-
-            if isinstance(credential_provider, StreamingCredentialProvider):
-                raise ValueError(
-                    "Streaming credential providers are not supported yet: a token "
-                    "refresh can hand one Redis connection to two commands at once "
-                    "(redis/redis-py#4433). Use a CredentialProvider that returns "
-                    "current credentials for each new connection."
-                )
         self._credential_provider = credential_provider
         overrides: dict[str, Any] = {
             "url": url,
