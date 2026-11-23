@@ -30,7 +30,7 @@ from flows.agentic_memory import Index, memory_config, related
 from flows.agentic_review_app import ReviewApp
 from flows.agentic_stack import digest, same_json
 from flows.agentic_stack_context import assessment_context as project_assessment
-from flows.agentic_stack_plans import OUTPUTS
+from flows.agentic_stack_plans import OUTPUTS, STANDALONE_ROLES
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -134,7 +134,7 @@ class Runtime(BaseModel):
 
     @model_validator(mode="after")
     def check_roles(self) -> Runtime:
-        required = set(OUTPUTS) - {"triage_review"}
+        required = set(OUTPUTS) - {"triage_review"} - STANDALONE_ROLES
         if not required <= set(self.plans) <= set(OUTPUTS):
             raise ValueError("Expected every stack agent role")
         if self.publish_reviews and "triage_review" not in self.plans:

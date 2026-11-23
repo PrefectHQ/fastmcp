@@ -163,7 +163,11 @@ def test_deploy_registers_and_repins_both_automations(stack):
         ]
     )
     # Scheduled flows always have a run queued, so deploys don't wait on them.
-    assert set(names) == drained | {"cloud-triage-sweep", "cloud-triage-memory-sync"}
+    assert set(names) == drained | {
+        "cloud-triage-sweep",
+        "cloud-triage-memory-sync",
+        "cloud-triage-digest",
+    }
     puts = sorted(state.glob("put-*.json"))
     assert len(puts) == 2
     for put in puts:
