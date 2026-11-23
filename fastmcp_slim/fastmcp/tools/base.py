@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import dataclasses
 import inspect
 import json
 import math
@@ -97,8 +98,9 @@ def _base64_non_utf8_bytes(data: Any) -> Any:
     Walks plain dicts, lists, tuples, and sets, and returns `data` itself when
     there is nothing to encode or when encoding would be unsafe. Dict keys are
     left alone: an encoded key could collide with an existing string key and
-    silently drop an entry. A value holding an iterator is left alone too,
-    since the failed serialization attempt may already have consumed it.
+    silently drop an entry. A value holding an iterator, a model, or a
+    dataclass is left alone too, since the failed serialization attempt may
+    already have consumed an iterator inside it.
     """
 
     changed = False
@@ -112,7 +114,7 @@ def _base64_non_utf8_bytes(data: Any) -> Any:
                 changed = True
                 return base64.b64encode(value).decode("ascii")
             return value
-        if isinstance(value, Iterator):
+        if isinstance(value, Iterator | BaseModel) or dataclasses.is_dataclass(value):
             raise _UnsafeToRetry
         if isinstance(value, dict):
             return {key: encode(item) for key, item in value.items()}

@@ -4,6 +4,7 @@ import base64
 import datetime
 import json
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,10 @@ from typing_extensions import TypedDict
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.types import Audio, File, Image
+
+
+class Rows(BaseModel):
+    rows: Iterable[int]
 
 
 def _normalize_anyof_order(schema):
@@ -136,14 +141,15 @@ class TestToolReturnTypes:
         with pytest.raises(ToolError, match="utf-8"):
             await mcp.call_tool("blob_tool", {})
 
-    async def test_non_utf8_bytes_next_to_iterator_still_fails(self):
+    @pytest.mark.parametrize("wrap", [iter, lambda rows: Rows(rows=iter(rows))])
+    async def test_non_utf8_bytes_next_to_iterator_still_fails(self, wrap):
         """The failed first attempt consumed the iterator, so a retry would
         silently send it empty."""
         mcp = FastMCP()
 
         @mcp.tool
         def blob_tool():
-            return {"rows": iter([1, 2]), "blob": b"\xff"}
+            return {"rows": wrap([1, 2]), "blob": b"\xff"}
 
         with pytest.raises(ToolError, match="utf-8"):
             await mcp.call_tool("blob_tool", {})
