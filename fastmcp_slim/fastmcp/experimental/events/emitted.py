@@ -40,7 +40,7 @@ class _Emitted:
 class EmittedEvents:
     """The buffer and filter behind one event type declared as a model.
 
-    `match`, when the model defines it, is an instance method whose keyword
+    `matches`, when the model defines it, is an instance method whose keyword
     parameters are the subscription arguments. It runs against each buffered
     event for each subscription, so filtering costs no per-subscriber state.
     """
@@ -53,19 +53,19 @@ class EmittedEvents:
         self._buffer: deque[_Emitted] = deque(maxlen=max_events)
         self._next = 0
         self._changed = anyio.Event()
-        self._match: Callable[..., Any] | None = None
+        self._matcher: Callable[..., Any] | None = None
         self.input_schema: dict[str, Any] | None = None
-        match = model.__dict__.get("match")
-        if match is not None:
-            if not inspect.isfunction(match):
+        matches = model.__dict__.get("matches")
+        if matches is not None:
+            if not inspect.isfunction(matches):
                 raise TypeError(
-                    f"{model.__name__}.match must be a plain instance method"
+                    f"{model.__name__}.matches must be a plain instance method"
                 )
-            if inspect.iscoroutinefunction(match):
-                raise TypeError(f"{model.__name__}.match must not be async")
-            parsed = ParsedFunction.from_function(_without_self(match))
+            if inspect.iscoroutinefunction(matches):
+                raise TypeError(f"{model.__name__}.matches must not be async")
+            parsed = ParsedFunction.from_function(_without_self(matches))
             self.input_schema = parsed.input_schema
-            self._match = validate_call(match)
+            self._matcher = validate_call(matches)
 
     @property
     def payload_schema(self) -> dict[str, Any]:
@@ -144,10 +144,10 @@ class EmittedEvents:
         )
 
     def _matches(self, payload: BaseModel, arguments: dict[str, Any]) -> bool:
-        if self._match is None:
+        if self._matcher is None:
             return True
         try:
-            return bool(self._match(payload, **arguments))
+            return bool(self._matcher(payload, **arguments))
         except ValidationError as error:
             raise MCPError(
                 code=INVALID_PARAMS,
@@ -172,7 +172,7 @@ def _without_self(method: Callable[..., Any]) -> Callable[..., Any]:
     parameters_only.__signature__ = signature.replace(  # ty: ignore[missing-attribute]
         parameters=parameters, return_annotation=inspect.Signature.empty
     )
-    parameters_only.__name__ = getattr(method, "__name__", "match")
+    parameters_only.__name__ = getattr(method, "__name__", "matches")
     parameters_only.__doc__ = method.__doc__
     parameters_only.__annotations__ = {
         parameter.name: parameter.annotation for parameter in parameters

@@ -32,7 +32,7 @@ class AlertFired(BaseModel):
     project: str
     severity: Severity = Severity.LOW
 
-    def match(self, project: str | None = None, severity: Severity | None = None):
+    def matches(self, project: str | None = None, severity: Severity | None = None):
         return (project is None or self.project == project) and (
             severity is None or self.severity == severity
         )
@@ -149,7 +149,7 @@ async def test_max_age_skips_older_events_as_a_gap():
     assert [e.event_id for e in result.events] == ["new"]
 
 
-async def test_arguments_that_do_not_fit_match_are_rejected():
+async def test_arguments_that_do_not_fit_matches_are_rejected():
     server, _ = make_server()
     async with client(server) as c:
         with pytest.raises(MCPError) as caught:
@@ -182,7 +182,7 @@ async def test_push_delivers_an_emit_without_waiting_for_the_poll_interval():
     assert received == ["a1", "a2"]
 
 
-async def test_a_model_without_match_takes_no_arguments_and_gets_everything():
+async def test_a_model_without_matches_takes_no_arguments_and_gets_everything():
     server = FastMCP("deploys")
     events = EventsExtension()
     server.add_extension(events)
@@ -217,13 +217,13 @@ def test_a_model_registers_as_one_event_type_only():
         events.event("alert.again")(AlertFired)
 
 
-def test_match_must_be_a_sync_instance_method():
+def test_matches_must_be_a_sync_instance_method():
     events = EventsExtension()
 
     class Async(BaseModel):
         x: int
 
-        async def match(self, x: int | None = None) -> bool:
+        async def matches(self, x: int | None = None) -> bool:
             return True
 
     with pytest.raises(TypeError, match="must not be async"):

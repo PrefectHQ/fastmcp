@@ -191,7 +191,7 @@ class EventsExtension(ServerExtension):
 
         Decorating a Pydantic model declares an event type you `emit()`: the
         model's fields are the payload schema, its docstring the description,
-        and the keyword parameters of its optional `match` method the
+        and the keyword parameters of its optional `matches` method the
         subscription arguments. FastMCP buffers what you emit and serves poll
         and push from that buffer.
 
@@ -204,7 +204,7 @@ class EventsExtension(ServerExtension):
                 a model's docstring.
             input_schema: JSON Schema for subscription arguments. Polls whose
                 arguments do not match are rejected before the check runs.
-                Derived from `match` for a model.
+                Derived from `matches` for a model.
             payload_schema: JSON Schema for each event's `data`. Derived from
                 the fields for a model.
             meta: Optional `_meta` for the listing.
@@ -264,7 +264,7 @@ class EventsExtension(ServerExtension):
         timestamp: datetime | None = None,
         meta: dict[str, Any] | None = None,
     ) -> None:
-        """Record that an event happened, for every subscriber whose `match` accepts it.
+        """Record that an event happened, for every subscriber whose `matches` accepts it.
 
         `payload` is an instance of a model registered with `event()`. Pass the
         upstream's stable identifier as `event_id` when there is one, so a

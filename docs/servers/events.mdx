@@ -49,9 +49,9 @@ Pass the upstream's stable identifier as `event_id` when there is one. Clients d
 
 You can emit from anywhere in the server's process: in the middle of a tool, at the end of one, from a background task, or from a route that receives an upstream's webhook. An open push stream for the event type receives the event at once, and a polling client sees it on its next poll.
 
-### Filtering with `match`
+### Filtering with `matches`
 
-A `match` method on the model decides which subscriptions receive each event. Its keyword parameters are the subscription arguments, and FastMCP builds the event type's input schema from them the way it builds a tool's from its parameters. Give every parameter a default, so a client can subscribe without it.
+A `matches` method on the model decides which subscriptions receive each event. Its keyword parameters are the subscription arguments, and FastMCP builds the event type's input schema from them the way it builds a tool's from its parameters. Give every parameter a default, so a client can subscribe without it.
 
 ```python
 from typing import Literal
@@ -74,7 +74,7 @@ class AlertFired(BaseModel):
     severity: Literal["low", "high"]
     message: str
 
-    def match(
+    def matches(
         self,
         project: str | None = None,
         severity: Literal["low", "high"] | None = None,
@@ -84,7 +84,7 @@ class AlertFired(BaseModel):
         return severity is None or self.severity == severity
 ```
 
-A client that subscribes with `{"project": "api"}` receives only that project's alerts. FastMCP runs `match` against each event for each subscription when it delivers, so filtering keeps no state per subscriber. Keep it fast and free of I/O; it must be a plain method, not `async`. A model without `match` takes no arguments, and every subscriber receives every event.
+A client that subscribes with `{"project": "api"}` receives only that project's alerts. FastMCP runs `matches` against each event for each subscription when it delivers, so filtering keeps no state per subscriber. Keep it fast and free of I/O; it must be a plain method, not `async`. A model without `matches` takes no arguments, and every subscriber receives every event.
 
 ### How long events are kept
 
