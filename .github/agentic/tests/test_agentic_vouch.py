@@ -9,14 +9,16 @@ from flows.agentic_people import people
 from flows.agentic_triage import vouched
 from flows.agentic_vouch import (
     AFFILIATION,
-    MAX_EVIDENCE,
     VOUCH,
     Graph,
     MemoryStore,
     VouchConfig,
     affiliation_changes,
+    assess,
+    decide,
     due_for_refresh,
-    merged_pr_vouches,
+    merged_authors,
+    needs_assessment,
     observed_affiliations,
     sync_graph,
     vouch_config,
@@ -28,12 +30,30 @@ ALICE = {"id": 1, "login": "alice", "type": "User"}
 BOB = {"id": 2, "login": "bob", "type": "User"}
 
 
-def merged(number: int, user: dict) -> dict:
+def merged(
+    number: int, user: dict, at: str = "2026-11-22T00:00:00Z", body: str = ""
+) -> dict:
     return {
         "number": number,
         "user": user,
-        "pull_request": {"merged_at": "2026-11-22T00:00:00Z"},
+        "state": "closed",
+        "created_at": at,
+        "body": body,
+        "pull_request": {"merged_at": at},
     }
+
+
+def issue(number: int, user: dict, at: str) -> dict:
+    return {"number": number, "user": user, "state": "open", "created_at": at}
+
+
+def steady(user: dict, start: int = 10) -> list[dict]:
+    """Three merges a month apart: the record of a real contributor."""
+    return [
+        merged(start, user, "2026-08-03T10:00:00Z"),
+        merged(start + 1, user, "2026-09-07T10:00:00Z"),
+        merged(start + 2, user, "2026-10-12T10:00:00Z"),
+    ]
 
 
 def store_with(*records: tuple[str, dict]) -> MemoryStore:
@@ -53,59 +73,92 @@ def test_unknown_person_has_no_standing():
     assert Graph([]).standing("nobody")["standing"] == "unknown"
 
 
-def test_merges_become_one_triage_vouch_per_author():
-    items = [
-        merged(10, ALICE),
-        merged(11, ALICE),
-        merged(12, BOB),
-        {"number": 13, "user": ALICE},
+CONFIG = VouchConfig(mode="on")
+
+
+def lookup(items: list[dict]):
+    numbers = {i["number"]: i for i in items}
+    return numbers.get
+
+
+def test_steady_work_over_months_passes():
+    items = steady(ALICE)
+    assert assess(items, lookup(items), CONFIG) == ([10, 11, 12], [])
+
+
+def test_merge_count_alone_is_not_enough():
+    items = [merged(n, ALICE, "2026-11-22T10:00:00Z") for n in range(10, 30)]
+    assert assess(items, lookup(items), CONFIG)[1] == ["short", "burst"]
+
+
+def test_staged_issue_then_pr_is_prebaked():
+    items = []
+    for k, month in enumerate(("08", "09", "10")):
+        items.append(issue(100 + k, ALICE, f"2026-{month}-03T10:00:00Z"))
+        items.append(
+            merged(
+                200 + k, ALICE, f"2026-{month}-03T10:02:00Z", body=f"Fixes #{100 + k}"
+            )
+        )
+    assert assess(items, lookup(items), CONFIG)[1] == ["prebaked"]
+
+
+def test_racing_other_peoples_new_issues_is_fast_follow():
+    theirs = [
+        issue(100 + k, BOB, f"2026-{m}-03T10:00:00Z")
+        for k, m in enumerate(("08", "09", "10"))
     ]
-    records = merged_pr_vouches(Graph([]), items, NOW)
-    by_login = {r["subject"]["login"]: r for r in records}
-    assert by_login["alice"]["evidence"] == [10, 11]
-    assert by_login["alice"]["merged"] == [10, 11]
-    assert by_login["alice"]["by"] == "triage"
-    assert by_login["bob"]["reason"] == "1 merged PR"
+    mine = [
+        merged(200 + k, ALICE, f"2026-{m}-03T11:00:00Z", body=f"closes #{100 + k}")
+        for k, m in enumerate(("08", "09", "10"))
+    ]
+    assert assess(mine, lookup(theirs + mine), CONFIG)[1] == ["fast-follow"]
 
 
-def test_bots_never_get_vouched():
+def test_more_rejected_than_merged_is_held():
+    closed = [
+        {**merged(50 + n, ALICE), "pull_request": {"merged_at": None}} for n in range(4)
+    ]
+    items = steady(ALICE) + closed
+    assert assess(items, lookup(items), CONFIG)[1] == ["rejected"]
+
+
+def test_holds_name_reasons_and_are_not_vouches():
+    record = decide(Graph([]), ALICE, [10], ["short"], False, NOW)
+    assert (record["kind"], record["reason"]) == ("hold", "held: short")
+    store = store_with((VOUCH, record))
+    found = Graph(store.records()).standing("alice")
+    assert found["standing"] == "unknown"
+    assert found["held"] == "held: short"
+
+
+def test_write_access_vouches_on_its_own():
+    record = decide(Graph([]), ALICE, [10], ["short"], True, NOW)
+    assert (record["kind"], record["reason"]) == ("vouch", "write access")
+
+
+def test_nothing_new_writes_nothing():
+    record = decide(Graph([]), ALICE, [10, 11, 12], [], False, NOW)
+    graph = Graph(store_with((VOUCH, record)).records())
+    assert decide(graph, ALICE, [10, 11, 12], [], False, NOW) is None
+    assert needs_assessment(graph, merged_authors(steady(ALICE))) == []
+    assert needs_assessment(graph, merged_authors([merged(99, ALICE)])) == [ALICE]
+
+
+def test_bots_are_never_assessed():
     bot = {"id": 3, "login": "dependabot[bot]", "type": "Bot"}
-    assert merged_pr_vouches(Graph([]), [merged(5, bot)], NOW) == []
+    assert merged_authors([merged(5, bot)]) == {}
 
 
-def test_seen_merges_add_nothing_and_new_ones_extend_the_edge():
-    store = store_with(
-        (
-            VOUCH,
-            vouch_record(ALICE, "vouch", "triage", NOW, evidence=[10], merged=[10]),
-        )
+def test_a_vouch_that_goes_bad_becomes_a_hold():
+    graph = Graph(
+        store_with(
+            (VOUCH, decide(Graph([]), ALICE, [10, 11, 12], [], False, NOW))
+        ).records()
     )
-    graph = Graph(store.records())
-    assert merged_pr_vouches(graph, [merged(10, ALICE)], NOW) == []
-    [record] = merged_pr_vouches(graph, [merged(10, ALICE), merged(20, ALICE)], NOW)
-    assert record["evidence"] == [10, 20]
-    assert record["reason"] == "2 merged PRs"
-
-
-def test_out_of_order_merges_count_once_past_the_evidence_cap():
-    counted = list(range(100, 140))
-    store = store_with(
-        (
-            VOUCH,
-            vouch_record(
-                ALICE, "vouch", "triage", NOW, evidence=counted, merged=counted
-            ),
-        )
-    )
-    graph = Graph(store.records())
-    # A backfill replays merges already counted.
-    assert merged_pr_vouches(graph, [merged(100, ALICE)], NOW) == []
-    # An old PR merged today counts, though its number is below the newest.
-    [record] = merged_pr_vouches(graph, [merged(5, ALICE)], NOW)
-    assert len(record["evidence"]) == MAX_EVIDENCE
-    assert len(record["merged"]) == 41
-    store.append(VOUCH, record)
-    assert Graph(store.records()).standing("alice")["merged_prs"] == 41
+    record = decide(graph, ALICE, [10, 11, 12, 13], ["burst"], False, NOW)
+    assert record["kind"] == "hold"
+    assert record["merged"] == [10, 11, 12, 13]
 
 
 def test_maintainer_logins_are_one_edge_whatever_the_case():
@@ -211,7 +264,7 @@ def test_refresh_picks_vouched_people_never_looked_up_or_stale():
     assert sorted(due_for_refresh(graph, NOW + timedelta(days=31), 10)) == [1, 2]
 
 
-def test_sync_vouches_merges_then_looks_up_affiliations():
+def test_backfill_assesses_from_the_listing_then_looks_up_affiliations():
     def read(path: str):
         return {
             "users/alice": {**ALICE, "company": "@prefecthq"},
@@ -219,13 +272,36 @@ def test_sync_vouches_merges_then_looks_up_affiliations():
         }[path]
 
     store = MemoryStore()
-    result = sync_graph(store, [merged(10, ALICE)], read, VouchConfig(mode="on"), NOW)
-    assert result == {"vouches": 1, "affiliations_refreshed": 1}
-    found = Graph(store.records()).standing("alice", {"PrefectHQ": "maintainer"})
-    assert found["tier"] == "maintainer"
-    assert Graph(store.records()).standing("alice")["tier"] == "other"
-    again = sync_graph(store, [merged(10, ALICE)], read, VouchConfig(mode="on"), NOW)
-    assert again == {"vouches": 0, "affiliations_refreshed": 0}
+    items = steady(ALICE) + [merged(40, BOB)]
+    result = sync_graph(store, items, read, CONFIG, NOW, complete=True)
+    assert result == {
+        "assessed": 2,
+        "vouches": 1,
+        "holds": 1,
+        "affiliations_refreshed": 1,
+    }
+    graph = Graph(store.records())
+    assert graph.standing("alice", {"PrefectHQ": "maintainer"})["tier"] == "maintainer"
+    assert graph.standing("bob")["held"] == "held: short"
+    again = sync_graph(store, items, read, CONFIG, NOW, complete=True)
+    assert again["assessed"] == 0
+
+
+def test_incremental_runs_look_authors_up_with_search():
+    calls = []
+
+    def read(path: str):
+        calls.append(path)
+        if path.startswith("search/issues") and "is%3Apr" in path:
+            return {"items": steady(ALICE)}
+        if path.startswith("search/issues"):
+            return {"items": []}
+        return {}
+
+    store = MemoryStore()
+    result = sync_graph(store, [steady(ALICE)[-1]], read, CONFIG, NOW)
+    assert result["vouches"] == 1
+    assert sum(c.startswith("search/issues") for c in calls) == 2
 
 
 def maintainer_read(path: str):

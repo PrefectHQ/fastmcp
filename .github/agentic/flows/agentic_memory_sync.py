@@ -15,7 +15,7 @@ import httpx
 from prefect import flow, get_run_logger
 from prefect.variables import Variable
 
-from flows.agentic_github import GitHub
+from flows.agentic_github import GitHub, can_write
 from flows.agentic_labels import CONFIG_VARIABLE
 from flows.agentic_memory import (
     REPOSITORY,
@@ -73,11 +73,20 @@ def triage_memory_sync(lookback_hours: int = 2, backfill: bool = False) -> int:
 
     written = sync(items, comments_of, index.replace)
     logger.info("Indexed %d items updated since %s", written, since.isoformat())
-    update_contributors(items, github, logger)
+    update_contributors(items, github, logger, complete=backfill)
     return written
 
 
-def update_contributors(items: list[dict], github: GitHub, logger) -> None:
+def writer(github: GitHub, login: str) -> bool:
+    try:
+        return can_write(github.request, login)
+    except (RuntimeError, ValueError, OSError):
+        return False
+
+
+def update_contributors(
+    items: list[dict], github: GitHub, logger, complete: bool = False
+) -> None:
     """Feed the same items to the contributor graph (flows/agentic_vouch.py).
 
     The graph is a side job of this sync: if its space is unreachable, the
@@ -88,7 +97,15 @@ def update_contributors(items: list[dict], github: GitHub, logger) -> None:
         return
     try:
         store = SpaceStore(config, lambda: secret_sync(PASSWORD_BLOCK))
-        result = sync_graph(store, items, github.request, config, datetime.now(UTC))
+        result = sync_graph(
+            store,
+            items,
+            github.request,
+            config,
+            datetime.now(UTC),
+            complete=complete,
+            maintainer=lambda login: writer(github, login),
+        )
     except (PdsError, httpx.HTTPError, ValueError, OSError) as error:
         logger.warning("Contributor graph not updated: %s", type(error).__name__)
         return
