@@ -6,10 +6,10 @@ import uuid
 
 import anyio
 import pytest
-from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
 from fastmcp.experimental.events import (
+    EventPayload,
     EventsClientExtension,
     EventsExtension,
     poll_events_mcp,
@@ -21,7 +21,7 @@ pytest.importorskip("docket")
 from fastmcp.experimental.events.docket_log import DocketEventLog  # noqa: E402
 
 
-class AlertFired(BaseModel):
+class AlertFired(EventPayload, name="alert.fired"):
     """An alert fired."""
 
     project: str
@@ -38,9 +38,10 @@ def url() -> str:
 
 def make_server(url: str, **extension_kwargs) -> tuple[FastMCP, EventsExtension]:
     server = FastMCP("alerts")
-    events = EventsExtension(log=DocketEventLog(url), **extension_kwargs)
+    events = EventsExtension(
+        log=DocketEventLog(url), events=[AlertFired], **extension_kwargs
+    )
     server.add_extension(events)
-    events.event("alert.fired")(AlertFired)
     return server, events
 
 

@@ -9,10 +9,10 @@ import anyio
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
-from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
 from fastmcp.experimental.events import (
+    EventPayload,
     EventsClientExtension,
     EventsExtension,
     list_events,
@@ -26,7 +26,7 @@ class Severity(Enum):
     HIGH = "high"
 
 
-class AlertFired(BaseModel):
+class AlertFired(EventPayload, name="alert.fired"):
     """An alert fired."""
 
     project: str
@@ -40,9 +40,8 @@ class AlertFired(BaseModel):
 
 def make_server(**extension_kwargs) -> tuple[FastMCP, EventsExtension]:
     server = FastMCP("alerts")
-    events = EventsExtension(**extension_kwargs)
+    events = EventsExtension(events=[AlertFired], **extension_kwargs)
     server.add_extension(events)
-    events.event("alert.fired")(AlertFired)
     return server, events
 
 
@@ -183,13 +182,12 @@ async def test_push_delivers_an_emit_without_waiting_for_the_poll_interval():
 
 
 async def test_a_model_without_matches_takes_no_arguments_and_gets_everything():
-    server = FastMCP("deploys")
-    events = EventsExtension()
-    server.add_extension(events)
-
-    @events.event("deploy.finished", description="A deploy finished")
-    class DeployFinished(BaseModel):
+    class DeployFinished(EventPayload, name="deploy.finished"):
         service: str
+
+    server = FastMCP("deploys")
+    events = EventsExtension(events=[DeployFinished])
+    server.add_extension(events)
 
     async with client(server) as c:
         [event_type] = await list_events(c)
@@ -197,34 +195,52 @@ async def test_a_model_without_matches_takes_no_arguments_and_gets_everything():
         await events.emit(DeployFinished(service="api"), event_id="d1")
         result = await poll_events_mcp(c, "deploy.finished", cursor=start.cursor)
     assert event_type.input_schema is None
-    assert event_type.description == "A deploy finished"
+    assert event_type.description is None
     assert [e.event_id for e in result.events] == ["d1"]
 
 
-def test_emitting_an_unregistered_model_is_an_error():
+def test_emitting_a_type_the_server_does_not_serve_is_an_error():
     _, events = make_server()
 
-    class Other(BaseModel):
+    class Other(EventPayload, name="other.event"):
         x: int
 
-    with pytest.raises(ValueError, match="not a registered event model"):
+    with pytest.raises(ValueError, match="not an event type this server emits"):
         anyio.run(lambda: events.emit(Other(x=1)))
 
 
-def test_a_model_registers_as_one_event_type_only():
-    _, events = make_server()
-    with pytest.raises(ValueError, match="already the event"):
-        events.event("alert.again")(AlertFired)
+def test_two_types_with_one_name_are_an_error():
+    class Again(EventPayload, name="alert.fired"):
+        x: int
+
+    with pytest.raises(ValueError, match="already registered"):
+        EventsExtension(events=[AlertFired, Again])
+
+
+def test_a_type_without_a_name_is_not_an_event():
+    class Base(EventPayload):
+        project: str
+
+    class Named(Base, name="named.event"):
+        pass
+
+    assert Base.__event_name__ is None
+    assert Named.__event_name__ == "named.event"
+    with pytest.raises(TypeError, match="declares no event type"):
+        EventsExtension(events=[Base])
+
+
+def test_the_decorator_no_longer_takes_a_model():
+    events = EventsExtension()
+    with pytest.raises(TypeError, match="subclassing EventPayload"):
+        events.event("alert.again")(AlertFired)  # ty: ignore[invalid-argument-type]
 
 
 def test_matches_must_be_a_sync_instance_method():
-    events = EventsExtension()
-
-    class Async(BaseModel):
-        x: int
-
-        async def matches(self, x: int | None = None) -> bool:
-            return True
-
     with pytest.raises(TypeError, match="must not be async"):
-        events.event("async.event")(Async)
+
+        class Async(EventPayload, name="async.event"):
+            x: int
+
+            async def matches(self, x: int | None = None) -> bool:
+                return True

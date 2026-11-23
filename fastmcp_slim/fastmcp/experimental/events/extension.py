@@ -30,7 +30,6 @@ from mcp.shared.inbound import (
 from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
 from mcp_types import HEADER_MISMATCH, INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
-from pydantic import BaseModel
 
 from fastmcp.experimental.events._constants import (
     EVENTS_EXTENSION_ID,
@@ -62,6 +61,7 @@ from fastmcp.utilities.logging import get_logger
 if TYPE_CHECKING:
     from fastmcp.experimental.events.emitted import EmittedEvents
     from fastmcp.experimental.events.log import EventLog
+    from fastmcp.experimental.events.payload import EventPayload
 
 logger = get_logger(__name__)
 
@@ -117,7 +117,7 @@ class EventPoll:
 
 
 EventCheck: TypeAlias = Callable[[EventPoll], EventBatch | Awaitable[EventBatch]]
-EventSource = TypeVar("EventSource", bound=EventCheck | type[BaseModel])
+EventCheckT = TypeVar("EventCheckT", bound=EventCheck)
 
 
 @dataclass(frozen=True)
@@ -170,6 +170,7 @@ class EventsExtension(ServerExtension):
         push: bool = True,
         emit_buffer: int = 1_000,
         log: EventLog | None = None,
+        events: Sequence[type[EventPayload]] = (),
     ) -> None:
         """
         Args:
@@ -181,6 +182,7 @@ class EventsExtension(ServerExtension):
             log: Where emitted events are kept. Defaults to an
                 `InMemoryEventLog`; pass a `DocketEventLog` to keep them in
                 Redis, shared across replicas and restarts.
+            events: The `EventPayload` types this server emits.
         """
         from fastmcp.experimental.events.log import InMemoryEventLog
 
@@ -190,7 +192,8 @@ class EventsExtension(ServerExtension):
         self._push = push
         self._log = log if log is not None else InMemoryEventLog(emit_buffer)
         self._registrations: dict[str, _Registration] = {}
-        self._models: dict[type[BaseModel], str] = {}
+        for model in events:
+            self._add_payload(model)
 
     def event(
         self,
@@ -200,27 +203,19 @@ class EventsExtension(ServerExtension):
         input_schema: dict[str, Any] | None = None,
         payload_schema: dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
-    ) -> Callable[[EventSource], EventSource]:
-        """Register an event type, from a payload model or a check function.
+    ) -> Callable[[EventCheckT], EventCheckT]:
+        """Register an event type served by a check function.
 
-        Decorating a Pydantic model declares an event type you `emit()`: the
-        model's fields are the payload schema, its docstring the description,
-        and the keyword parameters of its optional `matches` method the
-        subscription arguments. FastMCP buffers what you emit and serves poll
-        and push from that buffer.
-
-        Decorating a check function serves an upstream you can read from a
-        cursor: it receives an `EventPoll` and returns an `EventBatch`.
+        Use this for an upstream you can read from a cursor: the check
+        function receives an `EventPoll` and returns an `EventBatch`. For an
+        event type you `emit()`, subclass `EventPayload` instead.
 
         Args:
             name: Event type name clients subscribe to.
-            description: What the event means and when it fires. Defaults to
-                a model's docstring.
+            description: What the event means and when it fires.
             input_schema: JSON Schema for subscription arguments. Polls whose
                 arguments do not match are rejected before the check runs.
-                Derived from `matches` for a model.
-            payload_schema: JSON Schema for each event's `data`. Derived from
-                the fields for a model.
+            payload_schema: JSON Schema for each event's `data`.
             meta: Optional `_meta` for the listing.
         """
         if name in self._registrations:
@@ -229,50 +224,72 @@ class EventsExtension(ServerExtension):
             # Fail at the decorator line, before there is anything to register.
             _schema_validator(name, input_schema)
 
-        def register(source: EventSource) -> EventSource:
-            if name in self._registrations:
-                raise ValueError(f"An event named {name!r} is already registered.")
-            emitted = None
-            schema, payload, summary = input_schema, payload_schema, description
-            if isinstance(source, type) and issubclass(source, BaseModel):
-                from fastmcp.experimental.events.emitted import EmittedEvents
-
-                if source in self._models:
-                    raise ValueError(
-                        f"{source.__name__} is already the event {self._models[source]!r}."
-                    )
-                emitted = EmittedEvents(name, source, self._log)
-                schema = schema if schema is not None else emitted.input_schema
-                payload = payload if payload is not None else emitted.payload_schema
-                summary = summary or inspect.getdoc(source)
-                check: EventCheck = emitted.check
-            elif callable(source):
-                check = cast(EventCheck, source)
-            else:
+        def register(check: EventCheckT) -> EventCheckT:
+            if isinstance(check, type):
                 raise TypeError(
-                    "events.event() decorates a check function or a Pydantic model"
+                    "events.event() decorates a check function; declare an "
+                    "emitted event type by subclassing EventPayload with name=."
                 )
-            validator = None if schema is None else _schema_validator(name, schema)
-            descriptor = EventType(
-                name=name,
-                description=summary,
-                delivery=["poll", "push"] if self._push else ["poll"],
-                input_schema=schema,
-                payload_schema=payload,
+            self._add(
+                name,
+                check,
+                description=description,
+                input_schema=input_schema,
+                payload_schema=payload_schema,
                 meta=meta,
             )
-            self._registrations[name] = _Registration(
-                descriptor, check, validator, emitted
-            )
-            if emitted is not None:
-                self._models[emitted.model] = name
-            return source
+            return check
 
         return register
 
+    def _add(
+        self,
+        name: str,
+        check: EventCheck,
+        *,
+        description: str | None,
+        input_schema: dict[str, Any] | None,
+        payload_schema: dict[str, Any] | None,
+        meta: dict[str, Any] | None = None,
+        emitted: EmittedEvents | None = None,
+    ) -> None:
+        if name in self._registrations:
+            raise ValueError(f"An event named {name!r} is already registered.")
+        validator = (
+            None if input_schema is None else _schema_validator(name, input_schema)
+        )
+        descriptor = EventType(
+            name=name,
+            description=description,
+            delivery=["poll", "push"] if self._push else ["poll"],
+            input_schema=input_schema,
+            payload_schema=payload_schema,
+            meta=meta,
+        )
+        self._registrations[name] = _Registration(descriptor, check, validator, emitted)
+
+    def _add_payload(self, model: type[EventPayload]) -> None:
+        from fastmcp.experimental.events.emitted import EmittedEvents
+
+        name = getattr(model, "__event_name__", None)
+        if name is None:
+            raise TypeError(
+                f"{model.__name__} declares no event type; subclass "
+                "EventPayload with name=."
+            )
+        emitted = EmittedEvents(name, model, self._log)
+        self._add(
+            name,
+            emitted.check,
+            description=model.__event_description__,
+            input_schema=emitted.input_schema,
+            payload_schema=emitted.payload_schema,
+            emitted=emitted,
+        )
+
     async def emit(
         self,
-        payload: BaseModel,
+        payload: EventPayload,
         *,
         event_id: str | None = None,
         timestamp: datetime | None = None,
@@ -280,20 +297,20 @@ class EventsExtension(ServerExtension):
     ) -> None:
         """Record that an event happened, for every subscriber whose `matches` accepts it.
 
-        `payload` is an instance of a model registered with `event()`. Pass the
-        upstream's stable identifier as `event_id` when there is one, so a
-        client that sees the same occurrence twice can drop the repeat.
-        Open push streams for the event type wake at once; polls see it on
-        their next request.
+        `payload` is an instance of an `EventPayload` subclass declared with
+        `name=`. Pass the upstream's stable identifier as `event_id` when
+        there is one, so a client that sees the same occurrence twice can
+        drop the repeat. Open push streams for the event type wake at once;
+        polls see it on their next request.
         """
-        name = self._models.get(type(payload))
-        if name is None:
+        name = type(payload).__event_name__
+        registration = self._registrations.get(name) if name is not None else None
+        emitted = registration.emitted if registration is not None else None
+        if emitted is None or emitted.model is not type(payload):
             raise ValueError(
-                f"{type(payload).__name__} is not a registered event model; "
-                "decorate it with events.event()."
+                f"{type(payload).__name__} is not an event type this server "
+                "emits; pass it in EventsExtension(events=[...])."
             )
-        emitted = self._registrations[name].emitted
-        assert emitted is not None
         await emitted.append(payload, event_id=event_id, timestamp=timestamp, meta=meta)
 
     def lifespan(self) -> AbstractAsyncContextManager[None]:

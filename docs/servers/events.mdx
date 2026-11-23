@@ -18,25 +18,23 @@ There are two ways to declare an event type. When your own code knows the moment
 
 ## Emitting events
 
-Decorate a Pydantic model to declare an event type, then call `emit()` with an instance whenever the event happens. The model's fields become the event's payload schema and its docstring the description.
+Subclass `EventPayload` with a `name` to declare an event type, list it on the server's `EventsExtension`, and call `emit()` with an instance whenever the event happens. The class's fields become the event's payload schema and its docstring the description.
 
 ```python
-from pydantic import BaseModel
-
 from fastmcp import FastMCP
-from fastmcp.experimental.events import EventsExtension
-
-mcp = FastMCP("Builds")
-events = EventsExtension()
-mcp.add_extension(events)
+from fastmcp.experimental.events import EventPayload, EventsExtension
 
 
-@events.event("build.finished")
-class BuildFinished(BaseModel):
+class BuildFinished(EventPayload, name="build.finished"):
     """A build finished."""
 
     build_id: str
     status: str
+
+
+mcp = FastMCP("Builds")
+events = EventsExtension(events=[BuildFinished])
+mcp.add_extension(events)
 
 
 @mcp.tool
@@ -45,29 +43,23 @@ async def finish_build(build_id: str, status: str) -> str:
     return "recorded"
 ```
 
+`EventPayload` is a Pydantic model, so everything a model can do works here. A subclass without `name` declares no event type, which is how several event types share common fields through a base class. Pass `description=` next to `name` to describe the event without a docstring.
+
 Pass the upstream's stable identifier as `event_id` when there is one. Clients drop an event whose ID they have already seen, which is what makes a retried emit or a reconnect harmless. Without one, FastMCP assigns an ID when you emit.
 
 You can emit from anywhere in the server's process: in the middle of a tool, at the end of one, from a background task, or from a route that receives an upstream's webhook. An open push stream for the event type receives the event at once, and a polling client sees it on its next poll.
 
 ### Filtering with `matches`
 
-A `matches` method on the model decides which subscriptions receive each event. Its keyword parameters are the subscription arguments, and FastMCP builds the event type's input schema from them the way it builds a tool's from its parameters. Give every parameter a default, so a client can subscribe without it.
+A `matches` method on the class decides which subscriptions receive each event. Its keyword parameters are the subscription arguments, and FastMCP builds the event type's input schema from them the way it builds a tool's from its parameters. Give every parameter a default, so a client can subscribe without it.
 
 ```python
 from typing import Literal
 
-from pydantic import BaseModel
-
-from fastmcp import FastMCP
-from fastmcp.experimental.events import EventsExtension
-
-mcp = FastMCP("Alerts")
-events = EventsExtension()
-mcp.add_extension(events)
+from fastmcp.experimental.events import EventPayload
 
 
-@events.event("alert.fired")
-class AlertFired(BaseModel):
+class AlertFired(EventPayload, name="alert.fired"):
     """An alert fired."""
 
     project: str
@@ -84,7 +76,7 @@ class AlertFired(BaseModel):
         return severity is None or self.severity == severity
 ```
 
-A client that subscribes with `{"project": "api"}` receives only that project's alerts. FastMCP runs `matches` against each event for each subscription when it delivers, so filtering keeps no state per subscriber. Keep it fast and free of I/O; it must be a plain method, not `async`. A model without `matches` takes no arguments, and every subscriber receives every event.
+A client that subscribes with `{"project": "api"}` receives only that project's alerts. FastMCP runs `matches` against each event for each subscription when it delivers, so filtering keeps no state per subscriber. Keep it fast and free of I/O; it must be a plain method, not `async`. A class without `matches` takes no arguments, and every subscriber receives every event.
 
 ### How long events are kept
 
@@ -104,11 +96,19 @@ Pass the log to the extension. Nothing else about declaring or emitting events c
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.experimental.events import EventsExtension
+from fastmcp.experimental.events import EventPayload, EventsExtension
 from fastmcp.experimental.events.docket_log import DocketEventLog
 
+
+class BuildFinished(EventPayload, name="build.finished"):
+    """A build finished."""
+
+    build_id: str
+    status: str
+
+
 log = DocketEventLog("redis://localhost:6379/0", max_events=10_000)
-events = EventsExtension(log=log)
+events = EventsExtension(events=[BuildFinished], log=log)
 
 mcp = FastMCP("ci")
 mcp.add_extension(events)

@@ -42,19 +42,7 @@ class EmittedEvents:
         self.name = name
         self.model = model
         self.log = log
-        self._matcher: Callable[..., Any] | None = None
-        self.input_schema: dict[str, Any] | None = None
-        matches = model.__dict__.get("matches")
-        if matches is not None:
-            if not inspect.isfunction(matches):
-                raise TypeError(
-                    f"{model.__name__}.matches must be a plain instance method"
-                )
-            if inspect.iscoroutinefunction(matches):
-                raise TypeError(f"{model.__name__}.matches must not be async")
-            parsed = ParsedFunction.from_function(_without_self(matches))
-            self.input_schema = parsed.input_schema
-            self._matcher = validate_call(matches)
+        self.input_schema, self._matcher = parse_matches(model)
 
     @property
     def payload_schema(self) -> dict[str, Any]:
@@ -124,6 +112,21 @@ class EmittedEvents:
                 code=INVALID_PARAMS,
                 message=f"Invalid arguments: {error.errors()[0]['msg']}",
             ) from None
+
+
+def parse_matches(
+    model: type[BaseModel],
+) -> tuple[dict[str, Any] | None, Callable[..., Any] | None]:
+    """The input schema and validating matcher from a model's `matches`, if any."""
+    matches = model.__dict__.get("matches")
+    if matches is None:
+        return None, None
+    if not inspect.isfunction(matches):
+        raise TypeError(f"{model.__name__}.matches must be a plain instance method")
+    if inspect.iscoroutinefunction(matches):
+        raise TypeError(f"{model.__name__}.matches must not be async")
+    parsed = ParsedFunction.from_function(_without_self(matches))
+    return parsed.input_schema, validate_call(matches)
 
 
 def _without_self(method: Callable[..., Any]) -> Callable[..., Any]:
