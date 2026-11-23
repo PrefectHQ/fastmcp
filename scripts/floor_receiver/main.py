@@ -337,7 +337,7 @@ def load_secrets() -> None:
                 data = json.loads(response.read())["payload"]["data"]
         except urllib.error.HTTPError:
             if name in OPTIONAL:
-                log.warning("no %s: %s stays off", SECRETS[name], name)
+                log.warning("no Prefect token configured; /prefect stays off")
                 continue
             raise
         os.environ[name] = base64.b64decode(data).decode().strip()
