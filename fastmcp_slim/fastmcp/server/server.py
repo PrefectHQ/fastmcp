@@ -10,6 +10,7 @@ from collections.abc import (
     AsyncGenerator,
     Awaitable,
     Callable,
+    Collection,
     Sequence,
 )
 from contextlib import (
@@ -2712,6 +2713,7 @@ class FastMCP(
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
         validate_output: bool = True,
+        forward_client_headers: bool | Collection[str] = True,
         **settings: Any,
     ) -> Self:
         """
@@ -2734,6 +2736,10 @@ class FastMCP(
                 extracted from the OpenAPI spec for response validation. If
                 False, a permissive schema is used instead, allowing any
                 response structure while still returning structured JSON.
+            forward_client_headers: Which headers of the incoming MCP request
+                are forwarded to the API. True (default) forwards all but
+                credential, connection and MCP transport headers; False
+                forwards none; a collection of names forwards only those.
             **settings: Additional settings passed to FastMCP
 
         Returns:
@@ -2750,6 +2756,7 @@ class FastMCP(
             mcp_names=mcp_names,
             tags=tags,
             validate_output=validate_output,
+            forward_client_headers=forward_client_headers,
         )
         return cls(name=name, providers=[provider], **settings)
 
@@ -2764,6 +2771,7 @@ class FastMCP(
         mcp_names: dict[str, str] | None = None,
         httpx_client_kwargs: dict[str, Any] | None = None,
         tags: set[str] | None = None,
+        forward_client_headers: bool | Collection[str] = True,
         **settings: Any,
     ) -> Self:
         """
@@ -2779,6 +2787,10 @@ class FastMCP(
             httpx_client_kwargs: Optional kwargs passed to httpx2.AsyncClient.
                 Use this to configure timeout and other client settings.
             tags: Optional set of tags to add to all components
+            forward_client_headers: Which headers of the incoming MCP request
+                are forwarded to the API. True (default) forwards all but
+                credential, connection and MCP transport headers; False
+                forwards none; a collection of names forwards only those.
             **settings: Additional settings passed to FastMCP
 
         Returns:
@@ -2805,6 +2817,7 @@ class FastMCP(
             mcp_component_fn=mcp_component_fn,
             mcp_names=mcp_names,
             tags=tags,
+            forward_client_headers=forward_client_headers,
         )
         return cls(name=server_name, providers=[provider], **settings)
 
