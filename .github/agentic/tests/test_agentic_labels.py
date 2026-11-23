@@ -225,7 +225,11 @@ def test_label_only_writes_skip_the_comment() -> None:
 def test_assessor_must_answer_area_but_old_assessments_still_validate() -> None:
     from flows.agentic_stack_plans import Assessment
 
-    assert "area" in Assessment.model_json_schema()["required"]
+    schema = Assessment.model_json_schema()
+    assert "area" in schema["required"]
+    # A blank area satisfies "required", so the assessor is never offered one.
+    assert "" not in schema["properties"]["area"]["enum"]
+    assert "anyOf" not in schema["properties"]["area"]
     old = Assessment.model_validate(
         {
             "decision": "skip",

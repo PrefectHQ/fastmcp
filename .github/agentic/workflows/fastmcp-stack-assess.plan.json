@@ -87,30 +87,21 @@
                 "type": "array"
               },
               "area": {
-                "anyOf": [
-                  {
-                    "enum": [
-                      "auth",
-                      "cli",
-                      "client",
-                      "contrib",
-                      "fastmcp.json",
-                      "http",
-                      "mcp apps",
-                      "openapi",
-                      "provider",
-                      "server",
-                      "tasks"
-                    ],
-                    "type": "string"
-                  },
-                  {
-                    "const": "",
-                    "type": "string"
-                  }
+                "enum": [
+                  "auth",
+                  "cli",
+                  "client",
+                  "contrib",
+                  "fastmcp.json",
+                  "http",
+                  "mcp apps",
+                  "openapi",
+                  "provider",
+                  "server",
+                  "tasks"
                 ],
-                "default": "",
-                "title": "Area"
+                "title": "Area",
+                "type": "string"
               }
             },
             "required": [
@@ -237,30 +228,21 @@
                 "type": "array"
               },
               "area": {
-                "anyOf": [
-                  {
-                    "enum": [
-                      "auth",
-                      "cli",
-                      "client",
-                      "contrib",
-                      "fastmcp.json",
-                      "http",
-                      "mcp apps",
-                      "openapi",
-                      "provider",
-                      "server",
-                      "tasks"
-                    ],
-                    "type": "string"
-                  },
-                  {
-                    "const": "",
-                    "type": "string"
-                  }
+                "enum": [
+                  "auth",
+                  "cli",
+                  "client",
+                  "contrib",
+                  "fastmcp.json",
+                  "http",
+                  "mcp apps",
+                  "openapi",
+                  "provider",
+                  "server",
+                  "tasks"
                 ],
-                "default": "",
-                "title": "Area"
+                "title": "Area",
+                "type": "string"
               }
             },
             "required": [

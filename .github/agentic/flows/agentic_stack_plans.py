@@ -4,7 +4,7 @@ import argparse
 import json
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -28,8 +28,13 @@ Area = Literal[
 
 def _require_area(schema: dict) -> None:
     # Retained assessments from before areas existed still validate, but the
-    # assessor must always answer: an optional field is one it skips.
+    # assessor must always name one: an optional or blank field is one it skips.
     schema["required"] = [*schema.get("required", []), "area"]
+    schema["properties"]["area"] = {
+        "enum": list(get_args(Area)),
+        "type": "string",
+        "title": "Area",
+    }
 
 
 class Assessment(BaseModel):
