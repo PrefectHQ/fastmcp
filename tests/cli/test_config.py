@@ -510,3 +510,33 @@ class TestMCPServerConfigRoundtrip:
         assert reconstructed.source.path == "server.py"
         assert reconstructed.environment.python == "3.11"
         assert reconstructed.deployment.port == 8080
+
+    def test_anchors_project_and_editable_relative_to_config_file(
+        self, tmp_path, monkeypatch
+    ):
+        """Relative environment.project and environment.editable anchor to config_dir."""
+        project_dir = tmp_path / "proj"
+        other_dir = tmp_path / "elsewhere"
+        pkg_dir = project_dir / "pkg"
+        project_dir.mkdir()
+        other_dir.mkdir()
+        pkg_dir.mkdir()
+
+        config_file = project_dir / "fastmcp.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "source": {"path": "server.py"},
+                    "environment": {"project": ".", "editable": ["pkg", "../shared"]},
+                }
+            )
+        )
+
+        monkeypatch.chdir(other_dir)
+        config = MCPServerConfig.from_file(config_file)
+
+        assert config.environment.project == Path(os.path.abspath(project_dir))
+        assert config.environment.editable == [
+            Path(os.path.abspath(pkg_dir)),
+            Path(os.path.abspath(tmp_path / "shared")),
+        ]

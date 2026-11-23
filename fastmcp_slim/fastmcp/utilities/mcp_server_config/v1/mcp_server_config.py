@@ -250,27 +250,33 @@ class MCPServerConfig(BaseModel):
     def anchor_paths(self, config_dir: Path) -> None:
         """Make relative file paths absolute against the config file's directory.
 
-        Anchors `source.path` and `environment.requirements`, so a config
-        loaded from another working directory still finds its files. Paths are
-        made absolute without following symlinks, so a symlinked `fastmcp.json`
-        resolves paths beside the link. Other paths, such as `deployment.cwd`,
-        keep their own resolution rules.
+        Anchors `source.path`, `environment.requirements`, `environment.project`,
+        and `environment.editable`, so a config loaded from another working
+        directory still finds its files. Paths are made absolute without following
+        symlinks, so a symlinked `fastmcp.json` resolves paths beside the link.
+        Other paths, such as `deployment.cwd`, keep their own resolution rules.
 
         Args:
             config_dir: Directory containing the configuration file
         """
         config_dir = Path(os.path.abspath(config_dir.expanduser()))
 
-        source_path = Path(self.source.path).expanduser()
-        if not source_path.is_absolute():
-            self.source.path = os.path.abspath(config_dir / source_path)
+        def anchor(path: Path) -> Path:
+            expanded = path.expanduser()
+            if not expanded.is_absolute():
+                return Path(os.path.abspath(config_dir / expanded))
+            return expanded
 
-        requirements = self.environment.requirements
-        if requirements is not None:
-            requirements = requirements.expanduser()
-            if not requirements.is_absolute():
-                requirements = Path(os.path.abspath(config_dir / requirements))
-            self.environment.requirements = requirements
+        self.source.path = str(anchor(Path(self.source.path)))
+
+        if self.environment.requirements is not None:
+            self.environment.requirements = anchor(self.environment.requirements)
+
+        if self.environment.project is not None:
+            self.environment.project = anchor(self.environment.project)
+
+        if self.environment.editable is not None:
+            self.environment.editable = [anchor(p) for p in self.environment.editable]
 
     @classmethod
     def from_cli_args(
