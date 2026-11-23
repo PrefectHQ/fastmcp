@@ -21,6 +21,9 @@ logger = get_logger(__name__)
 
 _MAX_PATH_DECODINGS = 32
 _PATH_TEMPLATE_PARAM = re.compile(r"\{([^{}]+)\}")
+# RFC 6265 cookie-octets left as-is in a cookie value (`%` is not, so the
+# encoding stays unambiguous). Everything else is percent-encoded.
+_COOKIE_SAFE = "!#$&'()*+-./:<=>?@[]^_`{|}~"
 
 
 def _query_scalar_to_str(value: Any) -> str:
@@ -661,7 +664,10 @@ class RequestDirector:
                     for key, item in value.items():
                         pairs.append(
                             (
-                                _query_scalar_to_str(key),
+                                quote(
+                                    _query_scalar_to_str(key),
+                                    safe=_COOKIE_SAFE.replace("=", ""),
+                                ),
                                 self._cookie_scalar_to_str(name, item),
                             )
                         )
@@ -693,23 +699,27 @@ class RequestDirector:
 
     @staticmethod
     def _cookie_scalar_to_str(param_name: str, value: Any) -> str:
-        """Serialize a cookie scalar, rejecting nested collection values."""
+        """Serialize a cookie scalar, percent-encoding it for the Cookie header.
+
+        RFC 6265 cookie values exclude `;`, `,`, `"`, `\\`, whitespace, controls
+        and non-ASCII, and OpenAPI's form style percent-encodes them. Without
+        this, a `;` in a tool argument would split the header and add cookies
+        the operation never declared.
+        """
         if isinstance(value, dict | list | tuple):
             raise ValueError(
                 f"Cookie parameter '{param_name}' contains a nested "
                 f"{type(value).__name__}; cookie form serialization supports "
                 "only scalar values"
             )
-        return _query_scalar_to_str(value)
+        return quote(_query_scalar_to_str(value), safe=_COOKIE_SAFE)
 
     @classmethod
     def _cookie_joined_item(cls, param_name: str, value: Any) -> str:
-        """Encode separators in a non-exploded cookie item so boundaries stay clear."""
-        text = cls._cookie_scalar_to_str(param_name, value)
+        """Encode a non-exploded cookie item; `,` and `=` also separate items."""
         return (
-            text.replace("%", "%25")
+            cls._cookie_scalar_to_str(param_name, value)
             .replace(",", "%2C")
-            .replace(";", "%3B")
             .replace("=", "%3D")
         )
 
