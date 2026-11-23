@@ -9,6 +9,7 @@ on:
       - "tests/**"
       - "docs/**"
       - "scripts/pbt_coverage.py"
+      - ".github/workflows/pbt-coverage.yml"
       - "pyproject.toml"
       - "uv.lock"
   schedule:
