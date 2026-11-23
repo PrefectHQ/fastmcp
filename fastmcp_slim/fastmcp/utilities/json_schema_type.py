@@ -381,7 +381,7 @@ def json_schema_to_type(
     if schema is True:
         return Any
     if schema is False:
-        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-explicit-return]
 
     _check_nesting(schema)
 
@@ -418,7 +418,7 @@ def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
         # class whose recursive fields still depend on this conversion's namespace.
         for key, cls in conversion.classes.items():
             _classes.put(key, cls, conversion.root_size)
-        return result  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return result  # type: ignore[return-value]  # ty:ignore[invalid-explicit-return]
     finally:
         _conversion.reset(token)
 
@@ -1126,7 +1126,7 @@ def _convert_schema(
     if schema is True:
         return Any
     if schema is False:
-        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-explicit-return]
 
     if not schema:
         return object
@@ -1397,7 +1397,7 @@ def _create_pydantic_model(
         return existing
     # A recursive reference to a class that is still being built
     if cache_key in conversion.building:
-        return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-explicit-return]
 
     conversion.building.add(cache_key)
     enclosing_class_name = conversion.enclosing_class_name
@@ -1514,7 +1514,7 @@ def _create_dataclass(
         return existing
     # A recursive reference to a class that is still being built
     if cache_key in conversion.building:
-        return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+        return conversion.reference(cache_key)  # type: ignore[return-value]  # ty:ignore[invalid-explicit-return]
 
     conversion.building.add(cache_key)
     enclosing_class_name = conversion.enclosing_class_name
