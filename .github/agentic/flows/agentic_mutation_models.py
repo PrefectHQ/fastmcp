@@ -56,6 +56,9 @@ class MutationRecommendation(BaseModel):
     @field_validator("norm_evidence")
     @classmethod
     def distinct_checks(cls, value: list[NormEvidence]) -> list[NormEvidence]:
-        if len({item.check for item in value}) != len(value):
-            raise ValueError("Norm checks must be unique")
-        return value
+        # Keep each check's first evidence; a repeat shouldn't fail the whole
+        # triage review.
+        distinct: dict[str, NormEvidence] = {}
+        for item in value:
+            distinct.setdefault(item.check, item)
+        return list(distinct.values())

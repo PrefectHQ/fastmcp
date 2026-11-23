@@ -19,6 +19,10 @@ MACHINE = "tests/pbt/test_components_machine.py"
 TRANSFORM = "fastmcp_slim/fastmcp/tools/tool_transform.py"
 DIRECTOR = "fastmcp_slim/fastmcp/utilities/openapi/director.py"
 OAUTH = "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py"
+SSRF = "fastmcp_slim/fastmcp/server/auth/ssrf.py"
+REDIRECT = "fastmcp_slim/fastmcp/server/auth/redirect_validation.py"
+CIMD = "fastmcp_slim/fastmcp/server/auth/cimd.py"
+GUARDS = "tests/pbt/test_auth_url_guards.py"
 AUTHZ = "fastmcp_slim/fastmcp/server/middleware/authorization.py"
 CACHING = "fastmcp_slim/fastmcp/server/middleware/caching.py"
 RATE = "fastmcp_slim/fastmcp/server/middleware/rate_limiting.py"
@@ -253,6 +257,94 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             ),
             "new": "            pass\n",
             "test": "tests/pbt/test_oauth_proxy_machine.py",
+        },
+    ],
+    "auth_guards": [
+        {
+            "name": "IPv6 wrappers not unwrapped",
+            "file": SSRF,
+            "old": "    if isinstance(ip, ipaddress.IPv6Address):\n        if any(",
+            "new": "    if False:\n        if any(",
+            "test": f"{GUARDS}::test_ipv6_never_unblocks_a_blocked_ipv4",
+        },
+        {
+            "name": "port 0 rewritten to 443",
+            "file": SSRF,
+            "old": "    if port is None:\n        port = 443\n    elif port == 0:",
+            "new": "    if not port:\n        port = 443\n    elif False:",
+            "test": f"{GUARDS}::test_pinned_request_goes_where_validation_looked",
+        },
+        {
+            "name": "ISATAP not unwrapped",
+            "file": SSRF,
+            "old": "    if packed[8:12] in ISATAP_INTERFACE_IDS:",
+            "new": "    if False:",
+            "test": f"{GUARDS}::test_ipv6_never_unblocks_a_blocked_ipv4",
+        },
+        {
+            "name": "port read outside the guard (#5773 undone)",
+            "file": SSRF,
+            "old": (
+                "        port = parsed.port\n"
+                "    except (ValueError, AttributeError) as e:\n"
+                '        raise SSRFError(f"Invalid URL: {e}") from e\n'
+            ),
+            "new": (
+                "        pass\n"
+                "    except (ValueError, AttributeError) as e:\n"
+                '        raise SSRFError(f"Invalid URL: {e}") from e\n'
+                "    port = parsed.port\n"
+            ),
+            "test": f"{GUARDS}::test_validate_url_fails_only_with_ssrf_error",
+        },
+        {
+            "name": "userinfo allowed in redirect URIs",
+            "file": REDIRECT,
+            "old": "    if uri_parsed.username is not None or uri_parsed.password is not None:",
+            "new": "    if False:",
+            "test": f"{GUARDS}::test_a_match_lands_on_the_patterns_host",
+        },
+        {
+            "name": "backslash allowed in the raw authority",
+            "file": REDIRECT,
+            "old": '    if "\\\\" in raw_parsed.netloc:',
+            "new": "    if False:",
+            "test": f"{GUARDS}::test_a_match_lands_on_the_patterns_host",
+        },
+        {
+            "name": "subdomain wildcard matches any suffix",
+            "file": REDIRECT,
+            "old": "        return uri_host.endswith(suffix) and uri_host != pattern_host[2:]",
+            "new": "        return uri_host.endswith(pattern_host[2:])",
+            "test": f"{GUARDS}::test_a_match_lands_on_the_patterns_host",
+        },
+        {
+            "name": "exact pattern ignores the query (#6000 undone)",
+            "file": REDIRECT,
+            "old": '    if pattern_parsed.query or "*" not in pattern:',
+            "new": "    if pattern_parsed.query:",
+            "test": f"{GUARDS}::test_an_exact_pattern_matches_only_itself",
+        },
+        {
+            "name": "repeated iss kept",
+            "file": REDIRECT,
+            "old": '    return _drop_repeated_query_param(replace_query_param(url, "iss", iss), "iss")',
+            "new": '    return replace_query_param(url, "iss", iss)',
+            "test": f"{GUARDS}::test_client_redirect_carries_each_parameter_once",
+        },
+        {
+            "name": "document scope not intersected",
+            "file": CIMD,
+            "old": '        filtered = " ".join(s for s in scope.split(" ") if s and s in allowed)',
+            "new": '        filtered = " ".join(s for s in scope.split(" ") if s)',
+            "test": f"{GUARDS}::test_document_scopes_never_widen_the_servers",
+        },
+        {
+            "name": "negative freshness kept",
+            "file": CIMD,
+            "old": "        freshness_lifetime = max(0.0, expires_at - now)",
+            "new": "        freshness_lifetime = expires_at - now",
+            "test": f"{GUARDS}::test_cache_headers_never_break_a_fetch",
         },
     ],
     "middleware": [

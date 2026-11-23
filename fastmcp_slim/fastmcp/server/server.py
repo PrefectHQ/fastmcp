@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import weakref
 from collections.abc import (
     AsyncGenerator,
     Awaitable,
     Callable,
+    Collection,
     Sequence,
 )
 from contextlib import (
@@ -35,6 +37,12 @@ import pydantic_core
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
+from mcp.shared.subscriptions import (
+    PromptsListChanged,
+    ResourcesListChanged,
+    ResourceUpdated,
+    ToolsListChanged,
+)
 from mcp_types import (
     Annotations,
     CallToolRequestParams,
@@ -634,6 +642,12 @@ class FastMCP(
             cache_hints=cache_hints,
         )
 
+        # Servers that serve this one as a provider (`mount`, `add_provider`,
+        # `providers=`), so its `notify_*` reaches their listening clients.
+        # Weak references, compared by identity so subclasses that define
+        # `__eq__` link correctly; dead entries are pruned as links are read.
+        self._mounted_on: list[weakref.ref[FastMCP[Any]]] = []
+
         self.auth: AuthProvider | None = auth
 
         if tools:
@@ -849,6 +863,33 @@ class FastMCP(
         self._validate_provider_extensions(provider)
         self._register_provider_extensions(provider)
         super().add_provider(provider, namespace=namespace)
+        self._link_child_servers(provider)
+
+    def _served_servers(self) -> Sequence[FastMCP]:
+        """Added directly as a provider, a server serves itself."""
+        return (self,)
+
+    def _link_child_servers(self, provider: Provider) -> None:
+        """Record this server on each child server it now serves, so the
+        children's `notify_*` also reaches clients listening here."""
+        for child in provider._served_servers():
+            if child is not self and not any(
+                parent is self for parent in child._live_parents()
+            ):
+                child._mounted_on.append(weakref.ref(self))
+
+    def _live_parents(self) -> list[FastMCP[Any]]:
+        """The servers this one is attached to, in attach order, dropping
+        any that have been collected."""
+        parents = []
+        live_refs = []
+        for ref in self._mounted_on:
+            parent = ref()
+            if parent is not None:
+                parents.append(parent)
+                live_refs.append(ref)
+        self._mounted_on[:] = live_refs
+        return parents
 
     def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
         """Replace placeholder Prefab URIs with shared renderer identities.
@@ -1670,7 +1711,8 @@ class FastMCP(
                     raise NotFoundError(f"Unknown tool: {name!r}")
                 span.set_attributes(tool.get_span_attributes())
                 try:
-                    return await tool._run(arguments or {})
+                    result = await tool._run(arguments or {})
+                    return tool._apply_result_transforms(result)
                 except ValidationError as e:
                     cause = e.__cause__
                     if isinstance(cause, PydanticValidationError):
@@ -2017,6 +2059,63 @@ class FastMCP(
             The tool instance that was added to the server.
         """
         return self._local_provider.add_tool(tool)
+
+    async def notify_tools_changed(self) -> None:
+        """Tell listening clients that this server's tool list changed.
+
+        Publishes to every open `subscriptions/listen` stream that asked for
+        tool changes, so it works from background tasks with no request in
+        flight. A server attached to others with `mount`, `add_provider`, or
+        `providers=` also notifies them.
+        Reaches clients on the 2026-07-28 protocol only; on handshake-era
+        connections, send `notifications/tools/list_changed` from a request with
+        `Context.send_notification`. Adding or removing tools never calls this
+        automatically. Does nothing when `settings.enable_subscriptions_listen`
+        was off as this server was created.
+        """
+        await self._publish_list_changed(ToolsListChanged())
+
+    async def notify_prompts_changed(self) -> None:
+        """Tell listening clients that this server's prompt list changed.
+
+        See `notify_tools_changed` for delivery semantics.
+        """
+        await self._publish_list_changed(PromptsListChanged())
+
+    async def notify_resources_changed(self) -> None:
+        """Tell listening clients that this server's resource list changed.
+
+        See `notify_tools_changed` for delivery semantics.
+        """
+        await self._publish_list_changed(ResourcesListChanged())
+
+    async def notify_resource_updated(self, uri: str | AnyUrl) -> None:
+        """Tell clients listening to `uri` that the resource changed.
+
+        Matches `uri` exactly against the URIs each stream subscribed to, so
+        pass the URI as this server's clients see it. Unlike the list-change
+        methods, this does not propagate to servers this one is attached to,
+        since a namespace can rewrite the URI. See `notify_tools_changed` for
+        delivery semantics.
+        """
+        subscriptions = self._mcp_server.subscriptions
+        if subscriptions is not None:
+            await subscriptions.publish(ResourceUpdated(uri=str(uri)))
+
+    async def _publish_list_changed(
+        self,
+        event: ToolsListChanged | PromptsListChanged | ResourcesListChanged,
+        _seen: set[int] | None = None,
+    ) -> None:
+        seen = _seen if _seen is not None else set()
+        if id(self) in seen:
+            return
+        seen.add(id(self))
+        subscriptions = self._mcp_server.subscriptions
+        if subscriptions is not None:
+            await subscriptions.publish(event)
+        for parent in self._live_parents():
+            await parent._publish_list_changed(event, seen)
 
     def _get_tool_input_schema(self, name: str) -> dict[str, Any] | None:
         """Synchronous lookup served to the SDK's `get_tool_input_schema` hook
@@ -2615,6 +2714,7 @@ class FastMCP(
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
         validate_output: bool = True,
+        forward_client_headers: bool | Collection[str] = True,
         **settings: Any,
     ) -> Self:
         """
@@ -2637,6 +2737,10 @@ class FastMCP(
                 extracted from the OpenAPI spec for response validation. If
                 False, a permissive schema is used instead, allowing any
                 response structure while still returning structured JSON.
+            forward_client_headers: Which headers of the incoming MCP request
+                are forwarded to the API. True (default) forwards all but
+                credential, connection and MCP transport headers; False
+                forwards none; a collection of names forwards only those.
             **settings: Additional settings passed to FastMCP
 
         Returns:
@@ -2653,6 +2757,7 @@ class FastMCP(
             mcp_names=mcp_names,
             tags=tags,
             validate_output=validate_output,
+            forward_client_headers=forward_client_headers,
         )
         return cls(name=name, providers=[provider], **settings)
 
@@ -2667,6 +2772,7 @@ class FastMCP(
         mcp_names: dict[str, str] | None = None,
         httpx_client_kwargs: dict[str, Any] | None = None,
         tags: set[str] | None = None,
+        forward_client_headers: bool | Collection[str] = True,
         **settings: Any,
     ) -> Self:
         """
@@ -2682,6 +2788,10 @@ class FastMCP(
             httpx_client_kwargs: Optional kwargs passed to httpx2.AsyncClient.
                 Use this to configure timeout and other client settings.
             tags: Optional set of tags to add to all components
+            forward_client_headers: Which headers of the incoming MCP request
+                are forwarded to the API. True (default) forwards all but
+                credential, connection and MCP transport headers; False
+                forwards none; a collection of names forwards only those.
             **settings: Additional settings passed to FastMCP
 
         Returns:
@@ -2708,6 +2818,7 @@ class FastMCP(
             mcp_component_fn=mcp_component_fn,
             mcp_names=mcp_names,
             tags=tags,
+            forward_client_headers=forward_client_headers,
         )
         return cls(name=server_name, providers=[provider], **settings)
 

@@ -304,6 +304,8 @@ async def custom_tool_management(ctx: Context) -> str:
 
 These notifications reach only the session that made the request. See [Client Notifications](/servers/visibility#client-notifications).
 
+On the `2026-07-28` protocol, list change notifications travel on listen streams instead. Use `ctx.fastmcp.notify_tools_changed()` and its siblings to reach those clients. See [Tool Notifications](/servers/tools#notifications).
+
 ### FastMCP Server
 
 To access the underlying FastMCP server instance, you can use the `ctx.fastmcp` property:

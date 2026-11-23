@@ -1,42 +1,37 @@
-"""Turn a finished intake into the GitHub labels that the repository's closers act on.
+"""Label assessed issues so they sort into the maintainer's queue.
 
-Triage used to stop at Slack. Two outcomes now become GitHub state:
+Triage writes only labels that are cheap to be wrong about:
 
-- A reviewed "needs a reproduction" outcome gets the `needs MRE` label and a fixed
-  request. `auto-close-needs-mre.yml` closes it after 7 days without the author.
-- A reviewed `close_duplicate` recommendation gets a "possible duplicate" comment and
-  the `potential-duplicate` label. `auto-close-duplicates.yml` closes it after its
-  3-day cooldown unless someone objects.
+- the issue's area (`client`, `server`, `auth`, ...), when the assessment named one
+  and the issue has none yet;
+- `needs:triage` on every issue whose outcome waits on a person: review a linked PR,
+  fix a reproduced bug, decide a direction, ask the reporter for something, or
+  close it.
 
-Nothing here closes an issue. Writes go out as the triage GitHub App, never a person,
-and `fastmcp_triage_config.github_writes` ("off", "dry_run", "on", or a mapping
-like {"labels": "on", "sweep": "dry_run"}; default "dry_run") is read on every run,
-so turning writes on or off needs no deploy.
+Triage never starts a closing clock on its own. Asking the reporter for a
+reproducer (`needs MRE`, closed after 7 days) and flagging a duplicate
+(`potential-duplicate`, closed after 3) are proposals: they become the issue's next
+step for the digest, and a maintainer decides. When triage isn't sure, it holds.
+
+Writes go out as the triage GitHub App, never a person, and
+`fastmcp_triage_config.github_writes` ("off", "dry_run", "on", or a mapping like
+{"labels": "on", "sweep": "dry_run"}; default "dry_run") is read on every run, so
+turning writes on or off needs no deploy.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import get_args
+
+from flows.agentic_stack_plans import Area
 
 MRE_LABEL = "needs MRE"
 DUPLICATE_LABEL = "potential-duplicate"
+TRIAGE_LABEL = "needs:triage"
+AREA_LABELS = frozenset(get_args(Area))
 CONFIG_VARIABLE = "fastmcp_triage_config"
 MODES = ("off", "dry_run", "on")
-
-MRE_COMMENT = (
-    "Thanks for the report. We couldn't reproduce this from the description alone. "
-    "Could you add a minimal, self-contained script that shows the problem, with the "
-    "FastMCP version, what you expected and what happened instead? "
-    "See [CONTRIBUTING](https://github.com/PrefectHQ/fastmcp/blob/main/CONTRIBUTING.md).\n\n"
-    "This issue closes automatically in 7 days without a reply; a reply or edit keeps it open."
-)
-
-# The duplicate closer looks for a Bot comment containing "possible duplicate issue".
-DUPLICATE_COMMENT = (
-    "Found 1 possible duplicate issue:\n\n1. #{canonical}\n\n{detail}"
-    "This issue will be closed as a duplicate in 3 days unless you react with 👎 "
-    "or comment here."
-)
 
 Live = Callable[[int], dict | None]
 
@@ -63,85 +58,48 @@ def writable(current: dict | None) -> bool:
     )
 
 
-def reviewed(item: dict) -> bool:
-    # Policy outcomes (an existing label, a claim) carry no independent review.
-    return isinstance(item.get("adversarial_review"), dict)
+def area_of(item: dict) -> str:
+    assessment = item.get("assessment")
+    area = item.get("area") or (
+        assessment.get("area") if isinstance(assessment, dict) else None
+    )
+    return area if isinstance(area, str) and area in AREA_LABELS else ""
 
 
-def duplicate_target(item: dict) -> tuple[int, str] | None:
-    number = item.get("issue_number")
-    for recommendation in item["adversarial_review"].get("recommendations") or []:
-        canonical = recommendation.get("canonical_issue")
-        if (
-            recommendation.get("action") == "close_duplicate"
-            and recommendation.get("target_number") == number
-            and isinstance(canonical, int)
-            and canonical != number
-        ):
-            return canonical, str(recommendation.get("public_comment") or "").strip()
-    return None
+def waits_on_maintainer(bin_name: str, item: dict) -> bool:
+    """Everything except an unchanged item or an operational failure needs a person."""
+    return bin_name in {"existing_review", "decisions", "evidence", "pruning"}
 
 
-def planned_writes(review: dict, live: Live) -> list[dict]:
-    """The label writes a finished intake justifies, checked against live GitHub state."""
+def triage_labels(review: dict, live: Live) -> list[dict]:
+    """Area and `needs:triage` labels for every assessed issue, without comments."""
     writes: list[dict] = []
     seen: set[int] = set()
-    bins = review.get("bins") or {}
-    for item in bins.get("evidence") or []:
-        number = item.get("issue_number")
-        if (
-            not isinstance(number, int)
-            or number in seen
-            or not reviewed(item)
-            or item.get("decision") != "evidence_needed"
-        ):
-            continue
-        current = live(number)
-        if not writable(current) or labels_of(current) & {MRE_LABEL, DUPLICATE_LABEL}:
-            continue
-        seen.add(number)
-        writes.append(
-            {"issue_number": number, "label": MRE_LABEL, "comment": MRE_COMMENT}
-        )
-    for item in bins.get("pruning") or []:
-        number = item.get("issue_number")
-        if not isinstance(number, int) or number in seen or not reviewed(item):
-            continue
-        target = duplicate_target(item)
-        if target is None:
-            continue
-        canonical, detail = target
-        current, original = live(number), live(canonical)
-        if (
-            not writable(current)
-            or labels_of(current) & {MRE_LABEL, DUPLICATE_LABEL, "duplicate"}
-            or not original
-            or "pull_request" in original
-        ):
-            continue
-        seen.add(number)
-        writes.append(
-            {
-                "issue_number": number,
-                "label": DUPLICATE_LABEL,
-                "comment": DUPLICATE_COMMENT.format(
-                    canonical=canonical, detail=detail + "\n\n" if detail else ""
-                ),
-                "canonical_issue": canonical,
-            }
-        )
+    for bin_name, items in (review.get("bins") or {}).items():
+        for item in items or []:
+            number = item.get("issue_number") if isinstance(item, dict) else None
+            if not isinstance(number, int) or number in seen:
+                continue
+            area = area_of(item)
+            waiting = waits_on_maintainer(bin_name, item)
+            if not area and not waiting:
+                continue
+            current = live(number)
+            if not writable(current):
+                continue
+            seen.add(number)
+            present = labels_of(current)
+            if area and not present & AREA_LABELS:
+                writes.append({"issue_number": number, "label": area})
+            if waiting and not present & {TRIAGE_LABEL, MRE_LABEL, DUPLICATE_LABEL}:
+                writes.append({"issue_number": number, "label": TRIAGE_LABEL})
     return writes
 
 
 def apply_writes(writes: list[dict], request: Callable[..., object]) -> list[dict]:
-    """Comment first, then label, so a label never appears without its explanation."""
     applied = []
     for write in writes:
         number = write["issue_number"]
-        request(
-            f"repos/PrefectHQ/fastmcp/issues/{number}/comments",
-            {"body": write["comment"]},
-        )
         request(
             f"repos/PrefectHQ/fastmcp/issues/{number}/labels",
             {"labels": [write["label"]]},
@@ -156,10 +114,5 @@ def summary(writes: list[dict], current_mode: str) -> str:
     if not writes:
         lines.append("Nothing to write.")
     for write in writes:
-        extra = (
-            f" (duplicate of #{write['canonical_issue']})"
-            if write.get("canonical_issue")
-            else ""
-        )
-        lines.append(f"- {verb} `{write['label']}` to #{write['issue_number']}{extra}")
+        lines.append(f"- {verb} `{write['label']}` to #{write['issue_number']}")
     return "\n".join(lines) + "\n"

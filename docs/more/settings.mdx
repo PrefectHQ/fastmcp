@@ -73,6 +73,12 @@ to release that capacity. Stateless HTTP does not use the session pool.
 | `FASTMCP_STRICT_INPUT_VALIDATION` | `bool` | `false` | Strictly validate tool inputs against the JSON schema. When disabled, compatible inputs are coerced (e.g., the string `"10"` becomes the integer `10`). |
 | `FASTMCP_MOUNTED_COMPONENTS_RAISE_ON_LOAD_ERROR` | `bool` | `false` | Raise errors when loading mounted components instead of logging warnings. |
 
+## Notifications
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_ENABLE_SUBSCRIPTIONS_LISTEN` | `bool` | `true` | Serve `subscriptions/listen` on `2026-07-28` connections, advertise `listChanged` and `resources.subscribe`, and deliver `notify_*` calls to open [listen streams](/clients/notifications#listening-for-changes). When `false`, `subscriptions/listen` returns `Method not found`, those capabilities are advertised as `false`, and `notify_*` does nothing. Read when a server is created. Handshake-era connections are unaffected. |
+
 ## Client
 
 | Environment Variable | Type | Default | Description |

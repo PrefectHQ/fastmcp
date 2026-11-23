@@ -18,6 +18,7 @@ bugs (mutants) show it can fail.
 | `test_tool_transform.py` | a transformed tool (stacked `Tool.from_tool` layers or a deferred `ToolTransformConfig`) lists and forwards arguments as the transformation docs describe |
 | `test_openapi.py` | an OpenAPI tool sends the method, path, query, headers and body its spec describes, and returns the response |
 | `test_oauth_proxy_machine.py` | state machine over the OAuth proxy against a fake upstream: codes are single use, refresh tokens are client-bound, revoked tokens stay dead |
+| `test_auth_url_guards.py` | the URL guards in front of the OAuth proxy: an IPv6 spelling never unblocks a blocked IPv4, a validated URL dials where it was validated, a redirect pattern match lands on the pattern's host by every parser, an exact pattern matches only itself, client redirects carry each parameter once, CIMD scopes never widen the server's |
 | `test_middleware.py` | `AuthMiddleware` lists only what a caller can call and names every scope a denial still needs; `ResponseCachingMiddleware` answers like no cache for every caller, version and argument; both rate limiters admit no more than their limit under a fake clock |
 | `mutants.py` | planted bugs and their catch rate across seeds (not collected by pytest) |
 | `FINDINGS.md` | every finding, written before it is fixed: property, minimal case, reachability, cross-SDK case table |
@@ -69,7 +70,7 @@ uv run python -m tests.pbt.mutants uri_template
 ```
 
 `mutants.py` takes target names (`uri_template`, `resource_read`,
-`schema_fixes`, `components`, `middleware`), applies each exact string swap to the source,
+`schema_fixes`, `components`, `auth_guards`, `middleware`, …), applies each exact string swap to the source,
 counts how many of ten seeds fail, and restores the file. A mutant whose
 anchor is not in the tree (one that undoes a fix not yet merged) is skipped;
 if every requested mutant is skipped the run exits non-zero, since nothing was

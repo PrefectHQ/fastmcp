@@ -42,6 +42,8 @@ asyncio.run(main())
 
 All client operations require using the `async with` context manager for proper connection lifecycle management.
 
+The client runs on asyncio. Other async backends such as trio are not supported, so run client code under `asyncio.run()` or an asyncio event loop.
+
 ## Use Cases
 
 ### Applications and Scripts
