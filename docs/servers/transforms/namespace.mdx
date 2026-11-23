@@ -20,6 +20,8 @@ Tools and prompts receive an underscore-separated prefix. Resources and template
 | Resource | `data://info` | `data://api/info` |
 | Template | `data://{id}` | `data://api/{id}` |
 
+Resource links that a namespaced tool returns get the same URI prefix, so a client can read a returned link through the server that returned it. A tool on a server mounted with `namespace="api"` that returns a `ResourceLink` to `data://info` reaches the client as a link to `data://api/info`.
+
 The most common use is through the `mount()` method's `namespace` parameter.
 
 ```python

@@ -132,6 +132,28 @@ class TestMountedToolTasks:
         assert final.result is not None
         assert final.result["content"][0]["uri"] == "resource://child/data"
 
+    async def test_nested_namespaced_task_rewrites_resource_link_results(self):
+        grandchild = FastMCP("grandchild")
+
+        @grandchild.tool(task=True)
+        async def linked_resource() -> mt.ResourceLink:
+            return mt.ResourceLink(name="data", uri="resource://data")
+
+        child = FastMCP("child")
+        child.mount(grandchild, namespace="gc")
+        parent = FastMCP("parent")
+        parent.add_extension(TasksExtension())
+        parent.mount(child, namespace="child")
+
+        async with running_task_server(parent):
+            final = await wait_for_task(
+                parent,
+                (await submit_task(parent, "child_gc_linked_resource", {})).task_id,
+            )
+
+        assert final.result is not None
+        assert final.result["content"][0]["uri"] == "resource://child/gc/data"
+
 
 class TestRemoteWorkerServerResolution:
     """A separate worker process re-resolves the owning child from the root.

@@ -8,7 +8,7 @@ from fastmcp.client import Client
 from fastmcp.server import create_proxy
 from fastmcp.server.providers import FastMCPProvider
 from fastmcp.server.transforms import Namespace, ToolTransform
-from fastmcp.tools.base import ToolResult
+from fastmcp.tools.base import RawStructuredToolResult, ToolResult
 from fastmcp.tools.tool_transform import ToolTransformConfig
 
 
@@ -127,6 +127,21 @@ class TestNamespaceTransform:
         assert result.structured_content == {"source": "upstream"}
         assert result.meta == {"request_id": "123"}
         assert result.is_error
+
+    def test_namespace_resource_link_rewrite_keeps_raw_structured_result(self):
+        """A proxied non-object structured result keeps its type and value."""
+        result = RawStructuredToolResult(
+            content=[mcp_types.ResourceLink(name="data", uri="resource://data")],
+            structured_content=["a", "b"],
+        )
+
+        transformed = Namespace("ns")._transform_tool_result(result)
+
+        assert isinstance(transformed, RawStructuredToolResult)
+        assert transformed.structured_content == ["a", "b"]
+        assert transformed.content == [
+            mcp_types.ResourceLink(name="data", uri="resource://ns/data")
+        ]
 
 
 class TestToolTransformRenames:

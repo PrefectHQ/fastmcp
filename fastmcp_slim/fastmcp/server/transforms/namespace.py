@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.tools.base import Tool
 
-
 # Pattern for matching URIs: protocol://path
 _URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
 
@@ -115,12 +114,10 @@ class Namespace(Transform):
         if content == result.content:
             return result
 
-        return ToolResult(
-            content=content,
-            structured_content=result.structured_content,
-            meta=result.meta,
-            is_error=result.is_error,
-        )
+        # Copy rather than rebuild so the result keeps its concrete type (a
+        # proxied `RawStructuredToolResult` may carry non-object structured
+        # content) and any preserved wire result.
+        return result.model_copy(update={"content": content})
 
     # -------------------------------------------------------------------------
     # Tools
