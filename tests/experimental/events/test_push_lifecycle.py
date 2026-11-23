@@ -319,3 +319,28 @@ async def test_cancelling_a_subscription_while_it_waits_to_reconnect(
     assert scope.cancelled_caught
     assert extension._streams == {}
     assert extension._stoppers == {}
+
+
+async def test_a_closed_session_is_not_reconnected(
+    monkeypatch: pytest.MonkeyPatch, delays: list[int]
+) -> None:
+    opens = 0
+
+    async with events_client(replaying_server([])) as client:
+        dispatcher = client.session._dispatcher
+
+        async def session_closes(real: SendRaw, method: str, params: Any, options: Any):
+            nonlocal opens
+            opens += 1
+            monkeypatch.setattr(dispatcher, "_closed", True)
+            raise MCPError(code=CONNECTION_CLOSED, message="Connection closed")
+
+        intercept_streams(client, monkeypatch, session_closes)
+        with pytest.raises(MCPError) as exc_info, anyio.fail_after(5):
+            async for _ in subscribe_events(client, "tick", delivery="push"):
+                pass
+        monkeypatch.setattr(dispatcher, "_closed", False)
+
+    assert exc_info.value.error.code == CONNECTION_CLOSED
+    assert opens == 1
+    assert delays == []

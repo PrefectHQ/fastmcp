@@ -88,7 +88,8 @@ def _trace_meta() -> mcp_types.RequestParamsMeta | None:
 class EventSubscription:
     """One subscription to an event type, iterated with `async for`.
 
-    `cursor` is the position after the last event or poll. Persist it and pass
+    `cursor` is the position to resume from: at or before the last event
+    yielded, never after an event not yet yielded. Persist it and pass
     it to `subscribe_events(client, ..., cursor=...)` to resume after a restart. `truncated`
     is set once the server reports that it skipped events the cursor asked for.
     """
@@ -352,6 +353,10 @@ class EventSubscription:
                 # Any other error response came from the server and is final;
                 # only a stream that was cut off is worth reopening.
                 if failure.error.code != CONNECTION_CLOSED:
+                    raise failure
+                # A closed session (a stdio server that exited) has nothing
+                # to reconnect over.
+                if getattr(session._dispatcher, "_closed", False):
                     raise failure
                 reason = failure
             elif went_quiet:
