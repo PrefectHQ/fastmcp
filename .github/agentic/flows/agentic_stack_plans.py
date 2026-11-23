@@ -242,7 +242,9 @@ way a maintainer skimming the issue would. Merged work here counts for something
 only the PR author has reported, filed just before their own fix, needs evidence that someone
 actually hits it. Many PRs across unrelated repositories suggests someone sweeping for fixes
 rather than using FastMCP. None of these decides anything on its own. Each card's role says
-who it is: only issue_author reported the issue. Someone in the discussion who asks to be
+who it is: only issue_author reported the issue. context.people.maintainers lists everyone
+here with write access to the repository; an issue or comment from one of them is a
+maintainer's, and a maintainer's report needs no outside evidence. Someone in the discussion who asks to be
 assigned is a separate person with no card here; never give them the reporter's history or
 first claim.
 
