@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T08:20:30+00:00",
- "source_commit": "baf157ab7b0c21fcf3f9bcf26f91004aa1fc2d8e",
+ "generated_at": "2026-11-23T08:36:50+00:00",
+ "source_commit": "7ac32cc0217d5a3c2ffc59bf02e4d9411f980b01",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -743,16 +743,16 @@
    "module": "fastmcp.client.client",
    "path": "fastmcp_slim/fastmcp/client/client.py",
    "public": true,
-   "statements": 404,
-   "hit": 176,
-   "functions": 47,
-   "functions_hit": 22,
+   "statements": 422,
+   "hit": 182,
+   "functions": 51,
+   "functions_hit": 23,
    "symbols": [
     {
      "name": "Client",
      "kind": "class",
-     "statements": 383,
-     "hit": 164
+     "statements": 401,
+     "hit": 170
     }
    ],
    "tests": 4,
@@ -1134,7 +1134,7 @@
    "module": "fastmcp.client.transports.config",
    "path": "fastmcp_slim/fastmcp/client/transports/config.py",
    "public": false,
-   "statements": 122,
+   "statements": 127,
    "hit": 0,
    "functions": 9,
    "functions_hit": 0,
@@ -1741,8 +1741,8 @@
    "module": "fastmcp.prompts.function_prompt",
    "path": "fastmcp_slim/fastmcp/prompts/function_prompt.py",
    "public": true,
-   "statements": 138,
-   "hit": 50,
+   "statements": 151,
+   "hit": 53,
    "functions": 8,
    "functions_hit": 4,
    "symbols": [
@@ -1774,8 +1774,8 @@
    "module": "fastmcp.resources.base",
    "path": "fastmcp_slim/fastmcp/resources/base.py",
    "public": true,
-   "statements": 64,
-   "hit": 36,
+   "statements": 69,
+   "hit": 39,
    "functions": 17,
    "functions_hit": 14,
    "symbols": [
@@ -1794,8 +1794,8 @@
     {
      "name": "ResourceResult",
      "kind": "class",
-     "statements": 16,
-     "hit": 10
+     "statements": 21,
+     "hit": 13
     }
    ],
    "tests": 2,
@@ -1850,8 +1850,8 @@
    "module": "fastmcp.resources.template",
    "path": "fastmcp_slim/fastmcp/resources/template.py",
    "public": true,
-   "statements": 314,
-   "hit": 237,
+   "statements": 312,
+   "hit": 235,
    "functions": 34,
    "functions_hit": 25,
    "symbols": [
@@ -3349,9 +3349,9 @@
    "module": "fastmcp.server.providers.filesystem_discovery",
    "path": "fastmcp_slim/fastmcp/server/providers/filesystem_discovery.py",
    "public": false,
-   "statements": 157,
+   "statements": 200,
    "hit": 0,
-   "functions": 9,
+   "functions": 15,
    "functions_hit": 0,
    "symbols": [],
    "tests": 0,
@@ -3716,16 +3716,16 @@
    "module": "fastmcp.server.server",
    "path": "fastmcp_slim/fastmcp/server/server.py",
    "public": true,
-   "statements": 623,
-   "hit": 382,
+   "statements": 624,
+   "hit": 383,
    "functions": 81,
    "functions_hit": 52,
    "symbols": [
     {
      "name": "FastMCP",
      "kind": "class",
-     "statements": 542,
-     "hit": 327
+     "statements": 543,
+     "hit": 328
     },
     {
      "name": "create_proxy",
@@ -3850,16 +3850,16 @@
    "module": "fastmcp.server.transforms.namespace",
    "path": "fastmcp_slim/fastmcp/server/transforms/namespace.py",
    "public": true,
-   "statements": 52,
-   "hit": 48,
-   "functions": 14,
-   "functions_hit": 13,
+   "statements": 58,
+   "hit": 52,
+   "functions": 15,
+   "functions_hit": 14,
    "symbols": [
     {
      "name": "Namespace",
      "kind": "class",
-     "statements": 52,
-     "hit": 48
+     "statements": 58,
+     "hit": 52
     }
    ],
    "tests": 1,
@@ -4294,10 +4294,10 @@
    "module": "fastmcp.tools.base",
    "path": "fastmcp_slim/fastmcp/tools/base.py",
    "public": true,
-   "statements": 164,
-   "hit": 79,
-   "functions": 27,
-   "functions_hit": 17,
+   "statements": 170,
+   "hit": 85,
+   "functions": 29,
+   "functions_hit": 19,
    "symbols": [
     {
      "name": "InputRequiredToolResult",
@@ -4308,8 +4308,8 @@
     {
      "name": "Tool",
      "kind": "class",
-     "statements": 66,
-     "hit": 39
+     "statements": 72,
+     "hit": 45
     },
     {
      "name": "ToolResult",
@@ -4368,8 +4368,8 @@
    "module": "fastmcp.tools.tool_transform",
    "path": "fastmcp_slim/fastmcp/tools/tool_transform.py",
    "public": true,
-   "statements": 363,
-   "hit": 151,
+   "statements": 364,
+   "hit": 152,
    "functions": 22,
    "functions_hit": 9,
    "symbols": [
@@ -4633,10 +4633,10 @@
    "module": "fastmcp.utilities.json_schema_type",
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
-   "statements": 624,
-   "hit": 425,
-   "functions": 57,
-   "functions_hit": 46,
+   "statements": 637,
+   "hit": 404,
+   "functions": 59,
+   "functions_hit": 43,
    "symbols": [],
    "tests": 4,
    "test_ids": [
@@ -4901,10 +4901,10 @@
    "module": "fastmcp.utilities.openapi.schemas",
    "path": "fastmcp_slim/fastmcp/utilities/openapi/schemas.py",
    "public": false,
-   "statements": 425,
-   "hit": 127,
-   "functions": 17,
-   "functions_hit": 7,
+   "statements": 457,
+   "hit": 132,
+   "functions": 20,
+   "functions_hit": 8,
    "symbols": [],
    "tests": 1,
    "test_ids": [
