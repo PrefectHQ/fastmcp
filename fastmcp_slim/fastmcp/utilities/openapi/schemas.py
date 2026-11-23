@@ -525,6 +525,18 @@ def _flatten_discriminator_subtypes(
     return properties
 
 
+def _flatten_discriminator_definition(schema: Any, schema_defs: dict[str, Any]) -> Any:
+    """Return a copy of *schema* with its discriminator subtypes flattened in."""
+    if not isinstance(schema, dict) or "oneOf" in schema or "anyOf" in schema:
+        return schema
+    flattened_props = _flatten_discriminator_subtypes(schema, schema_defs)
+    if flattened_props is None:
+        return schema
+    flattened = {k: v for k, v in schema.items() if k != "discriminator"}
+    flattened["properties"] = flattened_props
+    return flattened
+
+
 def _combine_schemas_and_map_params(
     route: HTTPRoute,
     convert_refs: bool = True,
@@ -767,6 +779,14 @@ def _combine_schemas_and_map_params(
     }
     # Add schema definitions if available
     schema_defs = {**route.request_schemas, **body_defs}
+    # A discriminated parent reached through a $ref (an envelope property, an
+    # array item) links its subtypes only through the mapping, which is dropped
+    # in conversion, so its definition is flattened the same way as the body.
+    # A parent with oneOf or anyOf already references its subtypes.
+    schema_defs = {
+        name: _flatten_discriminator_definition(def_schema, schema_defs)
+        for name, def_schema in schema_defs.items()
+    }
     if schema_defs:
         if convert_refs:
             # Need to convert refs and prune

@@ -284,3 +284,75 @@ class TestDiscriminatorRequestBodies:
 
         assert set(schema["properties"]) == {"petType", "meowVolume"}
         assert sorted(schema["required"]) == ["meowVolume", "petType"]
+
+
+def nested_discriminator_spec() -> dict[str, Any]:
+    """The discriminated parent sits below the body: a property and array items."""
+    spec = discriminator_spec(body_ref="PetEnvelope")
+    spec["components"]["schemas"]["PetEnvelope"] = {
+        "type": "object",
+        "properties": {
+            "pet": {"$ref": "#/components/schemas/Pet"},
+            "friends": {
+                "type": "array",
+                "items": {"$ref": "#/components/schemas/Pet"},
+            },
+        },
+        "required": ["pet"],
+    }
+    return spec
+
+
+class TestNestedDiscriminatorRequestBodies:
+    """A discriminated parent reached through a reference is flattened too."""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            pytest.param(("pet",), id="property"),
+            pytest.param(("friends", "items"), id="array_items"),
+        ],
+    )
+    async def test_subtype_fields_are_advertised(self, path: tuple[str, ...]):
+        """The reported failure: a nested Pet exposed only petType."""
+        schema = await tool_schema(nested_discriminator_spec())
+
+        pet = schema["properties"][path[0]]
+        for key in path[1:]:
+            pet = pet[key]
+        assert set(pet["properties"]) == {"petType", "meowVolume", "packSize"}
+        assert pet["required"] == ["petType"]
+        assert "meowVolume" in pet["properties"]["petType"]["description"]
+
+    async def test_selected_variant_field_reaches_the_request_body(self):
+        """The nested variant field is sent upstream unchanged."""
+        received: dict[str, object] = {}
+
+        def handler(request):
+            received["body"] = json.loads(request.content)
+            return httpx2.Response(200, json={"ok": True})
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(handler),
+            base_url="https://api.example.com",
+        ) as client:
+            server = create_openapi_server(nested_discriminator_spec(), client)
+            async with Client(server) as mcp_client:
+                await mcp_client.call_tool(
+                    "create_pet", {"pet": {"petType": "cat", "meowVolume": 11}}
+                )
+
+        assert received["body"] == {"pet": {"petType": "cat", "meowVolume": 11}}
+
+    async def test_parent_with_one_of_is_unchanged(self):
+        """A oneOf already links the subtypes, so its definition is left alone."""
+        spec = nested_discriminator_spec()
+        spec["components"]["schemas"]["Pet"]["oneOf"] = [
+            {"$ref": "#/components/schemas/Cat"},
+            {"$ref": "#/components/schemas/Dog"},
+        ]
+
+        schema = await tool_schema(spec)
+
+        pet = schema["$defs"]["Pet"]
+        assert set(pet["properties"]) == {"petType"}
