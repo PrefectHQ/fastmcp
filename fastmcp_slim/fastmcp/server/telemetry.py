@@ -9,6 +9,7 @@ from opentelemetry import context as otel_context
 from opentelemetry.context import Context
 from opentelemetry.trace import (
     INVALID_SPAN,
+    Link,
     Span,
     SpanKind,
     Status,
@@ -17,8 +18,8 @@ from opentelemetry.trace import (
 )
 
 from fastmcp.telemetry import (
+    _extract_meta_trace_context,
     error_span_attributes,
-    extract_trace_context,
     get_tracer,
     restore_dropped_attributes,
     telemetry_mode,
@@ -31,6 +32,10 @@ from fastmcp.telemetry import (
 # attribute is set for observability; enrichment detection uses the ContextVar
 # below (the API `Span` type does not expose readable attributes).
 SEAM_SPAN_MARKER = "fastmcp.span.seam"
+
+# Set on the link to an ambient HTTP span that `_meta` displaced as parent.
+LINK_KIND_ATTRIBUTE = "fastmcp.link.kind"
+HTTP_TRANSPORT_LINK_KIND = "http_transport"
 
 
 # Tracks the SERVER span opened at the current request's seam. When the
@@ -131,14 +136,35 @@ def get_network_span_attributes() -> dict[str, str]:
     return attrs
 
 
-def _get_parent_trace_context() -> Context | None:
-    """Get parent trace context from request meta for distributed tracing."""
+def _get_parent_trace_context() -> tuple[Context | None, list[Link]]:
+    """Return the SERVER span's parent and links.
+
+    `_meta` trace context is the parent when present; a different current span
+    (e.g. an HTTP request span) is kept as a link. Otherwise the parent is
+    `None`, so the current context applies.
+    """
     from fastmcp.server.dependencies import fastmcp_request_ctx
 
     req_ctx = fastmcp_request_ctx.get()
-    if req_ctx is not None and req_ctx.meta:
-        return extract_trace_context(req_ctx.meta)
-    return None
+    if req_ctx is None:
+        return None, []
+    parent_context = _extract_meta_trace_context(req_ctx.meta)
+    if parent_context is None:
+        return None, []
+
+    ambient = get_current_span().get_span_context()
+    parent = get_current_span(parent_context).get_span_context()
+    if not ambient.is_valid or (
+        ambient.trace_id == parent.trace_id and ambient.span_id == parent.span_id
+    ):
+        return parent_context, []
+
+    attributes = (
+        {LINK_KIND_ATTRIBUTE: HTTP_TRANSPORT_LINK_KIND}
+        if req_ctx.request is not None
+        else None
+    )
+    return parent_context, [Link(ambient, attributes=attributes)]
 
 
 @contextmanager
@@ -156,7 +182,7 @@ def _propagation_only_span() -> Generator[Span, None, None]:
     Yields `INVALID_SPAN`, which is non-recording, so callers' `is_recording()`
     guards skip attribute and error bookkeeping on it.
     """
-    parent_context = _get_parent_trace_context()
+    parent_context, _ = _get_parent_trace_context()
     if parent_context is None:
         yield INVALID_SPAN
         return
@@ -236,12 +262,14 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
         **get_auth_span_attributes(),
         **get_session_span_attributes(),
     }
+    parent_context, links = _get_parent_trace_context()
     tracer = get_tracer()
     with tracer.start_as_current_span(
         method,
-        context=_get_parent_trace_context(),
+        context=parent_context,
         kind=SpanKind.SERVER,
         attributes=attrs,
+        links=links or None,
         record_exception=False,
         set_status_on_exception=False,
     ) as span:
@@ -361,12 +389,14 @@ def server_span(
             _server_span_open.reset(token)
         return
 
+    parent_context, links = _get_parent_trace_context()
     tracer = get_tracer()
     with tracer.start_as_current_span(
         name,
-        context=_get_parent_trace_context(),
+        context=parent_context,
         kind=SpanKind.SERVER,
         attributes=attrs,
+        links=links or None,
         record_exception=False,
         set_status_on_exception=False,
     ) as span:

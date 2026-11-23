@@ -163,6 +163,10 @@ tools/call remote_search (CLIENT)
         └── [remote server spans via trace context propagation]
 ```
 
+### Behind an instrumented HTTP framework
+
+With ASGI, Starlette, or FastAPI instrumentation, each request already has an HTTP span when it reaches FastMCP. If the MCP client also sends trace context in `_meta`, that is the `SERVER` span's parent, and the HTTP span is kept as a [span link](https://opentelemetry.io/docs/specs/otel/trace/api/#link) with `fastmcp.link.kind = "http_transport"`. Without `_meta` trace context, the HTTP span is the parent.
+
 ### Background tasks
 
 Background task traces have two parts:
@@ -544,6 +548,7 @@ All custom attributes use the `fastmcp.` prefix for features unique to FastMCP:
 | `fastmcp.component.type` | `tool`, `resource`, `prompt`, or `resource_template` |
 | `fastmcp.component.key` | Full component key, including type and version delimiter (e.g., `tool:greet@` or `tool:greet@v2`) |
 | `fastmcp.provider.type` | Provider class (`LocalProvider`, `FastMCPProvider`, `ProxyProvider`) |
+| `fastmcp.link.kind` | On a span link: `http_transport` for the HTTP request span |
 
 Provider-specific attributes for delegation context:
 

@@ -277,6 +277,32 @@ def restore_dropped_attributes(
         span.set_attributes(attrs)
 
 
+def _extract_meta_trace_context(meta: Mapping[str, Any] | None) -> Context | None:
+    """Return the valid trace context sent in `_meta`, ignoring the current span."""
+    if telemetry_mode() == "off" or not meta:
+        return None
+
+    carrier: dict[str, str] = {}
+    if TRACE_PARENT_KEY in meta:
+        carrier["traceparent"] = str(meta[TRACE_PARENT_KEY])
+    if TRACE_STATE_KEY in meta:
+        carrier["tracestate"] = str(meta[TRACE_STATE_KEY])
+    if (
+        not carrier
+        or not trace.get_current_span(propagate.extract(carrier))
+        .get_span_context()
+        .is_valid
+    ):
+        return None
+
+    # Extract *onto the current context* rather than a fresh root, so the
+    # incoming parent is added without discarding context values the
+    # caller already established — active baggage, and FastMCP's own
+    # suppression marker, which would otherwise be dropped the moment the
+    # extracted context is attached.
+    return propagate.extract(carrier, context=otel_context.get_current())
+
+
 def extract_trace_context(meta: dict[str, Any] | None) -> Context:
     """Extract trace context from an MCP request meta dict.
 
@@ -299,23 +325,8 @@ def extract_trace_context(meta: dict[str, Any] | None) -> Context:
     if current_span.get_span_context().is_valid:
         return otel_context.get_current()
 
-    if not meta:
-        return otel_context.get_current()
-
-    carrier: dict[str, str] = {}
-    if TRACE_PARENT_KEY in meta:
-        carrier["traceparent"] = str(meta[TRACE_PARENT_KEY])
-    if TRACE_STATE_KEY in meta:
-        carrier["tracestate"] = str(meta[TRACE_STATE_KEY])
-
-    if carrier:
-        # Extract *onto the current context* rather than a fresh root, so the
-        # incoming parent is added without discarding context values the
-        # caller already established — active baggage, and FastMCP's own
-        # suppression marker, which would otherwise be dropped the moment the
-        # extracted context is attached.
-        return propagate.extract(carrier, context=otel_context.get_current())
-    return otel_context.get_current()
+    extracted = _extract_meta_trace_context(meta)
+    return extracted if extracted is not None else otel_context.get_current()
 
 
 __all__ = [
