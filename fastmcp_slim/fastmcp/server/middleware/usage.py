@@ -26,8 +26,8 @@ from fastmcp.exceptions import (
     to_mcp_error,
 )
 from fastmcp.prompts.base import PromptResult
-from fastmcp.server.context import _current_transport
 from fastmcp.server.dependencies import fastmcp_request_ctx, get_access_token
+from fastmcp.server.telemetry import get_network_span_attributes
 from fastmcp.telemetry import INSTRUMENTATION_NAME
 from fastmcp.tools.base import ToolResult
 
@@ -230,14 +230,7 @@ class UsageMiddleware(Middleware):
         attrs: dict[str, str] = {}
         if request_ctx.protocol_version:
             attrs["mcp.protocol.version"] = request_ctx.protocol_version
-        if request_ctx.request is not None:
-            attrs["network.transport"] = "tcp"
-            attrs["network.protocol.name"] = "http"
-            http_version = request_ctx.request.scope.get("http_version")
-            if http_version:
-                attrs["network.protocol.version"] = http_version
-        elif _current_transport.get() == "stdio":
-            attrs["network.transport"] = "pipe"
+        attrs.update(get_network_span_attributes())
         return attrs
 
     @staticmethod
