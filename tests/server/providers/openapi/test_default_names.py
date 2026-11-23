@@ -62,3 +62,31 @@ async def test_resource_uri_without_usable_name():
     async with Client(server) as client:
         resources = await client.list_resources()
     assert [str(resource.uri) for resource in resources] == ["resource://GET_users"]
+
+
+@pytest.mark.parametrize(
+    ("operation", "expected"),
+    [
+        ({"operationId": "foo/get-thing"}, "foo_get_thing"),
+        ({"summary": "Get user/org"}, "Get_user_org"),
+        ({}, "GET_users_id_orders"),
+    ],
+)
+async def test_slash_separates_words_in_default_names(
+    operation: dict[str, Any], expected: str
+):
+    server = FastMCP.from_openapi(
+        openapi_spec=_spec({"/users/{id}/orders": operation}), client=_client()
+    )
+    async with Client(server) as client:
+        assert [tool.name for tool in await client.list_tools()] == [expected]
+
+
+async def test_mcp_names_override_for_slash_operation_id():
+    server = FastMCP.from_openapi(
+        openapi_spec=_spec({"/users": {"operationId": "users/list-users"}}),
+        client=_client(),
+        mcp_names={"users/list-users": "list_users"},
+    )
+    async with Client(server) as client:
+        assert [tool.name for tool in await client.list_tools()] == ["list_users"]

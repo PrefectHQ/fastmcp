@@ -277,7 +277,7 @@ mcp = FastMCP.from_openapi(
 FastMCP automatically generates names for MCP components based on the OpenAPI specification. By default, it uses the `operationId` from your OpenAPI spec, up to the first double underscore (`__`). Routes without an `operationId` use their summary, or the HTTP method and path when there is no summary.
 
 All component names are automatically:
-- **Slugified**: Spaces and special characters are converted to underscores or removed
+- **Slugified**: Spaces, hyphens, dots, and slashes become underscores, and other special characters are removed (`users/list-users` becomes `users_list_users`)
 - **Truncated**: Limited to 56 characters maximum to ensure compatibility
 - **Unique**: If multiple components have the same name, a number is automatically appended to make them unique
 
