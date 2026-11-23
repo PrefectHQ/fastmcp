@@ -215,9 +215,10 @@ def _denial(e: Exception) -> str:
     return "insufficient" if ": insufficient " in text else "hidden"
 
 
-def _f13_probe() -> bool:
-    """F13: AuthMiddleware lists an older version a caller may use, but an
-    unversioned call is authorized against (and would run) the highest."""
+def _issue_6691_probe() -> bool:
+    """AuthMiddleware lists an older version a caller may use, but an
+    unversioned call is authorized against (and would run) the highest.
+    https://github.com/PrefectHQ/fastmcp/issues/6691"""
     catalog = {"t0": {"1": frozenset(), "2": frozenset({"admin"})}}
     mw = [AuthMiddleware(auth=restrict_tag("admin", scopes=["read"]))]
     server = build_server("tool", catalog, mw)
@@ -238,7 +239,7 @@ def _f13_probe() -> bool:
         return asyncio.run(probe())
 
 
-F13_OPEN = still_open("F13", _f13_probe)
+ISSUE_6691_OPEN = still_open("#6691", _issue_6691_probe)
 
 
 @given(
@@ -292,9 +293,9 @@ def test_listing_and_calling_agree(kind, catalog, layer_checks, scopes):
                         and why == "insufficient"
                         and expect != "denied"
                         and expect != f"{name}@{top}"
-                        and F13_OPEN
+                        and ISSUE_6691_OPEN
                     ):
-                        event("known: F13")
+                        event("known: #6691")
                         continue
                     note(f"use {name}@{asked}: got {got}, want {expect}")
                     assert got == expect, "a call disagrees with the listing"

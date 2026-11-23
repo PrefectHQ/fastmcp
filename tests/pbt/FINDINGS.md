@@ -22,7 +22,6 @@ Mutant catch rates: `uv run python -m tests.pbt.mutants`.
 | tool transforms: rename, hide, defaults, required, two layers, deferred config (2026-11-21) | 1k cases, 5-minute campaign | 4/4: 10, 9, 8 and 8 of 10 seeds at 200 cases | F9 |
 | OpenAPI tool sends the described request (2026-11-21) | 1k cases | 4/4 (explode default 9/10, pipe delimiter 9/10, boolean text 10/10, path quoting 10/10) | clean (K4) |
 | OAuth proxy machine: codes, refresh, revocation, concurrent redemption (2026-11-21) | 1k histories | 3/3 at 10/10 seeds (an "already used" check is not planted: the lock and re-read mask it) | F10 |
-| middleware: AuthMiddleware listing vs calling and scope step-up, response caching vs no cache, token bucket and sliding window under a fake clock (2026-11-22) | 1k cases each | 11/11: 10/10 seeds except cache-version, prompt step-up and bucket-capacity at 9/10 | F13 |
 
 F1, F3 and F5 are fixed on `main` (#6552, #6553, #6572), so their probes
 report fixed and the harness checks those shapes again. F2 is fixed by keeping
@@ -408,32 +407,6 @@ the schemas that would catch it (`PBT_ASSUME_FIXED`, set per mutant).
   revocation failures as a warning and still succeeds; RFC 7009 lets the
   server answer 503 instead.
 
-### F13. AuthMiddleware lists a version the caller may use, then refuses the call that names no version
-
-- status: open, held for nate's decision (two consistent behaviours to
-  choose from).
-- property: middleware — every listed component is callable as listed
-  (`test_listing_and_calling_agree`).
-- minimal: tool `t0` at version 1 (untagged) and version 2 (tagged
-  `admin`), `AuthMiddleware(auth=restrict_tag("admin", scopes=["read"]))`,
-  no token. `tools/list` shows `t0` with `version: "1"`; `tools/call t0`
-  without a version fails "insufficient permissions"; with version `1` it
-  runs.
-- frequency: any versioned component whose highest version the caller may
-  not use while a lower one is allowed.
-- reachable: yes. Gating a newer version behind a tag or scope ("beta",
-  "admin") is the obvious way to roll one out, and a client that calls by
-  name (most do) is told the tool exists and then refused.
-- cause: the listing hook filters every version and serves the highest one
-  left; `on_call_tool` authorizes `get_tool(name)`, which ignores the
-  middleware's checks and returns the highest version overall. Component
-  level `auth=` does not have the bug: `get_tool` already skips a version
-  its own check denies, so the call falls back to the listed version.
-- against: a client that sends the listed version back gets it.
-- options: make the unversioned call resolve to the highest version the
-  middleware allows (matches component-level `auth=`), or list a name only
-  when its highest version is allowed (matches what the call does today).
-
 ## model corrections (harness was wrong, not fastmcp)
 
 - a mounted child's own `disable()` cannot be overridden by the parent's
@@ -537,9 +510,3 @@ the same options.
 | typescript-sdk@5ee54ee | yes, `ProxyOAuthServerProvider` passes upstream tokens through (`packages/server/src/server/auth/providers/proxyProvider.ts`) | dead: the client holds the upstream token, which the upstream revoked |
 | python-sdk@77001c9, go-sdk@a6e937f, rust-sdk@165f8fd | no proxy provider | n/a |
 | fastmcp | yes, issues its own JWTs mapped to one upstream record per grant | F10: live again |
-
-### F13: a listed version refused when called by name
-
-No reference SDK has component versions. Every reference that filters a
-listing uses one predicate for listing and calling (see F6–F8), which is the
-property F13 breaks.
