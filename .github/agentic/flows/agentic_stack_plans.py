@@ -10,6 +10,21 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from flows.agentic_mutation_models import MutationRecommendation
 
+# The repository's area labels. Triage puts one on each issue it assesses.
+Area = Literal[
+    "auth",
+    "cli",
+    "client",
+    "contrib",
+    "fastmcp.json",
+    "http",
+    "mcp apps",
+    "openapi",
+    "provider",
+    "server",
+    "tasks",
+]
+
 
 class Assessment(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -27,6 +42,7 @@ class Assessment(BaseModel):
     prior_art: list[str] = Field(max_length=20)
     question: str = Field(max_length=2000)
     verification_prs: list[int] = Field(default_factory=list, max_length=3)
+    area: Area | Literal[""] = ""
 
 
 class Reproduction(BaseModel):
@@ -221,6 +237,10 @@ Return one decision:
   question. Also use it when a contributor says a fix is ready and waiting for assignment,
   naming them, so nobody starts a competing fix.
 - skip or environment_failure, with the reason.
+
+Set area to the one label that names the part of FastMCP the issue is about: auth, cli,
+client, contrib, fastmcp.json, http, mcp apps, openapi, provider, server or tasks. Leave it
+empty when none fits.
 
 Leave question empty unless you return maintainer. Respect route holds, human interventions
 and labels owned by other workflows. Nothing you return is acted on automatically.""",

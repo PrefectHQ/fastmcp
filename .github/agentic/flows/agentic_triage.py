@@ -37,6 +37,7 @@ from flows.agentic_labels import (
     mode,
     planned_writes,
     summary,
+    triage_labels,
 )
 from flows.agentic_outcome import outcome_lines, subjects
 from flows.agentic_review_app import LABEL_PERMISSIONS, review_client
@@ -538,6 +539,7 @@ def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None
         if current_mode == "off":
             return
         writes = planned_writes(state["review"], live_item)
+        writes += triage_labels(state["review"], live_item)
         if writes and current_mode == "on":
             app = runtime.reviewer_app
             if app is None:
