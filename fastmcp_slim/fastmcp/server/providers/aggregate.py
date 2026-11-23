@@ -460,7 +460,8 @@ class AggregateProvider(Provider):
             (p.get_tasks() for p in self.providers),
             return_exceptions=True,
         )
-        return self._collect_list_results(results, "get_tasks")
+        components = self._collect_list_results(results, "get_tasks")
+        return await self._apply_task_transforms(components)
 
     # -------------------------------------------------------------------------
     # Lifecycle
