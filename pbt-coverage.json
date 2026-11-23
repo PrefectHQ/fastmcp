@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T23:38:42+00:00",
- "source_commit": "875d066e52498f5eae7fd9f0392db6d57bd67432",
+ "generated_at": "2026-11-23T23:46:29+00:00",
+ "source_commit": "24df851f5887a093e7d2bb2d552cbbf52ff54990",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -9,13 +9,14 @@
    "tests/pbt/test_auth_url_guards.py",
    "tests/pbt/test_components_machine.py",
    "tests/pbt/test_json_schema.py",
+   "tests/pbt/test_middleware.py",
    "tests/pbt/test_oauth_proxy_machine.py",
    "tests/pbt/test_openapi.py",
    "tests/pbt/test_resource_read.py",
    "tests/pbt/test_tool_transform.py",
    "tests/pbt/test_uri_template.py"
   ],
-  "tests_reaching_fastmcp": 21
+  "tests_reaching_fastmcp": 26
  },
  "modules": [
   {
@@ -756,9 +757,11 @@
      "hit": 170
     }
    ],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -812,9 +815,11 @@
    "functions": 2,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -855,9 +860,11 @@
      "hit": 0
     }
    ],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -899,13 +906,15 @@
    "path": "fastmcp_slim/fastmcp/client/mixins/prompts.py",
    "public": false,
    "statements": 42,
-   "hit": 31,
+   "hit": 34,
    "functions": 6,
    "functions_hit": 6,
    "symbols": [],
-   "tests": 1,
+   "tests": 3,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree"
    ]
   },
   {
@@ -917,9 +926,11 @@
    "functions": 9,
    "functions_hit": 9,
    "symbols": [],
-   "tests": 2,
+   "tests": 4,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
@@ -940,13 +951,15 @@
    "path": "fastmcp_slim/fastmcp/client/mixins/tools.py",
    "public": false,
    "statements": 95,
-   "hit": 78,
+   "hit": 79,
    "functions": 9,
    "functions_hit": 9,
    "symbols": [],
-   "tests": 3,
+   "tests": 5,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
@@ -1094,9 +1107,11 @@
    "functions": 1,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -1119,13 +1134,15 @@
    "path": "fastmcp_slim/fastmcp/client/transports/base.py",
    "public": false,
    "statements": 27,
-   "hit": 17,
+   "hit": 18,
    "functions": 10,
    "functions_hit": 4,
    "symbols": [],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -1171,9 +1188,11 @@
    "functions": 3,
    "functions_hit": 2,
    "symbols": [],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -1195,9 +1214,11 @@
      "hit": 17
     }
    ],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -1389,9 +1410,14 @@
    "functions": 2,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 2,
+   "tests": 7,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
@@ -1425,9 +1451,9 @@
    "path": "fastmcp_slim/fastmcp/exceptions.py",
    "public": true,
    "statements": 17,
-   "hit": 6,
+   "hit": 11,
    "functions": 4,
-   "functions_hit": 2,
+   "functions_hit": 3,
    "symbols": [
     {
      "name": "AuthorizationError",
@@ -1439,7 +1465,7 @@
      "name": "InsufficientScopeError",
      "kind": "class",
      "statements": 5,
-     "hit": 0
+     "hit": 3
     },
     {
      "name": "McpError",
@@ -1460,9 +1486,12 @@
      "hit": 0
     }
    ],
-   "tests": 2,
+   "tests": 5,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
@@ -1764,9 +1793,12 @@
      "hit": 10
     }
    ],
-   "tests": 1,
+   "tests": 4,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree"
    ]
   },
   {
@@ -1785,9 +1817,12 @@
      "hit": 0
     }
    ],
-   "tests": 1,
+   "tests": 4,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree"
    ]
   },
   {
@@ -1830,9 +1865,12 @@
      "hit": 13
     }
    ],
-   "tests": 2,
+   "tests": 5,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
@@ -1852,9 +1890,12 @@
      "hit": 0
     }
    ],
-   "tests": 1,
+   "tests": 4,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree"
    ]
   },
   {
@@ -2136,7 +2177,7 @@
    "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py",
    "public": true,
    "statements": 767,
-   "hit": 299,
+   "hit": 293,
    "functions": 40,
    "functions_hit": 23,
    "symbols": [
@@ -2144,7 +2185,7 @@
      "name": "OAuthProxy",
      "kind": "class",
      "statements": 745,
-     "hit": 299
+     "hit": 293
     }
    ],
    "tests": 1,
@@ -2647,12 +2688,16 @@
    "functions": 1,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -2672,7 +2717,7 @@
    "path": "fastmcp_slim/fastmcp/server/context.py",
    "public": true,
    "statements": 272,
-   "hit": 76,
+   "hit": 90,
    "functions": 51,
    "functions_hit": 12,
    "symbols": [
@@ -2680,15 +2725,19 @@
      "name": "Context",
      "kind": "class",
      "statements": 249,
-     "hit": 76
+     "hit": 90
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -2779,12 +2828,16 @@
      "hit": 0
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -2859,9 +2912,14 @@
      "hit": 0
     }
    ],
-   "tests": 3,
+   "tests": 8,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
@@ -2912,12 +2970,16 @@
    "functions": 19,
    "functions_hit": 17,
    "symbols": [],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -2937,28 +2999,32 @@
    "path": "fastmcp_slim/fastmcp/server/middleware/authorization.py",
    "public": true,
    "statements": 182,
-   "hit": 0,
+   "hit": 116,
    "functions": 12,
-   "functions_hit": 0,
+   "functions_hit": 10,
    "symbols": [
     {
      "name": "AuthMiddleware",
      "kind": "class",
      "statements": 166,
-     "hit": 0
+     "hit": 109
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 3,
+   "test_ids": [
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree"
+   ]
   },
   {
    "module": "fastmcp.server.middleware.caching",
    "path": "fastmcp_slim/fastmcp/server/middleware/caching.py",
    "public": true,
    "statements": 138,
-   "hit": 0,
+   "hit": 109,
    "functions": 26,
-   "functions_hit": 0,
+   "functions_hit": 23,
    "symbols": [
     {
      "name": "CallToolSettings",
@@ -2982,11 +3048,13 @@
      "name": "ResponseCachingMiddleware",
      "kind": "class",
      "statements": 99,
-     "hit": 0
+     "hit": 77
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 1,
+   "test_ids": [
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one"
+   ]
   },
   {
    "module": "fastmcp.server.middleware.dereference",
@@ -2997,9 +3065,11 @@
    "functions": 5,
    "functions_hit": 4,
    "symbols": [],
-   "tests": 3,
+   "tests": 5,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
@@ -3076,12 +3146,16 @@
      "hit": 0
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -3108,25 +3182,28 @@
    "path": "fastmcp_slim/fastmcp/server/middleware/rate_limiting.py",
    "public": true,
    "statements": 126,
-   "hit": 0,
+   "hit": 109,
    "functions": 15,
-   "functions_hit": 0,
+   "functions_hit": 15,
    "symbols": [
     {
      "name": "RateLimitingMiddleware",
      "kind": "class",
      "statements": 39,
-     "hit": 0
+     "hit": 28
     },
     {
      "name": "SlidingWindowRateLimitingMiddleware",
      "kind": "class",
      "statements": 19,
-     "hit": 0
+     "hit": 18
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 2,
+   "test_ids": [
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate"
+   ]
   },
   {
    "module": "fastmcp.server.middleware.response_limiting",
@@ -3220,16 +3297,20 @@
    "path": "fastmcp_slim/fastmcp/server/mixins/extensions.py",
    "public": false,
    "statements": 90,
-   "hit": 21,
+   "hit": 22,
    "functions": 7,
-   "functions_hit": 4,
+   "functions_hit": 5,
    "symbols": [],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -3241,9 +3322,11 @@
    "functions": 6,
    "functions_hit": 5,
    "symbols": [],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -3254,16 +3337,20 @@
    "path": "fastmcp_slim/fastmcp/server/mixins/mcp_operations.py",
    "public": false,
    "statements": 146,
-   "hit": 94,
+   "hit": 96,
    "functions": 15,
    "functions_hit": 11,
    "symbols": [],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -3299,9 +3386,12 @@
    "functions": 7,
    "functions_hit": 2,
    "symbols": [],
-   "tests": 3,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
@@ -3315,12 +3405,16 @@
    "functions": 23,
    "functions_hit": 16,
    "symbols": [],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -3328,7 +3422,7 @@
    "path": "fastmcp_slim/fastmcp/server/providers/base.py",
    "public": true,
    "statements": 163,
-   "hit": 77,
+   "hit": 76,
    "functions": 41,
    "functions_hit": 25,
    "symbols": [
@@ -3336,15 +3430,19 @@
      "name": "Provider",
      "kind": "class",
      "statements": 144,
-     "hit": 73
+     "hit": 72
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -3352,15 +3450,15 @@
    "path": "fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py",
    "public": true,
    "statements": 113,
-   "hit": 72,
+   "hit": 62,
    "functions": 35,
-   "functions_hit": 26,
+   "functions_hit": 23,
    "symbols": [
     {
      "name": "FastMCPProvider",
      "kind": "class",
      "statements": 67,
-     "hit": 48
+     "hit": 42
     }
    ],
    "tests": 1,
@@ -3432,9 +3530,12 @@
    "functions": 3,
    "functions_hit": 3,
    "symbols": [],
-   "tests": 1,
+   "tests": 4,
    "test_ids": [
-    "tests/pbt/test_components_machine.py::TestComponents::runTest"
+    "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree"
    ]
   },
   {
@@ -3446,9 +3547,12 @@
    "functions": 4,
    "functions_hit": 3,
    "symbols": [],
-   "tests": 2,
+   "tests": 5,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
@@ -3461,9 +3565,14 @@
    "functions": 7,
    "functions_hit": 6,
    "symbols": [],
-   "tests": 2,
+   "tests": 7,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
@@ -3483,12 +3592,16 @@
      "hit": 96
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -3593,9 +3706,14 @@
    "functions": 6,
    "functions_hit": 2,
    "symbols": [],
-   "tests": 3,
+   "tests": 8,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
@@ -3609,9 +3727,12 @@
    "functions": 11,
    "functions_hit": 4,
    "symbols": [],
-   "tests": 4,
+   "tests": 7,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -3622,7 +3743,7 @@
    "path": "fastmcp_slim/fastmcp/server/providers/proxy.py",
    "public": true,
    "statements": 622,
-   "hit": 232,
+   "hit": 233,
    "functions": 98,
    "functions_hit": 42,
    "symbols": [
@@ -3648,7 +3769,7 @@
      "name": "ProxyProvider",
      "kind": "class",
      "statements": 148,
-     "hit": 93
+     "hit": 94
     }
    ],
    "tests": 1,
@@ -3745,9 +3866,9 @@
    "path": "fastmcp_slim/fastmcp/server/providers/wrapped_provider.py",
    "public": false,
    "statements": 22,
-   "hit": 18,
+   "hit": 16,
    "functions": 17,
-   "functions_hit": 13,
+   "functions_hit": 11,
    "symbols": [],
    "tests": 1,
    "test_ids": [
@@ -3759,7 +3880,7 @@
    "path": "fastmcp_slim/fastmcp/server/server.py",
    "public": true,
    "statements": 624,
-   "hit": 383,
+   "hit": 368,
    "functions": 81,
    "functions_hit": 52,
    "symbols": [
@@ -3767,7 +3888,7 @@
      "name": "FastMCP",
      "kind": "class",
      "statements": 543,
-     "hit": 328
+     "hit": 316
     },
     {
      "name": "create_proxy",
@@ -3776,12 +3897,16 @@
      "hit": 0
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -3801,9 +3926,9 @@
    "path": "fastmcp_slim/fastmcp/server/sessions.py",
    "public": true,
    "statements": 102,
-   "hit": 17,
+   "hit": 20,
    "functions": 29,
-   "functions_hit": 2,
+   "functions_hit": 3,
    "symbols": [
     {
      "name": "SessionId",
@@ -3824,12 +3949,16 @@
      "hit": 0
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -3837,16 +3966,20 @@
    "path": "fastmcp_slim/fastmcp/server/telemetry.py",
    "public": false,
    "statements": 144,
-   "hit": 92,
+   "hit": 98,
    "functions": 11,
    "functions_hit": 10,
    "symbols": [],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -3893,15 +4026,15 @@
    "path": "fastmcp_slim/fastmcp/server/transforms/namespace.py",
    "public": true,
    "statements": 58,
-   "hit": 52,
+   "hit": 28,
    "functions": 15,
-   "functions_hit": 14,
+   "functions_hit": 11,
    "symbols": [
     {
      "name": "Namespace",
      "kind": "class",
      "statements": 58,
-     "hit": 52
+     "hit": 28
     }
    ],
    "tests": 1,
@@ -4061,23 +4194,27 @@
    "path": "fastmcp_slim/fastmcp/server/transforms/visibility.py",
    "public": true,
    "statements": 140,
-   "hit": 77,
+   "hit": 76,
    "functions": 22,
-   "functions_hit": 17,
+   "functions_hit": 16,
    "symbols": [
     {
      "name": "Visibility",
      "kind": "class",
      "statements": 81,
-     "hit": 54
+     "hit": 51
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -4089,7 +4226,7 @@
    "functions": 4,
    "functions_hit": 2,
    "symbols": [],
-   "tests": 21,
+   "tests": 26,
    "test_ids": [
     "tests/pbt/test_auth_url_guards.py::test_a_match_lands_on_the_patterns_host",
     "tests/pbt/test_auth_url_guards.py::test_an_exact_pattern_matches_only_itself",
@@ -4312,12 +4449,16 @@
      "hit": 0
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -4360,9 +4501,14 @@
      "hit": 17
     }
    ],
-   "tests": 3,
+   "tests": 8,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
@@ -4376,9 +4522,14 @@
    "functions": 11,
    "functions_hit": 9,
    "symbols": [],
-   "tests": 2,
+   "tests": 7,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
@@ -4398,12 +4549,16 @@
      "hit": 0
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -4497,12 +4652,16 @@
    "functions": 4,
    "functions_hit": 4,
    "symbols": [],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -4529,9 +4688,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/authorization.py",
    "public": true,
    "statements": 77,
-   "hit": 0,
+   "hit": 51,
    "functions": 17,
-   "functions_hit": 0,
+   "functions_hit": 12,
    "symbols": [
     {
      "name": "AuthContext",
@@ -4549,23 +4708,27 @@
      "name": "require_scopes",
      "kind": "function",
      "statements": 1,
-     "hit": 0
+     "hit": 1
     },
     {
      "name": "restrict_tag",
      "kind": "function",
      "statements": 1,
-     "hit": 0
+     "hit": 1
     },
     {
      "name": "run_auth_checks",
      "kind": "function",
      "statements": 6,
-     "hit": 0
+     "hit": 6
     }
    ],
-   "tests": 0,
-   "test_ids": []
+   "tests": 3,
+   "test_ids": [
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree"
+   ]
   },
   {
    "module": "fastmcp.utilities.cli",
@@ -4588,12 +4751,16 @@
    "functions": 14,
    "functions_hit": 9,
    "symbols": [],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -4605,9 +4772,14 @@
    "functions": 1,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 2,
+   "tests": 7,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
   },
@@ -4620,9 +4792,11 @@
    "functions": 8,
    "functions_hit": 5,
    "symbols": [],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -4661,14 +4835,16 @@
    "functions": 21,
    "functions_hit": 18,
    "symbols": [],
-   "tests": 6,
+   "tests": 11,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
     "tests/pbt/test_json_schema.py::test_compress_preserves_validation",
     "tests/pbt/test_json_schema.py::test_dereference_preserves_validation",
-    "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate"
    ]
   },
   {
@@ -4680,10 +4856,12 @@
    "functions": 59,
    "functions_hit": 46,
    "symbols": [],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
     "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
@@ -4723,11 +4901,13 @@
      "hit": 2
     }
    ],
-   "tests": 6,
+   "tests": 8,
    "test_ids": [
     "tests/pbt/test_auth_url_guards.py::test_cache_headers_never_break_a_fetch",
     "tests/pbt/test_auth_url_guards.py::test_document_scopes_never_widen_the_servers",
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_oauth_proxy_machine.py::TestOAuthProxy::runTest",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip"
@@ -4850,9 +5030,12 @@
    "functions": 1,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 2,
+   "tests": 5,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
@@ -4978,9 +5161,14 @@
    "functions": 7,
    "functions_hit": 4,
    "symbols": [],
-   "tests": 3,
+   "tests": 8,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
@@ -5013,12 +5201,16 @@
      "hit": 4
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   },
   {
@@ -5049,7 +5241,7 @@
      "hit": 0
     }
    ],
-   "tests": 21,
+   "tests": 26,
    "test_ids": [
     "tests/pbt/test_auth_url_guards.py::test_a_match_lands_on_the_patterns_host",
     "tests/pbt/test_auth_url_guards.py::test_an_exact_pattern_matches_only_itself",
@@ -5070,9 +5262,11 @@
    "functions": 2,
    "functions_hit": 1,
    "symbols": [],
-   "tests": 4,
+   "tests": 6,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
@@ -5118,9 +5312,14 @@
      "hit": 0
     }
    ],
-   "tests": 3,
+   "tests": 8,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_resource_read.py::test_read_roundtrip",
     "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
    ]
@@ -5165,12 +5364,16 @@
      "hit": 4
     }
    ],
-   "tests": 4,
+   "tests": 9,
    "test_ids": [
     "tests/pbt/test_components_machine.py::TestComponents::runTest",
+    "tests/pbt/test_middleware.py::test_a_cached_server_answers_like_an_uncached_one",
+    "tests/pbt/test_middleware.py::test_a_denial_names_every_scope_the_chain_still_needs",
+    "tests/pbt/test_middleware.py::test_listing_and_calling_agree",
+    "tests/pbt/test_middleware.py::test_sliding_window_admits_no_more_than_its_max",
+    "tests/pbt/test_middleware.py::test_token_bucket_admits_no_more_than_burst_plus_rate",
     "tests/pbt/test_openapi.py::test_openapi_tool_sends_described_request",
-    "tests/pbt/test_resource_read.py::test_read_roundtrip",
-    "tests/pbt/test_tool_transform.py::test_transformed_tool_matches_model"
+    "tests/pbt/test_resource_read.py::test_read_roundtrip"
    ]
   }
  ]
