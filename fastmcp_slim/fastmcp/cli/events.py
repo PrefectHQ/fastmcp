@@ -1,4 +1,7 @@
-"""`fastmcp events`: list a server's event types and watch one as it fires."""
+"""`fastmcp events`: list a server's event types and watch one as it fires.
+
+Experimental: this command may change in any release without a deprecation period.
+"""
 
 import json
 import sys
@@ -18,7 +21,7 @@ status = Console(stderr=True)
 
 events_app = cyclopts.App(
     name="events",
-    help="Subscribe to a server's events (the MCP Events extension, SEP-3415)",
+    help="(Experimental) Subscribe to a server's events (the MCP Events extension, SEP-3415)",
 )
 
 ServerSpec = Annotated[

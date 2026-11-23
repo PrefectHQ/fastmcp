@@ -1,4 +1,7 @@
-"""Protocol support for the MCP Events extension (SEP-3415)."""
+"""Protocol support for the MCP Events extension (SEP-3415).
+
+Experimental: this API may change in any release without a deprecation period.
+"""
 
 from typing import TYPE_CHECKING
 

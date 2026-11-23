@@ -1,4 +1,7 @@
-"""Client functions for the MCP Events extension: list, poll and subscribe."""
+"""Client functions for the MCP Events extension: list, poll and subscribe.
+
+Experimental: this API may change in any release without a deprecation period.
+"""
 
 from __future__ import annotations
 

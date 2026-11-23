@@ -1,4 +1,7 @@
-"""Wire models for the MCP Events extension (SEP-3415), poll and push delivery."""
+"""Wire models for the MCP Events extension (SEP-3415), poll and push delivery.
+
+Experimental: this API may change in any release without a deprecation period.
+"""
 
 from __future__ import annotations
 

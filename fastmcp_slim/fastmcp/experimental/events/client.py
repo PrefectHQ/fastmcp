@@ -1,4 +1,7 @@
-"""Client side of the MCP Events extension: the capability and push routing."""
+"""Client side of the MCP Events extension: the capability and push routing.
+
+Experimental: this API may change in any release without a deprecation period.
+"""
 
 from __future__ import annotations
 
@@ -46,6 +49,9 @@ class _OrderedIntercept:
 
 class EventsClientExtension(ClientExtension):
     """Declare support for the SEP-3415 Events extension.
+
+    Experimental: this API may change in any release without a deprecation
+    period.
 
     The instance also routes push notifications to the `events/stream` request
     they belong to, so use one instance per `Client`.

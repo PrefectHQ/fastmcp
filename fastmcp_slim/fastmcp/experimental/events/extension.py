@@ -1,4 +1,7 @@
-"""FastMCP server implementation of the MCP Events extension (poll and push)."""
+"""FastMCP server implementation of the MCP Events extension (poll and push).
+
+Experimental: this API may change in any release without a deprecation period.
+"""
 
 from __future__ import annotations
 
@@ -119,6 +122,9 @@ class _Registration:
 
 class EventsExtension(ServerExtension):
     """Serve event types over SEP-3415 poll and push delivery.
+
+    Experimental: this API may change in any release without a deprecation
+    period.
 
     Each event type is one check function that reports what happened since a
     cursor. `events/poll` calls it once per request, so the server keeps no
