@@ -471,3 +471,25 @@ footer button {
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
+/* Section and module links: quiet until the heading is hovered or focused;
+   always shown where there is no hover. */
+.anchor {
+  margin-left: 0.4em;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 400;
+  opacity: 0;
+}
+h2:hover .anchor,
+.anchor:focus-visible,
+.readout .anchor {
+  opacity: 1;
+}
+@media (hover: none) {
+  .anchor {
+    opacity: 1;
+  }
+}
+section[id] {
+  scroll-margin-top: 12px;
+}
