@@ -130,10 +130,13 @@ one gets a follow-up patch, never a re-tag.
    new changelog block into a draft release titled `v<new>: <pun>`, targeting the
    merge commit on `main`, or the head of `release/<major>.<minor>` (else
    `release/<major>.x`) when that branch exists. A draft has no tag and publishes
-   nothing. Re-run the step 1 preview first; if `<branch>` moved, delete the draft,
+   nothing. The draft is pinned to that commit, so changes merged to `<branch>`
+   afterwards are simply not in the release, and the notes still match what ships.
+   Re-draft only when a later change must go out in this release: delete the draft,
    delete the entry blocks from both docs files, re-run the helper (it refuses to
    insert a label that already exists), and land that as a follow-up docs PR, which
-   drafts again.
+   drafts again. Settle the title before the docs PR; a retitle also means a
+   follow-up docs PR.
 
    Refresh contributor attribution and both temporary notes files along with the
    preview when new changes enter the release. The docs-only changelog PR can appear
