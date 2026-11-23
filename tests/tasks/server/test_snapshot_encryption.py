@@ -95,6 +95,15 @@ class TestSnapshotCodec:
         assert "token-client-a-user-1" not in encoded
         assert "authorization" not in encoded
 
+    def test_repr_hides_credentials(
+        self, sensitive_snapshot: TaskContextSnapshot
+    ):
+        rendered = repr(sensitive_snapshot)
+        assert "token-client-a-user-1" not in rendered
+        assert "Bearer " not in rendered
+        assert "authorization" not in rendered
+        assert "session_id='session-1'" in rendered
+
     def test_decode_rejects_another_keys_payload(self):
         encoded = EncryptedCodec(OTHER_KEY).encode('{"a": 1}')
         with pytest.raises(SnapshotDecryptionError):
