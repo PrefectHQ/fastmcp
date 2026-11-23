@@ -13,7 +13,11 @@ logger = get_logger(__name__)
 
 
 class KeycloakAuthProvider(RemoteAuthProvider):
-    """Keycloak authentication provider using Dynamic Client Registration (DCR).
+    """Keycloak authentication provider.
+
+    Keycloak handles client registration: MCP clients register through Dynamic
+    Client Registration (DCR), or through Client ID Metadata Documents (CIMD) when
+    Keycloak's experimental `cimd` feature is enabled.
 
     Requires Keycloak 26.6.0 or later, which includes the fix for DCR compatibility
     with MCP clients (https://github.com/keycloak/keycloak/pull/45309).

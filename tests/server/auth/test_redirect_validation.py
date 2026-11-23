@@ -119,6 +119,12 @@ class TestBuildClientRedirect:
     than hand-building a params dict with its own `"iss"` key.
     """
 
+    def test_registered_response_param_is_not_repeated(self):
+        result = build_client_redirect(
+            "https://c.example/cb?state=a&keep=1", {"state": "b"}, iss="i"
+        )
+        assert result == "https://c.example/cb?state=b&keep=1&iss=i"
+
     def test_appends_params_and_iss_when_absent(self):
         url = "https://client.example.com/callback"
 
@@ -944,4 +950,25 @@ class TestBackslashAuthorityRejects:
         )
         assert is_redirect_uri_allowed_for_application_type(
             "http://localhost:8123/callback", "native"
+        )
+
+
+class TestExactRootPathPattern:
+    """A pattern with no wildcard is a registered URI, compared exactly."""
+
+    def test_root_pattern_matches_only_root(self):
+        assert matches_allowed_pattern("https://a.example/", "https://a.example/")
+        assert matches_allowed_pattern("https://a.example", "https://a.example/")
+        assert not matches_allowed_pattern("https://a.example/x", "https://a.example/")
+
+    def test_empty_path_pattern_matches_only_root(self):
+        assert matches_allowed_pattern("https://a.example/", "https://a.example")
+        assert not matches_allowed_pattern("https://a.example/x", "https://a.example")
+
+    def test_wildcard_root_pattern_still_matches_any_path(self):
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback", "http://localhost:*"
+        )
+        assert matches_allowed_pattern(
+            "https://app.example.com/cb", "https://*.example.com"
         )

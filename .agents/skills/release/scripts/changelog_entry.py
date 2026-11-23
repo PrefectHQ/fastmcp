@@ -45,6 +45,26 @@ def check_intro(intro: str) -> None:
         )
 
 
+def read_intro(text: str) -> tuple[str, str]:
+    """Return the changelog intro and the shorter updates-card text.
+
+    Paragraphs (separated by blank lines) are kept; lines within a paragraph are
+    joined. The updates card carries the first paragraph and, when the intro ends
+    with one, the closing `Thanks to our N contributors` line, so both files agree.
+    """
+    paragraphs = [
+        " ".join(line.strip() for line in chunk.splitlines() if line.strip())
+        for chunk in re.split(r"\n\s*\n", text)
+    ]
+    paragraphs = [p for p in paragraphs if p]
+    if not paragraphs:
+        raise SystemExit("notes intro is empty")
+    card = [paragraphs[0]]
+    if len(paragraphs) > 1 and paragraphs[-1].startswith("Thanks to our "):
+        card.append(paragraphs[-1])
+    return "\n\n".join(paragraphs), "\n\n".join(card)
+
+
 def generate_notes(tag: str, previous: str, target: str) -> str:
     out = subprocess.check_output(
         [
@@ -143,9 +163,7 @@ def main() -> None:
     tag, previous, pun, target = args.tag, args.previous, args.pun, args.target
     version = tag.lstrip("v")
     today = dt.date.today()
-    intro = " ".join(
-        line.strip() for line in args.notes_path.read_text().split("\n") if line.strip()
-    )
+    intro, card = read_intro(args.notes_path.read_text())
     check_intro(intro)
     release_notes = (
         args.release_notes.read_text()
@@ -171,7 +189,7 @@ title="FastMCP {tag}: {pun}"
 href="{url}"
 cta="Read the release notes"
 >
-{intro}
+{card}
 </Card>
 </Update>
 '''

@@ -191,6 +191,27 @@ class TestStructuredResultHydration:
         assert data.dur == timedelta(days=1)
         assert data.ident == UUID(int=7)
 
+    async def test_bytes_arrive_as_bytes(self):
+        class Blob(BaseModel):
+            data: bytes
+            label: str
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def blob() -> Blob:
+            return Blob(data=b"\x00\x01\xc3\xa9t\xc3\xa9", label="x")
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("blob")
+
+        assert result.structured_content == {
+            "data": "\x00\x01\u00e9t\u00e9",
+            "label": "x",
+        }
+        assert result.data.data == b"\x00\x01\xc3\xa9t\xc3\xa9"
+        assert result.data.label == "x"
+
     async def test_fixed_length_tuple_result_keeps_positions(self):
         mcp = FastMCP()
 

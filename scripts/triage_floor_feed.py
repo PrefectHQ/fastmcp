@@ -1,18 +1,22 @@
 """Publish fastmcp triage activity as atproto records for the live triage floor.
 
-Each run turns the GitHub event that triggered it into one small public record,
-and, when the event can change what is open, rewrites a snapshot of every open
-issue and PR. Viewers of the floor subscribe to these records over Jetstream, so
-they get each change pushed to them without calling GitHub themselves.
+`to_event` turns one GitHub event into one small public record; the webhook
+receiver in scripts/floor_receiver writes those as events happen. The workflow
+that runs this script rewrites a snapshot of every open issue and PR whenever
+something can change what is open. Viewers of the floor subscribe to these
+records over Jetstream, so they get each change pushed to them without calling
+GitHub themselves.
 
 Only public data goes out: titles, numbers, labels, logins and timestamps that
-GitHub already shows to anyone. Pushes and branch activity are not published.
+GitHub already shows to anyone. Pushes and branch activity are not published;
+CI runs on main are (`to_ci`), as are the triage flows' run states (`to_run`).
 """
 
 import argparse
 import json
 import os
 import re
+import statistics
 import subprocess
 import sys
 import urllib.error
@@ -34,6 +38,14 @@ SNAPSHOT_EVENTS = {
 def is_bot(user: dict | None) -> bool:
     user = user or {}
     return user.get("type") == "Bot" or str(user.get("login", "")).endswith("[bot]")
+
+
+def excerpt(body: str | None) -> str | None:
+    """The start of a comment, on one line, for the floor's log."""
+    text = " ".join((body or "").split())
+    if not text:
+        return None
+    return text if len(text) <= 160 else text[:159].rstrip() + "…"
 
 
 def to_event(name: str, payload: dict, now: datetime) -> dict | None:
@@ -61,13 +73,22 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
             label = (payload.get("label") or {}).get("name", "")
             kind = "gated" if label == GATE_LABEL else "labeled"
             base["label"] = label
-        elif action in {"ready_for_review", "synchronize"}:
+        elif action == "ready_for_review":
             kind = "updated"
+        elif action == "synchronize":
+            kind = "pushed"
     elif name == "issue_comment" and action == "created":
         kind = "botcomment" if base["bot"] else "comment"
+        base["excerpt"] = excerpt((payload.get("comment") or {}).get("body"))
+        base["author"] = (thing.get("user") or {}).get("login", "")
     elif name in {"pull_request_review", "pull_request_review_comment"}:
         kind = "botcomment" if base["bot"] else "review"
         base["pr"] = True
+        review = payload.get("review") or payload.get("comment") or {}
+        base["excerpt"] = excerpt(review.get("body"))
+        base["author"] = (thing.get("user") or {}).get("login", "")
+        if review.get("state"):
+            base["state"] = review["state"].lower()
     elif name == "release" and action == "published":
         release = payload.get("release") or {}
         kind = "release"
@@ -82,12 +103,126 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
     return {k: v for k, v in base.items() if v is not None}
 
 
-def gh(path: str, *, paginate: bool = False):
+# GitHub Actions workflows that run on pushes to main: the floor's CI. One
+# record per run, rewritten as the run moves from queued to done.
+CI_EVENTS = {"push"}
+
+
+def stamp(value: str | None, precise: bool = False) -> str | None:
+    """A GitHub or Prefect timestamp as the floor's UTC ISO form, or None.
+
+    precise keeps microseconds, for `at` fields that order state changes:
+    two changes within one second must still compare in order.
+    """
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    form = "%Y-%m-%dT%H:%M:%S.%fZ" if precise else "%Y-%m-%dT%H:%M:%S.000Z"
+    return moment.astimezone(UTC).strftime(form)
+
+
+def to_ci(payload: dict) -> tuple[str, dict] | None:
+    """A workflow_run webhook -> (rkey, floor.ci record), for runs on main only."""
+    run = payload.get("workflow_run") or {}
+    if run.get("head_branch") != "main" or run.get("event") not in CI_EVENTS:
+        return None
+    if not isinstance(run.get("id"), int) or run.get("status") is None:
+        return None
+    record = {
+        "$type": f"{NSID}.ci",
+        "workflow": (run.get("name") or "")[:100],
+        "status": run["status"],
+        "conclusion": run.get("conclusion"),
+        "sha": (run.get("head_sha") or "")[:7],
+        "title": (run.get("display_title") or "").split("\n")[0][:200],
+        "url": run.get("html_url", ""),
+        "startedAt": stamp(run.get("run_started_at")),
+        # when GitHub last changed the run; an older delivery never overwrites a newer one
+        "at": stamp(run.get("updated_at"), precise=True),
+    }
+    # zero-padded run ids sort the same as numbers, so listRecords gives newest first
+    return f"{run['id']:016d}", {k: v for k, v in record.items() if v is not None}
+
+
+# Prefect flows the floor may show: the triage stack's flows, all named
+# fastmcp-*. The automation picks which ones post here; the site picks which
+# station each one works in.
+FLOW_NAME = re.compile(r"fastmcp-[a-z0-9_-]{1,60}")
+# intake: config.issues / config.pull_requests; stack batch:
+# batch.groups[].items[].issue_number; contribution: spec.issue_number / pr_number
+NUMBER_KEYS = {
+    "issues",
+    "pull_requests",
+    "issue_number",
+    "pr_number",
+    "number",
+}
+
+
+def item_numbers(params: object, depth: int = 0) -> list[int]:
+    """Issue and PR numbers a flow run was started for, from its parameters."""
+    found: list[int] = []
+    if depth > 5:
+        return found
+    if isinstance(params, list):
+        for value in params[:20]:
+            found += item_numbers(value, depth + 1)
+    elif isinstance(params, dict):
+        for key, value in params.items():
+            if key in NUMBER_KEYS and not isinstance(value, dict):
+                values = value if isinstance(value, list) else [value]
+                found += [v for v in values if isinstance(v, int) and 0 < v < 10**6]
+            elif isinstance(value, dict | list):
+                found += item_numbers(value, depth + 1)
+    return list(dict.fromkeys(found))[:10]
+
+
+def to_run(body: dict) -> tuple[str, dict] | None:
+    """A Prefect automation's flow-run state change -> (rkey, floor.run record).
+
+    Only the flow's name, the state, times and issue/PR numbers go out: never
+    the run's name, parameters, logs or Prefect URLs.
+    """
+    flow = body.get("flow")
+    run_id = str(body.get("id") or "")
+    state = str(body.get("event") or "").rsplit(".", 1)[-1]
+    created = stamp(body.get("created"))
+    at = stamp(body.get("occurred"), precise=True)
+    if (
+        not isinstance(flow, str)
+        or not FLOW_NAME.fullmatch(flow)
+        or not created
+        or not at
+        or not state.isalpha()
+    ):
+        return None
+    if not re.fullmatch(r"[0-9a-f-]{36}", run_id):
+        return None
+    record = {
+        "$type": f"{NSID}.run",
+        "flow": flow,
+        "state": state.lower(),
+        "numbers": item_numbers(body.get("params")),
+        "createdAt": created,
+        "startedAt": stamp(body.get("start")),
+        "at": at,
+    }
+    # created time first, so listRecords gives the newest runs first
+    rkey = created[:19].replace("-", "").replace(":", "") + "-" + run_id[:8]
+    return rkey, {k: v for k, v in record.items() if v is not None}
+
+
+def gh(path: str, *, paginate: bool = False, timeout: int = 60):
     command = ["gh", "api", path]
     if paginate:
         command += ["--paginate", "--slurp"]
     out = subprocess.run(
-        command, capture_output=True, text=True, check=True, timeout=60
+        command, capture_output=True, text=True, check=True, timeout=timeout
     ).stdout
     value = json.loads(out)
     return [x for page in value for x in page] if paginate else value
@@ -101,6 +236,7 @@ def slim(item: dict) -> dict:
         "pr": "pull_request" in item,
         "draft": bool(item.get("draft")),
         "bot": is_bot(item.get("user")),
+        "a": (item.get("user") or {}).get("login", ""),
         "labels": labels[:8],
         "created": item["created_at"],
         "updated": item["updated_at"],
@@ -143,6 +279,80 @@ def snapshot(now: datetime) -> dict:
     }
 
 
+STAGES = ("issues", "gate", "ready")
+STALE_AFTER = timedelta(days=30)
+
+
+def stage(row: dict) -> str:
+    """The floor's bucket for one open item, in the order the site applies them."""
+    if not row["pr"]:
+        return "issues"
+    if GATE_LABEL in row["labels"]:
+        return "gate"
+    if row["bot"]:
+        return "bots"
+    if row["draft"]:
+        return "drafts"
+    return "ready"
+
+
+def parse_time(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def day_counts(open_items: list[dict], now: datetime) -> dict:
+    """How many open items each stage holds, as the floor counts them."""
+    counts = {"issues": 0, "gate": 0, "ready": 0, "drafts": 0, "bots": 0}
+    for row in open_items:
+        counts[stage(row)] += 1
+    ages = sorted(
+        (now - parse_time(row["created"])).days
+        for row in open_items
+        if stage(row) == "ready"
+    )
+    stale = sum(
+        1 for row in open_items if now - parse_time(row["updated"]) > STALE_AFTER
+    )
+    return {
+        "issues": counts["issues"],
+        "ready": counts["ready"],
+        "gated": counts["gate"],
+        "drafts": counts["drafts"],
+        "bots": counts["bots"],
+        # records hold integers only, so the median and share are rounded
+        "readyWaitDays": round(statistics.median(ages)) if ages else 0,
+        "stalePermille": round(1000 * stale / len(open_items)) if open_items else 0,
+    }
+
+
+def flow(before: list[dict], after: list[dict]) -> dict:
+    """Items that entered and left each stage between two snapshots."""
+    was = {row["n"]: stage(row) for row in before}
+    now = {row["n"]: stage(row) for row in after}
+    out = {}
+    for name in STAGES:
+        old = {n for n, s in was.items() if s == name}
+        new = {n for n, s in now.items() if s == name}
+        out[name] = {"in": len(new - old), "out": len(old - new)}
+    return out
+
+
+def day_totals(day: str) -> dict:
+    """Items opened, closed and merged on one UTC day."""
+
+    def count(q: str, kinds: tuple[str, ...] = ("issue", "pr")) -> int:
+        return sum(
+            gh(f"search/issues?per_page=1&q=repo:{REPO}+is:{k}+{q}")["total_count"]
+            for k in kinds
+        )
+
+    return {
+        "opened": count(f"created:{day}"),
+        "closed": count(f"is:closed+closed:{day}"),
+        "merged": count(f"is:merged+merged:{day}", ("pr",)),
+    }
+
+
 def xrpc(pds: str, method: str, body: dict, token: str | None = None) -> dict:
     request = urllib.request.Request(
         f"{pds.rstrip('/')}/xrpc/{method}",
@@ -174,12 +384,15 @@ def xrpc_get(pds: str, method: str, params: dict) -> dict | None:
         raise RuntimeError(f"{method} failed with HTTP {exc.code}") from None
 
 
-def put_snapshot(pds: str, did: str, token: str, snap: dict) -> bool:
+def put_snapshot(
+    pds: str, did: str, token: str, snap: dict
+) -> tuple[bool, dict | None]:
     """Write the snapshot unless a run that collected later already did.
 
     Runs overlap, so a run that read GitHub before a close could finish after
     the run that saw it. Compare-and-swap on the record's CID, and give way to
-    any snapshot collected after ours.
+    any snapshot collected after ours. Returns whether it wrote, and the
+    snapshot it replaced.
     """
     for _ in range(3):
         current = xrpc_get(
@@ -187,8 +400,9 @@ def put_snapshot(pds: str, did: str, token: str, snap: dict) -> bool:
             "com.atproto.repo.getRecord",
             {"repo": did, "collection": f"{NSID}.snapshot", "rkey": "self"},
         )
-        if current and current["value"].get("updatedAt", "") >= snap["updatedAt"]:
-            return False
+        previous = current["value"] if current else None
+        if previous and previous.get("updatedAt", "") >= snap["updatedAt"]:
+            return False, None
         body = {
             "repo": did,
             "collection": f"{NSID}.snapshot",
@@ -200,31 +414,69 @@ def put_snapshot(pds: str, did: str, token: str, snap: dict) -> bool:
             body["swapRecord"] = current["cid"]
         try:
             xrpc(pds, "com.atproto.repo.putRecord", body, token)
-            return True
+            return True, previous
         except RuntimeError as exc:
             if "HTTP 400" not in str(exc):  # InvalidSwap: someone wrote first
                 raise
-    return False
+    return False, None
 
 
-def recent_reviews(now: datetime) -> list[tuple[str, dict]]:
-    """Reviews from the last two hours, read from the repo's event feed.
+def put_day(pds: str, did: str, token: str, record: dict, moved: dict | None) -> None:
+    """Rewrite today's history record, adding this run's stage movements.
 
-    Reviews on fork PRs run their workflow without secrets, so they are
-    collected here by trusted runs instead of from their own trigger.
+    Counts are replaced by the newest snapshot's; movements accumulate over the
+    day.
+    Compare-and-swap keeps two overlapping runs from losing each other's.
     """
-    out = []
-    for e in gh(f"repos/{REPO}/events?per_page=100"):
-        if e.get("type") != "PullRequestReviewEvent":
-            continue
-        at = datetime.fromisoformat(e["created_at"].replace("Z", "+00:00"))
-        if now - at > timedelta(hours=2):
-            continue
-        payload = {**e.get("payload", {}), "sender": e.get("actor") or {}}
-        record = to_event("pull_request_review", payload, at)
-        if record:
-            out.append((f"rv{e['id']}", record))
-    return out
+    for _ in range(3):
+        current = xrpc_get(
+            pds,
+            "com.atproto.repo.getRecord",
+            {"repo": did, "collection": f"{NSID}.day", "rkey": record["day"]},
+        )
+        stored = (current or {}).get("value", {})
+        old = stored.get("flow", {})
+        totals = {
+            name: {
+                k: old.get(name, {}).get(k, 0) + (moved or {}).get(name, {}).get(k, 0)
+                for k in ("in", "out")
+            }
+            for name in STAGES
+        }
+        body = {
+            "repo": did,
+            "collection": f"{NSID}.day",
+            "rkey": record["day"],
+            # an older run that finishes last keeps the newer counts and only
+            # adds its movements
+            "record": {
+                **(
+                    stored
+                    if stored.get("updatedAt", "") > record.get("updatedAt", "")
+                    else record
+                ),
+                "flow": totals,
+            },
+            "validate": False,
+            "swapRecord": current["cid"] if current else None,
+        }
+        try:
+            xrpc(pds, "com.atproto.repo.putRecord", body, token)
+            return
+        except RuntimeError as exc:
+            if "HTTP 400" not in str(exc):
+                raise
+
+
+def day_record(snap: dict, now: datetime) -> dict:
+    day = now.strftime("%Y-%m-%d")
+    return {
+        "$type": f"{NSID}.day",
+        "day": day,
+        **day_counts(snap["open"], now),
+        **day_totals(day),
+        "updatedAt": snap["updatedAt"],
+    }
 
 
 ACCESS_TTL = timedelta(minutes=90)  # bsky access tokens live about two hours
@@ -285,11 +537,6 @@ def session(pds: str, path: str | None, now: datetime) -> tuple[str, str]:
     return fresh["did"], fresh["accessJwt"]
 
 
-def rkey_for(run_id: str, attempt: str = "1") -> str:
-    key = re.sub(r"[^A-Za-z0-9]", "", f"gh{run_id}x{attempt}")
-    return key or "gh0"
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -301,72 +548,22 @@ def main() -> int:
     args = parser.parse_args()
     now = datetime.now(UTC)
     name = os.environ.get("GITHUB_EVENT_NAME", "workflow_dispatch")
-    path = os.environ.get("GITHUB_EVENT_PATH")
-    payload = json.load(open(path)) if path and os.path.exists(path) else {}
-    # With the webhook receiver on (scripts/floor_receiver), events reach the
-    # PDS within a second of happening; this run keeps only the snapshot.
-    via_webhook = os.environ.get("FLOOR_EVENTS_VIA_WEBHOOK") == "on"
-    event = None if via_webhook else to_event(name, payload, now)
+    # Events reach the PDS from the webhook receiver (scripts/floor_receiver)
+    # within a second of happening; this workflow writes only the snapshot.
     snap = snapshot(now) if name in SNAPSHOT_EVENTS else None
-    if not event and not snap:
-        print(f"nothing to publish for {name}/{payload.get('action', '')}")
+    if not snap:
+        print(f"nothing to publish for {name}")
         return 0
     if args.dry_run:
-        print(
-            json.dumps(
-                {
-                    "event": event,
-                    "snapshot": snap and {**snap, "open": len(snap["open"])},
-                },
-                indent=2,
-            )
-        )
+        print(json.dumps({**snap, "open": len(snap["open"])}, indent=2))
         return 0
     pds = os.environ["ATPROTO_PDS"]
     did, token = session(pds, args.session_file, now)
-    writes = []
-    if event:
-        rkey = rkey_for(
-            os.environ.get("GITHUB_RUN_ID", ""),
-            os.environ.get("GITHUB_RUN_ATTEMPT", "1"),
-        )
-        writes.append(
-            {
-                "$type": "com.atproto.repo.applyWrites#create",
-                "collection": f"{NSID}.event",
-                "rkey": rkey,
-                "value": event,
-            }
-        )
-    if snap:
-        put_snapshot(pds, did, token, snap)
-    listed = xrpc_get(
-        pds,
-        "com.atproto.repo.listRecords",
-        {"repo": did, "collection": f"{NSID}.event", "limit": "100"},
-    )
-    seen = {r["uri"].rsplit("/", 1)[-1] for r in (listed or {}).get("records", [])}
-    for rkey, record in [] if via_webhook else recent_reviews(now):
-        if rkey not in seen:
-            # putRecord, not create: two overlapping runs may both pick it up
-            body = {
-                "repo": did,
-                "collection": f"{NSID}.event",
-                "rkey": rkey,
-                "record": record,
-                "validate": False,
-            }
-            xrpc(pds, "com.atproto.repo.putRecord", body, token)
-    if writes:
-        xrpc(
-            pds,
-            "com.atproto.repo.applyWrites",
-            {"repo": did, "writes": writes, "validate": False},
-            token,
-        )
-    print(
-        f"published {'event ' + event['kind'] if event else 'no event'}{' + snapshot' if snap else ''}"
-    )
+    wrote, previous = put_snapshot(pds, did, token, snap)
+    if wrote:
+        moved = flow(previous["open"], snap["open"]) if previous else None
+        put_day(pds, did, token, day_record(snap, now), moved)
+    print("published snapshot" if wrote else "a newer snapshot was already published")
     return 0
 
 

@@ -267,12 +267,13 @@ def _build_client(
     timeout: float | None = None,
     auth: str | None = None,
     skills: bool = False,
+    events: bool = False,
 ) -> Client:
     """Build a ``Client`` from a resolved server spec.
 
     Applies ``auth='oauth'`` automatically for HTTP-based targets unless
     the caller explicitly passes ``--auth none`` to disable it. ``skills=True``
-    opts the client into the Skills extension.
+    opts the client into the Skills extension, ``events=True`` into Events.
 
     ``auth=None`` means "not specified" (use default), ``auth="none"``
     means "explicitly disabled".
@@ -327,8 +328,19 @@ def _build_client(
             timeout=timeout,
             auth=effective_auth,
             elicitation_handler=_terminal_elicitation_handler,
-            extensions=[SkillsClientExtension()] if skills else None,
+            extensions=_client_extensions(skills=skills, events=events),
         )
+
+
+def _client_extensions(*, skills: bool, events: bool) -> list[Any] | None:
+    extensions: list[Any] = []
+    if skills:
+        extensions.append(SkillsClientExtension())
+    if events:
+        from fastmcp.experimental.events import EventsClientExtension
+
+        extensions.append(EventsClientExtension())
+    return extensions or None
 
 
 # ---------------------------------------------------------------------------

@@ -998,3 +998,23 @@ class TestAcceptedContentValidation:
         )
         assert isinstance(result, mcp_types.ElicitResult)
         assert result.action == "decline"
+
+
+async def test_set_elicitation_callback_updates_a_live_session(fastmcp_server):
+    """`set_elicitation_callback` while connected takes effect without reconnecting."""
+
+    async def first(message, response_type, params, ctx):
+        return ElicitResult(action="accept", content=response_type(name="Alice"))
+
+    async def second(message, response_type, params, ctx):
+        return ElicitResult(action="accept", content=response_type(name="Bob"))
+
+    async with Client(
+        fastmcp_server, mode="legacy", elicitation_handler=first
+    ) as client:
+        before = await client.call_tool("ask_for_name")
+        client.set_elicitation_callback(second)
+        after = await client.call_tool("ask_for_name")
+
+    assert before.data == "Hello, Alice!"
+    assert after.data == "Hello, Bob!"

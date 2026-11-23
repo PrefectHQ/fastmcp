@@ -85,6 +85,7 @@ class MCPConfigTransport(ClientTransport):
         self.config = config
         self.name_as_prefix = name_as_prefix
         self._transports: list[ClientTransport] = []
+        self._active_sessions = 0
         self._request_state_security: RequestStateSecurity | None = None
         self._resolved_legacy_only = False
 
@@ -126,6 +127,12 @@ class MCPConfigTransport(ClientTransport):
             return self.transport.legacy_only
         return self._resolved_legacy_only
 
+    def get_session_id(self) -> str | None:
+        """Return the single server's session ID; a composite has none."""
+        if len(self.config.mcpServers) == 1:
+            return self.transport.get_session_id()
+        return None
+
     @contextlib.asynccontextmanager
     async def connect_session(
         self,
@@ -165,6 +172,7 @@ class MCPConfigTransport(ClientTransport):
 
         stack = contextlib.AsyncExitStack()
         await stack.__aenter__()
+        self._active_sessions += 1
         try:
             prepared_transports = self._prepare_transports()
             composite, backend_versions = await self._build_composite(
@@ -210,6 +218,7 @@ class MCPConfigTransport(ClientTransport):
             ) as session:
                 yield session
         finally:
+            self._active_sessions -= 1
             await stack.aclose()
             self._resolved_legacy_only = False
 
@@ -403,6 +412,11 @@ class MCPConfigTransport(ClientTransport):
         return transport, client, proxy
 
     async def close(self):
+        # Each multi-server session closes its own backends when it exits, and
+        # `_transports` holds only the latest session's, which can belong to
+        # another client sharing this transport through `Client.new()`.
+        if self._active_sessions:
+            return
         for transport in self._transports:
             await transport.close()
 
