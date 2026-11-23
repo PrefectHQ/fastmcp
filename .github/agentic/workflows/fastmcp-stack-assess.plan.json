@@ -118,7 +118,8 @@
               "reason",
               "contract",
               "prior_art",
-              "question"
+              "question",
+              "area"
             ],
             "title": "Assessment",
             "type": "object"
@@ -267,7 +268,8 @@
               "reason",
               "contract",
               "prior_art",
-              "question"
+              "question",
+              "area"
             ],
             "title": "Assessment",
             "type": "object"
