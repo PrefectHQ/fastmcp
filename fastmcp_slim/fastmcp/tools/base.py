@@ -104,6 +104,9 @@ def _base64_non_utf8_bytes(data: Any) -> Any:
     """
 
     changed = False
+    # Containers on the current path. A circular reference is its own
+    # serialization error, so leave it for the original error to report.
+    active: set[int] = set()
 
     def encode(value: Any) -> Any:
         nonlocal changed
@@ -116,11 +119,17 @@ def _base64_non_utf8_bytes(data: Any) -> Any:
             return value
         if isinstance(value, Iterator | BaseModel) or dataclasses.is_dataclass(value):
             raise _UnsafeToRetry
-        if isinstance(value, dict):
-            return {key: encode(item) for key, item in value.items()}
-        if isinstance(value, list | tuple | set | frozenset):
+        if not isinstance(value, dict | list | tuple | set | frozenset):
+            return value
+        if id(value) in active:
+            raise _UnsafeToRetry
+        active.add(id(value))
+        try:
+            if isinstance(value, dict):
+                return {key: encode(item) for key, item in value.items()}
             return [encode(item) for item in value]
-        return value
+        finally:
+            active.discard(id(value))
 
     try:
         encoded = encode(data)

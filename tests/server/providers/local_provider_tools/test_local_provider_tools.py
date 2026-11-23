@@ -129,6 +129,20 @@ class TestToolReturnTypes:
             "items": [[1, base64.b64encode(b"\xff").decode()]]
         }
 
+    async def test_circular_result_keeps_circular_reference_error(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def blob_tool():
+            result: dict = {"rows": [1, 2]}
+            result["self"] = result
+            return result
+
+        # The retry walk must not recurse forever and replace the original
+        # error with a RecursionError.
+        with pytest.raises(ToolError, match="Circular reference"):
+            await mcp.call_tool("blob_tool", {})
+
     async def test_non_utf8_bytes_dict_key_still_fails(self):
         """Encoding a key could collide with an existing string key and
         silently drop an entry, so binary keys keep failing loudly."""
