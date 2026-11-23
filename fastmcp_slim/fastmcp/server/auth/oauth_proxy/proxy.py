@@ -103,6 +103,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     HTTP_TIMEOUT_SECONDS,
     ClientCode,
     ConsentCSRFToken,
+    EndedGrant,
     JTIMapping,
     OAuthTransaction,
     ProxyDCRClient,
@@ -738,6 +739,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 default_collection="mcp-rotated-refresh-tokens",
                 raise_on_validation_error=True,
             )
+        )
+
+        # Grants ended by revocation or refresh-token reuse, so an in-flight
+        # refresh cannot bring one back by rewriting its upstream record.
+        self._ended_grant_store: PydanticAdapter[EndedGrant] = PydanticAdapter[
+            EndedGrant
+        ](
+            key_value=self._client_storage,
+            pydantic_model=EndedGrant,
+            default_collection="mcp-ended-grants",
+            raise_on_validation_error=True,
         )
 
         # Use the provided token validator
@@ -1864,6 +1876,40 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             expires_at=metadata.expires_at,
         )
 
+    async def _end_grant(self, upstream_token_id: str) -> None:
+        """End a grant so every FastMCP token that maps to it stops working.
+
+        The marker is written before the record is deleted, and writers check
+        it after they store the record (`_store_upstream_token_set`), so a
+        refresh racing with this call cannot leave the grant alive.
+        """
+        await self._ended_grant_store.put(
+            key=upstream_token_id,
+            value=EndedGrant(ended_at=time.time()),
+            ttl=self._fallback_refresh_token_expiry_seconds,
+        )
+        await self._upstream_token_store.delete(key=upstream_token_id)
+
+    async def _store_upstream_token_set(
+        self, upstream_token_set: UpstreamTokenSet, ttl: int
+    ) -> bool:
+        """Store a refreshed upstream record unless its grant has ended.
+
+        Returns False, with the record removed again, when the grant was
+        ended while the refresh was in flight.
+        """
+        await self._upstream_token_store.put(
+            key=upstream_token_set.upstream_token_id,
+            value=upstream_token_set,
+            ttl=ttl,
+        )
+        if await self._ended_grant_store.get(key=upstream_token_set.upstream_token_id):
+            await self._upstream_token_store.delete(
+                key=upstream_token_set.upstream_token_id
+            )
+            return False
+        return True
+
     async def _end_grant_on_refresh_reuse(
         self, client: OAuthClientInformationFull, token_hash: str
     ) -> None:
@@ -1882,13 +1928,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if time.time() - rotated.rotated_at <= _REFRESH_REUSE_GRACE_SECONDS:
             return
 
-        await self._rotated_refresh_store.delete(key=token_hash)
         upstream_token_set = await self._upstream_token_store.get(
             key=rotated.upstream_token_id
         )
         if upstream_token_set is not None and upstream_token_set.refresh_token:
             await self._revoke_upstream(upstream_token_set.refresh_token)
-        await self._upstream_token_store.delete(key=rotated.upstream_token_id)
+        await self._end_grant(rotated.upstream_token_id)
         logger.warning(
             "Rotated refresh token reused for client=%s (token_hash=%s); ended "
             "its grant",
@@ -2068,19 +2113,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # FastMCP token that points at this upstream session. The refreshed
         # (possibly rotated) upstream tokens are persisted even if the
         # extraction raises.
+        grant_alive = True
         try:
             upstream_claims = await self._extract_upstream_claims(
                 upstream_token_set.raw_token_data
             )
             upstream_token_set.upstream_claims = upstream_claims or {}
         finally:
-            await self._upstream_token_store.put(
-                key=upstream_token_set.upstream_token_id,
-                value=upstream_token_set,
-                ttl=max(
-                    refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1
-                ),  # Keep until longest-lived token expires (min 1s for safety)
+            grant_alive = await self._store_upstream_token_set(
+                upstream_token_set,
+                # Keep until longest-lived token expires (min 1s for safety)
+                ttl=max(refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1),
             )
+        if not grant_alive:
+            raise TokenError("invalid_grant", "Grant was revoked")
 
         # Consume the FastMCP refresh token before issuing successors.
         # delete() reports whether this call removed the key, so of two
@@ -2310,9 +2356,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if upstream_token_set.refresh_token_expires_at
             else self._fallback_refresh_token_expiry_seconds
         )
-        await self._upstream_token_store.put(
-            key=upstream_token_set.upstream_token_id,
-            value=upstream_token_set,
+        if not await self._store_upstream_token_set(
+            upstream_token_set,
             # Include the configured FastMCP lifetime so the upstream token never
             # expires before an extended access JTI mapping that still points at it.
             ttl=max(
@@ -2321,7 +2366,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 self._fastmcp_access_token_expiry_seconds or 0,
                 1,
             ),
-        )
+        ):
+            raise TokenError("invalid_grant", "Grant was revoked")
 
         return upstream_token_set
 
@@ -2633,7 +2679,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             await self._revoke_upstream(upstream_token_set.refresh_token)
 
         await self._jti_mapping_store.delete(key=refresh_jti)
-        await self._upstream_token_store.delete(key=jti_mapping.upstream_token_id)
+        await self._end_grant(jti_mapping.upstream_token_id)
         logger.debug("Revoked refresh token and ended its grant")
 
     async def _revoke_upstream(self, upstream_token: str) -> None:

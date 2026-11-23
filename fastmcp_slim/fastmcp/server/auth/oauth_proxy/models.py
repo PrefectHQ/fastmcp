@@ -165,6 +165,17 @@ class RotatedRefreshToken(BaseModel):
     rotated_at: float
 
 
+class EndedGrant(BaseModel):
+    """Marks a grant (upstream token record) as ended, keyed by its id.
+
+    Deleting the upstream record alone is not enough: a refresh already
+    waiting on the IdP would write it back. Writers check this marker after
+    they store the record and undo the write if the grant has ended.
+    """
+
+    ended_at: float
+
+
 def _hash_token(token: str) -> str:
     """Hash a token for secure storage lookup.
 

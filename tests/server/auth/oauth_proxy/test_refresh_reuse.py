@@ -1,7 +1,8 @@
 """A rotated refresh token presented again ends its grant (OAuth 2.1 §4.3.1)."""
 
+import asyncio
 import time
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from mcp.server.auth.provider import TokenError
@@ -99,3 +100,44 @@ class TestRefreshTokenReuse:
 
         assert await proxy.load_refresh_token(client, "never-issued") is None
         assert await _grant_alive(proxy, rotated.access_token)
+
+
+class TestEndedGrantStaysEnded:
+    async def test_in_flight_refresh_cannot_restore_ended_grant(self, jwt_verifier):
+        proxy = make_proxy(jwt_verifier)
+        client, old_refresh, rotated = await _rotate_once(proxy)
+        assert rotated.refresh_token is not None
+
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_refresh(**_):
+            entered.set()
+            await release.wait()
+            return {
+                "access_token": "refreshed-upstream-access",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "upstream-refresh",
+            }
+
+        upstream = AsyncMock()
+        upstream.refresh_token = AsyncMock(side_effect=slow_refresh)
+
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=upstream
+        ):
+            in_flight = asyncio.create_task(
+                proxy.exchange_refresh_token(
+                    client, as_refresh_token(rotated.refresh_token), ["read"]
+                )
+            )
+            await entered.wait()
+            with _age_rotation(proxy_module._REFRESH_REUSE_GRACE_SECONDS + 1):
+                assert await proxy.load_refresh_token(client, old_refresh) is None
+            release.set()
+            with pytest.raises(TokenError) as exc_info:
+                await in_flight
+
+        assert exc_info.value.error == "invalid_grant"
+        assert not await _grant_alive(proxy, rotated.access_token)
