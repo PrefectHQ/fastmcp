@@ -389,7 +389,7 @@ class GitHubProvider(OAuthProxy):
                 refresh gracefully (e.g. `mcp-remote`). See `OAuthProxy` for details.
             token_expiry_threshold_seconds: Number of seconds before actual expiry to
                 treat a token as expired, refreshing early to avoid races. Defaults to 0.
-            identity_assertion: Optional SEP-990 ID-JAG configuration for
+            identity_assertion: Beta. Optional SEP-990 ID-JAG configuration for
                 identity-bound token exchange. Disabled by default.
         """
         required_scopes_final = (
