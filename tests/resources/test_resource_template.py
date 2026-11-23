@@ -980,22 +980,17 @@ class TestMalformedURITemplates:
         ) == {"year": "2024"}
         assert builds == first_build
 
-    def test_build_regex_returns_none_for_duplicate_group_names(self):
-        assert build_regex("test://{a}/{a}/path") is None
+    def test_build_regex_uses_backreference_for_repeated_group_names(self):
+        regex = build_regex("test://{a}/{a}/path")
+        assert regex is not None
+        assert regex.pattern == "^test://(?P<a>[^/]+)/(?P=a)/path$"
 
-    @pytest.mark.parametrize(
-        "template",
-        [
-            "test://{a}/{a}/path",
-        ],
-        ids=[
-            "duplicate_groups",
-        ],
-    )
-    def test_match_uri_template_returns_none_for_malformed_templates(
-        self, template: str
-    ):
-        assert match_uri_template("test://anything/path", template) is None
+    def test_match_uri_template_repeated_param_requires_equal_values(self):
+        assert match_uri_template("test://anything/path", "test://{a}/{a}/path") is None
+        assert match_uri_template("test://foo/bar/path", "test://{a}/{a}/path") is None
+        assert match_uri_template("test://foo/foo/path", "test://{a}/{a}/path") == {
+            "a": "foo"
+        }
 
     def test_match_uri_template_sanitizes_leading_digit_names(self):
         """`{1leading}` used to disable the whole template; it now matches
@@ -2054,3 +2049,30 @@ class TestExpandNonIdentifierNames:
     def test_forward_uri_keeps_literal_when_unresolved(self):
         result = forward_uri("resource://dollar/{$top}", {}, "resource://dollar/x")
         assert result == "resource://dollar/{$top}"
+
+
+class TestRepeatedTemplateParameters:
+    def test_repeated_path_parameter_matches_when_equal(self):
+        assert match_uri_template("data://acme/acme", "data://{tenant}/{tenant}") == {
+            "tenant": "acme"
+        }
+        assert match_uri_template("data://acme/other", "data://{tenant}/{tenant}") is None
+
+    def test_repeated_wildcard_and_simple_parameter(self):
+        assert match_uri_template(
+            "data://acme/acme", "data://{tenant*}/{tenant}"
+        ) == {"tenant": "acme"}
+        assert (
+            match_uri_template("data://acme/other", "data://{tenant*}/{tenant}") is None
+        )
+
+    def test_repeated_literal_query_parameter(self):
+        assert match_uri_template(
+            "data://x?a=acme&b=acme", "data://x?a={tenant}&b={tenant}"
+        ) == {"tenant": "acme"}
+        assert (
+            match_uri_template(
+                "data://x?a=acme&b=other", "data://x?a={tenant}&b={tenant}"
+            )
+            is None
+        )
