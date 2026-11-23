@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T12:32:34+00:00",
- "source_commit": "33c7401f7e4fa716b1d5731e9f6105d711c3ac43",
+ "generated_at": "2026-11-23T15:44:51+00:00",
+ "source_commit": "82491fdca3041855be50cfd9b48456e3907806c5",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -1225,7 +1225,7 @@
    "module": "fastmcp.client.transports.stdio",
    "path": "fastmcp_slim/fastmcp/client/transports/stdio.py",
    "public": true,
-   "statements": 223,
+   "statements": 224,
    "hit": 0,
    "functions": 18,
    "functions_hit": 0,
@@ -1245,7 +1245,7 @@
     {
      "name": "StdioTransport",
      "kind": "class",
-     "statements": 111,
+     "statements": 112,
      "hit": 0
     },
     {
@@ -1478,6 +1478,37 @@
    "test_ids": []
   },
   {
+   "module": "fastmcp.experimental.client",
+   "path": "fastmcp_slim/fastmcp/experimental/client/__init__.py",
+   "public": false,
+   "statements": 0,
+   "hit": 0,
+   "functions": 0,
+   "functions_hit": 0,
+   "symbols": [],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.client.code_mode",
+   "path": "fastmcp_slim/fastmcp/experimental/client/code_mode.py",
+   "public": true,
+   "statements": 59,
+   "hit": 0,
+   "functions": 14,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "CodeModeClient",
+     "kind": "class",
+     "statements": 57,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
    "module": "fastmcp.experimental.events",
    "path": "fastmcp_slim/fastmcp/experimental/events/__init__.py",
    "public": true,
@@ -1610,15 +1641,15 @@
    "module": "fastmcp.experimental.transforms.code_mode",
    "path": "fastmcp_slim/fastmcp/experimental/transforms/code_mode.py",
    "public": true,
-   "statements": 233,
+   "statements": 234,
    "hit": 0,
-   "functions": 35,
+   "functions": 36,
    "functions_hit": 0,
    "symbols": [
     {
      "name": "CodeMode",
      "kind": "class",
-     "statements": 64,
+     "statements": 58,
      "hit": 0
     },
     {
@@ -4634,9 +4665,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 637,
-   "hit": 428,
+   "hit": 432,
    "functions": 59,
-   "functions_hit": 46,
+   "functions_hit": 47,
    "symbols": [],
    "tests": 4,
    "test_ids": [
@@ -4828,9 +4859,9 @@
    "module": "fastmcp.utilities.openapi.director",
    "path": "fastmcp_slim/fastmcp/utilities/openapi/director.py",
    "public": false,
-   "statements": 357,
-   "hit": 128,
-   "functions": 25,
+   "statements": 373,
+   "hit": 132,
+   "functions": 26,
    "functions_hit": 14,
    "symbols": [],
    "tests": 1,
