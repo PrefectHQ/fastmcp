@@ -76,7 +76,15 @@ def people(evidence: dict, read: Read, now: datetime) -> dict:
     ]
     logins = [login for login in dict.fromkeys([reporter, *authors]) if login]
     logins = logins[:MAX_PEOPLE]
-    cards = {login: card(login, read, now) for login in logins}
+    # Say who each card is: an assessor once credited a commenter asking for
+    # assignment with the reporter's history and first claim (#6692).
+    cards = {
+        login: {
+            **card(login, read, now),
+            "role": "reporter" if login == reporter else "pr_author",
+        }
+        for login in logins
+    }
     try:
         opened = read(f"repos/{REPO}/issues/{issue['number']}")["created_at"]
         # String keys: this lands in flow run parameters, which round-trip

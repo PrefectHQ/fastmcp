@@ -241,7 +241,10 @@ in the last six months, and how soon after the issue the reporter opened a PR. U
 way a maintainer skimming the issue would. Merged work here counts for something. A scenario
 only the PR author has reported, filed just before their own fix, needs evidence that someone
 actually hits it. Many PRs across unrelated repositories suggests someone sweeping for fixes
-rather than using FastMCP. None of these decides anything on its own.
+rather than using FastMCP. None of these decides anything on its own. Each card's role says
+who it is: only issue_author reported the issue. Someone in the discussion who asks to be
+assigned is a separate person with no card here; never give them the reporter's history or
+first claim.
 
 Check docs, history and maintainer comments before calling something a bug or an open
 question; it may already be fixed, reverted or decided. Labels and confident diagnoses are

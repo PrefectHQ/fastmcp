@@ -74,8 +74,10 @@ def test_cards_give_the_agent_what_a_maintainer_would_glance_at():
     assert set(cards) == {"reporter", "sweeper"}
     assert cards["reporter"]["followers"] == 3000
     assert cards["reporter"]["prs_merged_here"] == 12
+    assert cards["reporter"]["role"] == "reporter"
     assert cards["sweeper"] == {
         "login": "sweeper",
+        "role": "pr_author",
         "account_created": "2025-09-13",
         "followers": 4,
         "public_repos": 20,
@@ -92,8 +94,8 @@ def test_a_failed_lookup_leaves_a_gap_instead_of_failing_the_assessment():
         evidence(pr(9, "someone")), reader({}, {}, {"reporter", "someone"}), NOW
     )
     assert result["cards"] == [
-        {"login": "reporter", "unavailable": "RuntimeError"},
-        {"login": "someone", "unavailable": "RuntimeError"},
+        {"login": "reporter", "unavailable": "RuntimeError", "role": "reporter"},
+        {"login": "someone", "unavailable": "RuntimeError", "role": "pr_author"},
     ]
 
 
