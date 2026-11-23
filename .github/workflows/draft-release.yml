@@ -1,0 +1,37 @@
+name: Draft release
+
+# When a changelog PR lands, draft the GitHub release it describes. A draft has
+# no tag and triggers nothing: a maintainer reviews and publishes it, and the
+# `pypi` environment waits for approval before anything reaches PyPI. Changelog
+# entries for every line live on main; maintenance versions draft against their
+# release branch (release/<major>.<minor> or release/<major>.x).
+
+on:
+  push:
+    branches: [main]
+    paths: [docs/changelog.mdx]
+
+concurrency:
+  group: draft-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 2
+
+      - name: Draft releases for new changelog entries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          git fetch --depth=1 origin "$BEFORE" || true
+          python3 scripts/draft_release.py "$BEFORE" "$AFTER"

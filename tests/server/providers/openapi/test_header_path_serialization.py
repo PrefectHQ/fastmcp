@@ -1,4 +1,4 @@
-"""Header and path parameter values follow the OpenAPI "simple" style."""
+"""Header and path parameter values follow their OpenAPI serialization style."""
 
 from typing import Any
 
@@ -258,3 +258,50 @@ async def test_path_nested_array_flattens_one_level() -> None:
     )
     requests = await call_and_capture(spec, {"ids": [["a", "b"], "c"]})
     assert requests[0].url.raw_path == b"/items/a,b,c"
+
+
+@pytest.mark.parametrize(
+    "style,explode,value,expected",
+    [
+        ("label", None, "abc", b"/items/.abc"),
+        ("label", None, ["a", "b"], b"/items/.a,b"),
+        ("label", True, ["a", "b"], b"/items/.a.b"),
+        ("label", None, {"R": 100, "G": 200}, b"/items/.R,100,G,200"),
+        ("label", True, {"R": 100, "G": 200}, b"/items/.R=100.G=200"),
+        ("label", None, "a.b,c", b"/items/.a%2Eb%2Cc"),
+        ("matrix", None, "abc", b"/items/;id=abc"),
+        ("matrix", None, ["a", "b"], b"/items/;id=a,b"),
+        ("matrix", True, ["a", "b"], b"/items/;id=a;id=b"),
+        ("matrix", None, {"R": 100, "G": 200}, b"/items/;id=R,100,G,200"),
+        ("matrix", True, {"R": 100, "G": 200}, b"/items/;R=100;G=200"),
+        ("matrix", None, "a;b=c", b"/items/;id=a%3Bb%3Dc"),
+        ("simple", None, "abc", b"/items/abc"),
+    ],
+)
+async def test_path_label_and_matrix_styles(
+    style: str, explode: bool | None, value: Any, expected: bytes
+) -> None:
+    parameter: dict[str, Any] = {
+        "name": "id",
+        "in": "path",
+        "required": True,
+        "style": style,
+        "schema": {},
+    }
+    if explode is not None:
+        parameter["explode"] = explode
+    spec = make_spec([parameter], path="/items/{id}")
+    requests = await call_and_capture(spec, {"id": value})
+    assert requests[0].url.raw_path == expected
+
+
+@pytest.mark.parametrize("value", ["", [""], ["", ""]])
+def test_path_label_rejects_dot_segment(value: Any) -> None:
+    with pytest.raises(ValueError, match="dot segment"):
+        RequestDirector(SchemaPath.from_dict({}))._build_url(
+            "/items/{id}",
+            {"id": value},
+            "https://api.example.com",
+            path_explode={"id": True},
+            path_style={"id": "label"},
+        )

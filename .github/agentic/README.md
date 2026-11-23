@@ -10,13 +10,53 @@ Two event automations (`fastmcp-triage-on-github-issue` and `-pr`) start
 `cloud-triage-intake` when an issue changes or a ready PR that references an issue
 changes. Intake collects bounded GitHub evidence and hands a batch to
 `cloud-stack-batch`. The connected triage plan (`flows.agentic_triage_plan`)
-assesses each item, verifies existing contributions through
-`cloud-contribution-verification` or reproduces the report, and sends every
+assesses each item and, on the reproduce branch, reproduces the report. The batch then
+verifies existing contributions through `cloud-contribution-verification` itself (a
+DeploymentNode in the plan can't wait on the assessment), and sends every
 public-facing outcome through the Sol `triage_review` node, which loads
 `.agents/skills/adversarial-review/SKILL.md` from the pinned revision.
-`cloud-triage-finalize` records the outcome, and accepted reviews are posted as
-COMMENT reviews by the triage review app. Nothing in this path assigns, closes, labels or
-merges.
+The batch records the outcome, and accepted reviews are posted as
+COMMENT reviews by the triage review app. Triage labels each assessed issue with its area
+and, when the outcome waits on a person, `needs:triage` (`flows/agentic_labels.py`). It never
+starts a closing clock on its own: asking the reporter for a reproduction (`needs MRE`) or
+flagging a duplicate (`potential-duplicate`) is recorded as the issue's next step for the
+digest, and a maintainer decides. When triage isn't sure, it holds. Nothing in this path
+assigns, closes or merges.
+
+`cloud-triage-sweep` (`flows/agentic_sweep.py`, no model) lists inactive outside issues and PRs
+in Slack every Monday and labels nothing. A maintainer adds `sweep:close` to the ones that
+should go; a daily run closes them once the label has been on for 48 hours with no comment from
+a person.
+
+`cloud-triage-audit` (`flows/agentic_audit.py`) looks for triage's own mistakes every morning
+before the digest. It gathers the closing-clock labels and closures automation applied in the
+last day, every automated write a person undid since, and every open item whose clock is still
+running, and the `audit` agent judges each against the issue itself. Its report goes to Slack;
+it writes nothing to GitHub. The plan comes from `fastmcp_triage_config.audit`.
+
+`cloud-triage-memory-sync` (`flows/agentic_memory_sync.py`, no model) keeps a turbopuffer index of
+every issue, PR and human comment current, every 30 minutes. While `memory.mode` is "on", each
+assessment gets the closest past issues and PRs as `related` evidence: leads for duplicates, prior
+fixes and earlier decisions, never findings on their own. A lookup failure leaves `related` empty and
+triage carries on. The key is the `turbopuffer-api-key` Secret block; run the flow once with
+`backfill=true` to index the whole repository.
+
+Agents claim work through the triage MCP server (`memory_server.py`, on Horizon) so interactive
+sessions and triage runs don't step on each other: `claim_work` takes `issue:<n>`, `pr:<n>` or a
+deploy name and either refuses with who holds it or grants a fenced 30-minute lease and the item's
+context; `report_progress` renews it; `release_work` ends it with `pr`, `handed_back` (with a
+reason) or `abandoned`. Claims are public atproto records on prefect.io (`flows/agentic_work.py`),
+the triage floor draws them, and the `work.activity` MCP event serves the log where fastmcp has the
+events extension. With `work.mode` "on", the stack controller claims each item the same way and
+skips items someone else holds. The server needs `WORK_ATPROTO_PASSWORD`; without it the tools
+answer that claims are off.
+
+The Prefect Variable `fastmcp_triage_config` holds `github_writes` ("off", "dry_run" or "on",
+or per feature: `{"labels": "on", "sweep": "dry_run"}`; default "dry_run"), the sweep
+thresholds under `sweep`, `memory` (`{"mode": "on"}`; default off), and `work` (claims, `{"mode": "on"}`; default off). All are read on every run, so changing them needs no deploy.
+Writes go out as the triage GitHub App, which needs Issues: write. Under `burst`, `max_items` (default 5) and
+`window_hours` (default 24) pause triage for anyone who opens more issues and PRs than that in
+the window; Slack gets one line when they cross it.
 
 Intake skips events sent by anyone with write access to the repository, so
 maintainers' own edits and their agents' activity don't start triage. If the
@@ -116,6 +156,13 @@ live commit. Then, from a clean checkout of the new commit, rebuild the plans
 Workflows tooling, run `agentic_stack.sh register`, and update `source_sha` and the
 plan versions in both automations right away. If the alert template changed, re-run
 `agentic_stack.sh alerts`.
+
+The connected triage plan has no committed JSON, so the guard also refuses when
+`flows/agentic_triage_plan.py` or `flows/agentic_stack_plans.py` changed. Rebuild it
+with `uv run python -m flows.agentic_triage_plan --output triage.plan.json` (add
+`--tier` only if the live runtime uses one), diff it against the active version of
+the `runtime.triage_plan` flow, validate, publish it to that flow, and update
+`runtime.triage_plan.version_id` in both automations.
 
 ## Roll back
 

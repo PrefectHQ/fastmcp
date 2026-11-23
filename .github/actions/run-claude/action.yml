@@ -83,7 +83,7 @@ runs:
       id: claude
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
-      uses: anthropics/claude-code-action@v1
+      uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f # v1.0.284
       with:
         github_token: ${{ inputs.github-token }}
         claude_code_oauth_token: ${{ inputs.claude-oauth-token }}

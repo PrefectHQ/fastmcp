@@ -7,12 +7,7 @@ on:
   issue_comment:
     types: [created]
 
-permissions:
-  actions: read
-  contents: write
-  issues: write
-  pull-requests: write
-  id-token: write
+permissions: {}
 
 jobs:
   comment:
@@ -23,12 +18,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Install UV
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"

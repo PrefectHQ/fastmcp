@@ -6,13 +6,16 @@ description: Cut a FastMCP release end to end. Use when the maintainer says "cut
 # Cutting a release
 
 A release is a tag on the branch that owns the line: `<branch>` below is `main` for
-the current major and `release/3.x` for 3.x maintenance. Every step runs against that
-branch, including the docs PR, so a maintenance entry lands in the maintenance
-branch's own changelog above its newest 3.x entry. The tag triggers `Publish fastmcp-slim to PyPI`;
+the current major and `release/<major>.<minor>` or `release/<major>.x` for maintenance.
+Notes are generated against that branch, but every changelog entry lands on `main`,
+the only lineage gofastmcp.com/docs serves. Merging that docs PR drafts the release
+(`draft-release.yml`); publishing the draft makes the tag. The tag triggers `Publish fastmcp-slim to PyPI`;
 its success fans out to `fastmcp-tasks`, `fastmcp-remote`, and `fastmcp`, and the
 `fastmcp` publish job opens the `published-docs` PR for stable release-triggered
 publication when the release SHA is an ancestor of the default branch. Prereleases
-and manual package-workflow dispatch do not open that PR. Mintlify builds `docs/`
+do not open that PR. The slim job waits in the `pypi` environment for a required
+reviewer; the publish workflows have no manual dispatch, so a release is the only
+way to reach PyPI. Mintlify builds `docs/`
 from `published-docs` at `https://gofastmcp.com/docs`; the separate
 `PrefectHQ/gofastmcp-website` repository deploys its `main` to Vercel for the landing
 page and `/docs` proxy. Two hand-maintained docs files mirror every release and must be on the
@@ -75,25 +78,35 @@ one gets a follow-up patch, never a re-tag.
    honor opt-outs, and deduplicate entries. Save the completed generated notes to
    `/tmp/generated-notes.md`.
 
-2. **Propose titles.** Titles are `v<version>: <pun>`, pun on the release's main
+2. **Classify and smoke before proposing anything.** For every user-facing entry in the preview, take the compatibility line from its review verdict (or write one per [review-pr](../review-pr/SKILL.md) step 4) and sort the release into: fixes only, tightening, loosening, new defaults, new capabilities, dependency floor changes. List public symbols added or removed since the last tag on the target line. For each tightening, loosening, or new default, `search` the triage memory for past reports and reverts in that area, so the notes can name the setups that broke last time. Recommend patch or minor against the versioning policy in [releases](../../../docs/development/releases.mdx) and prior releases; the maintainer decides. Every tightening, loosening, and new default gets a sentence in the handwritten notes with its opt-out or workaround.
+
+   Then build the wheels (`uv build --all-packages`), install them into a fresh venv outside the repository, and run a smoke script against them, kept at `scripts/smoke.py` in this skill's directory so each release extends the last one instead of rewriting it: a server and client over stdio and HTTP in both protocol eras, a proxy, the OAuth proxy flow, and the CLI. Add one probe per tightening or new default and run it against both the previous release from PyPI and the new wheels, so the notes describe observed behavior. A smoke failure stops the release; a smoke pass does not settle compatibility.
+
+3. **Propose titles.** Titles are `v<version>: <pun>`, pun on the release's main
    theme from the release preview. Check prior titles with
    `gh release list --repo PrefectHQ/fastmcp --limit 60` to avoid repeats and keep
    the options on brand: two to four words, a familiar phrase bent toward the
    theme ("Cache Me If You Can", "Trust, but Proxy", "Come Back Any Time"),
    and a running family for a major's prereleases ("Fourst Contact", "Group
    Effourt"). Offer several; the maintainer picks. Draft the handwritten notes at the
-   same time: one or two sentences for a patch, narrative prose for a point release.
-   Get sign-off on both before anything is pushed.
+   same time: one or two sentences for a patch that only fixes bugs, a short paragraph
+   per area when a patch also tightens or changes defaults, narrative prose for a point
+   release. Separate paragraphs with a blank line; `changelog_entry.py` keeps them, and
+   the updates card gets the first paragraph plus the closing `Thanks to our N
+   contributors` line. Lead a callout paragraph with bold text rather than a GitHub
+   `> [!IMPORTANT]` alert, which the docs changelog does not render.
+   The notes say what changed for users and what they need to do. Leave out how the
+   release was made: test or CI runs, retries, smoke results, reverts, review rounds,
+   and downstream projects by name. `changelog_entry.py` refuses an intro that reads
+   as process history. Get sign-off on both before anything is pushed.
 
-3. **Write the notes file** outside the repository (a temp directory), intro only.
+4. **Write the notes file** outside the repository (a temp directory), intro only.
    The release title is the heading, so the file has none.
 
-   Also write `/tmp/release-notes.md` containing that intro followed by the completed
-   `/tmp/generated-notes.md`. This is the exact body to publish; use the same completed
-   generated notes for the docs entry. Do not regenerate plain GitHub notes at
-   publication and discard the added contributor credit.
+   The changelog entry built from it and the completed `/tmp/generated-notes.md`
+   becomes the GitHub release body, so the credit added in step 1 carries over.
 
-4. **Docs entries.** Branch `docs/changelog-<new>` from `origin/<branch>` and insert
+5. **Docs entries.** Branch `docs/changelog-<new>` from `origin/main` (for every line) and insert
    both blocks (the last argument is the branch the notes are generated against):
 
    ```bash
@@ -109,32 +122,39 @@ one gets a follow-up patch, never a re-tag.
 
    (`@latest` on purpose: the hosted Mintlify build is always current.) Commit,
    push, open the PR titled `docs: add v<new> changelog entries` with base
-   `<branch>` and a one-line body, and merge it. Branch policy needs `--admin` on a maintainer-driven release.
+   `main` and a one-line body, and merge it. Branch policy needs `--admin` on a maintainer-driven release.
    The docs PR itself appears in the GitHub notes but not in the mirror; that is
    expected.
 
-5. **Tag**, immediately after the docs PR merges. Re-run the step 1 preview first;
-   if `<branch>` moved, delete the entry blocks from both docs files, re-run the
-   helper (it refuses to insert a label that already exists), and land that as a
-   follow-up docs PR before tagging.
+6. **Publish the draft.** The docs PR's merge runs `Draft release`, which turns the
+   new changelog block into a draft release titled `v<new>: <pun>`, targeting the
+   merge commit on `main`, or the head of `release/<major>.<minor>` (else
+   `release/<major>.x`) when that branch exists. A draft has no tag and publishes
+   nothing. The draft is pinned to that commit, so changes merged to `<branch>`
+   afterwards are simply not in the release, and the notes still match what ships.
+   Re-draft only when a later change must go out in this release: delete the draft,
+   delete the entry blocks from both docs files, re-run the helper (it refuses to
+   insert a label that already exists), and land that as a follow-up docs PR, which
+   drafts again. Settle the title before the docs PR; a retitle also means a
+   follow-up docs PR.
 
    Refresh contributor attribution and both temporary notes files along with the
    preview when new changes enter the release. The docs-only changelog PR can appear
    in the GitHub notes without appearing in its own mirror, as described above.
 
-   ```bash
-   gh release create v<new> --target <branch> --title "v<new>: <pun>" \
-     --notes-file /tmp/release-notes.md
-   ```
+   The maintainer publishes the draft from the releases page (or
+   `gh release edit v<new> --draft=false`). Agents prepare the draft; they do not
+   publish it.
 
    `v<prev>` is the last stable tag on that branch, passed as `previous_tag_name` in
-   the notes preview. The compare link at the bottom of the created release must
+   the notes preview. The compare link at the bottom of the draft must
    read `v<prev>...v<new>`. Verify the published contributor entries and
    `New Contributors` list against the completed notes.
 
-6. **Watch the fan-out.** The slim run is keyed to the tag; the others are
+7. **Watch the fan-out.** The slim run is keyed to the tag; the others are
    `workflow_run` events on the default branch, so select them by workflow name.
-   The slim run appears within a minute of the tag; the `fastmcp` run is queued the
+   The slim run appears within a minute of the tag and waits for the maintainer to
+   approve the `pypi` deployment; the `fastmcp` run is queued the
    moment slim succeeds, so watch slim to completion first and the newest `fastmcp`
    run is the right one.
 
@@ -146,7 +166,7 @@ one gets a follow-up patch, never a re-tag.
    Confirm each package with `curl -fsS https://pypi.org/pypi/<pkg>/<new>/json | jq .info.version`;
    the unversioned endpoint lags a few minutes.
 
-7. **Publish docs** (eligible stable releases from the default-branch lineage only;
+8. **Publish docs** (eligible stable releases from the default-branch lineage only;
    maintenance releases leave gofastmcp.com/docs on the current major). After a
    successful eligible `fastmcp` run, its last job has opened
    `Publish FastMCP v<new> docs` against `published-docs`:
@@ -193,7 +213,7 @@ gh pr create --base published-docs --title "docs: publish main to published-docs
 gh pr merge <n> --merge --admin
 ```
 
-Then watch the `Deploy docs` run and verify the endpoints as in step 7.
+Then watch the `Deploy docs` run and verify the endpoints as in step 8.
 
 ## Publication checks
 
@@ -231,16 +251,17 @@ connections instead of raising.
 
 - `--generate-notes` copies PR titles verbatim; a title containing `<1`, `{`, or `}`
   breaks MDX, and `__name__` renders as bold. `scripts/changelog_entry.py` wraps
-  those in backticks; the validator in step 4 catches anything else.
+  those in backticks; the validator in step 5 catches anything else.
 - Mintlify's GitHub App also deploys on its own, but it only rebuilds files
   changed since the last commit it recorded, and it records commits it failed on
   or skipped. Only the `Deploy docs` run's verdict counts; its API-triggered
   deployment is what brings a page a skipped deploy left stale back in line.
 - Always pass the last stable tag as `previous_tag_name` when generating notes;
-  otherwise a prerelease tag can truncate the PR list. Publish the completed notes
-  with `--notes-file`, rather than replacing them with `--generate-notes`.
+  otherwise a prerelease tag can truncate the PR list. Don't replace the draft's
+  body with `--generate-notes` at publication; that discards the added credit.
 - Maintenance releases publish packages and notes but never repoint `published-docs`;
-  their changelog entries go on the maintenance branch under the matching major section.
+  their changelog entries go on `main`, in date order with the current line. Don't
+  edit the maintenance branch's own `docs/changelog.mdx`.
 
 ## Check before finishing
 

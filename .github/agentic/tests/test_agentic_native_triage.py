@@ -256,7 +256,7 @@ def test_native_stage_keeps_a_run_whose_parameters_round_trip_through_json(
     monkeypatch.setattr(native, "saved", lambda *_: None)
     monkeypatch.setattr(native, "record", lambda *_: "recorded")
     monkeypatch.setattr(native, "find_native_result", lambda _: None)
-    monkeypatch.setattr(native, "verified_outcome", lambda *_: outcome)
+    monkeypatch.setattr(native, "settle_native", lambda *_: outcome)
     monkeypatch.setattr(native, "retain_native_result", lambda *_: None)
 
     destination, result, _ = native.run_native_stage(uuid4(), pinned, "initial")

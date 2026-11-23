@@ -201,3 +201,43 @@ async def test_client_headers_proxy(proxy_server: str):
         assert isinstance(result[0], TextResourceContents)
         headers = json.loads(result[0].text)
         assert headers["x-server-header"] == "test-abc"
+
+
+async def test_mcp_transport_headers_are_not_forwarded(shttp_server: str):
+    async with Client(transport=StreamableHttpTransport(shttp_server)) as client:
+        result = await client.read_resource("resource://get_headers_headers_get")
+        assert isinstance(result[0], TextResourceContents)
+        headers = json.loads(result[0].text)
+        assert not [name for name in headers if name.startswith("mcp-")]
+
+
+@pytest.mark.parametrize(
+    ("forward", "expected"),
+    [
+        (True, {"x-test": "test-123", "x-other": "other"}),
+        (False, {}),
+        (["X-Test"], {"x-test": "test-123"}),
+    ],
+)
+async def test_forward_client_headers_option(forward, expected):
+    app = FastAPI()
+
+    @app.get("/headers")
+    def get_headers(request: Request):
+        return request.headers
+
+    server = FastMCP.from_fastapi(
+        app,
+        forward_client_headers=forward,
+        route_maps=[RouteMap(methods=["GET"], mcp_type=MCPType.TOOL)],
+    )
+    async with run_server_async(server, transport="http") as url:
+        async with Client(
+            transport=StreamableHttpTransport(
+                url, headers={"X-TEST": "test-123", "X-Other": "other"}
+            )
+        ) as client:
+            result = await client.call_tool("get_headers_headers_get")
+    headers: dict[str, str] = result.data
+    forwarded = {k: v for k, v in headers.items() if k in ("x-test", "x-other")}
+    assert forwarded == expected

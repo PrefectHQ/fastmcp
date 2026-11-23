@@ -1,0 +1,34 @@
+---
+title: client
+sidebarTitle: client
+---
+
+# `fastmcp.experimental.events.client`
+
+
+Client side of the MCP Events extension: the capability and push routing.
+
+Experimental: this API may change in any release without a deprecation period.
+
+
+## Classes
+
+### `EventsClientExtension` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/client.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Declare support for the SEP-3415 Events extension.
+
+Experimental: this API may change in any release without a deprecation
+period.
+
+The instance also routes push notifications to the `events/stream` request
+they belong to, so use one instance per `Client`.
+
+
+**Methods:**
+
+#### `notifications` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/client.py#L71" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+notifications(self) -> Sequence[NotificationBinding[Any]]
+```
