@@ -14,6 +14,7 @@ GitHub already shows to anyone. Pushes and branch activity are not published.
 import argparse
 import json
 import os
+import statistics
 import subprocess
 import sys
 import urllib.error
@@ -35,6 +36,14 @@ SNAPSHOT_EVENTS = {
 def is_bot(user: dict | None) -> bool:
     user = user or {}
     return user.get("type") == "Bot" or str(user.get("login", "")).endswith("[bot]")
+
+
+def excerpt(body: str | None) -> str | None:
+    """The start of a comment, on one line, for the floor's log."""
+    text = " ".join((body or "").split())
+    if not text:
+        return None
+    return text if len(text) <= 160 else text[:159].rstrip() + "…"
 
 
 def to_event(name: str, payload: dict, now: datetime) -> dict | None:
@@ -62,13 +71,22 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
             label = (payload.get("label") or {}).get("name", "")
             kind = "gated" if label == GATE_LABEL else "labeled"
             base["label"] = label
-        elif action in {"ready_for_review", "synchronize"}:
+        elif action == "ready_for_review":
             kind = "updated"
+        elif action == "synchronize":
+            kind = "pushed"
     elif name == "issue_comment" and action == "created":
         kind = "botcomment" if base["bot"] else "comment"
+        base["excerpt"] = excerpt((payload.get("comment") or {}).get("body"))
+        base["author"] = (thing.get("user") or {}).get("login", "")
     elif name in {"pull_request_review", "pull_request_review_comment"}:
         kind = "botcomment" if base["bot"] else "review"
         base["pr"] = True
+        review = payload.get("review") or payload.get("comment") or {}
+        base["excerpt"] = excerpt(review.get("body"))
+        base["author"] = (thing.get("user") or {}).get("login", "")
+        if review.get("state"):
+            base["state"] = review["state"].lower()
     elif name == "release" and action == "published":
         release = payload.get("release") or {}
         kind = "release"
@@ -83,12 +101,12 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
     return {k: v for k, v in base.items() if v is not None}
 
 
-def gh(path: str, *, paginate: bool = False):
+def gh(path: str, *, paginate: bool = False, timeout: int = 60):
     command = ["gh", "api", path]
     if paginate:
         command += ["--paginate", "--slurp"]
     out = subprocess.run(
-        command, capture_output=True, text=True, check=True, timeout=60
+        command, capture_output=True, text=True, check=True, timeout=timeout
     ).stdout
     value = json.loads(out)
     return [x for page in value for x in page] if paginate else value
@@ -102,6 +120,7 @@ def slim(item: dict) -> dict:
         "pr": "pull_request" in item,
         "draft": bool(item.get("draft")),
         "bot": is_bot(item.get("user")),
+        "a": (item.get("user") or {}).get("login", ""),
         "labels": labels[:8],
         "created": item["created_at"],
         "updated": item["updated_at"],
@@ -144,6 +163,80 @@ def snapshot(now: datetime) -> dict:
     }
 
 
+STAGES = ("issues", "gate", "ready")
+STALE_AFTER = timedelta(days=30)
+
+
+def stage(row: dict) -> str:
+    """The floor's bucket for one open item, in the order the site applies them."""
+    if not row["pr"]:
+        return "issues"
+    if GATE_LABEL in row["labels"]:
+        return "gate"
+    if row["bot"]:
+        return "bots"
+    if row["draft"]:
+        return "drafts"
+    return "ready"
+
+
+def parse_time(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def day_counts(open_items: list[dict], now: datetime) -> dict:
+    """How many open items each stage holds, as the floor counts them."""
+    counts = {"issues": 0, "gate": 0, "ready": 0, "drafts": 0, "bots": 0}
+    for row in open_items:
+        counts[stage(row)] += 1
+    ages = sorted(
+        (now - parse_time(row["created"])).days
+        for row in open_items
+        if stage(row) == "ready"
+    )
+    stale = sum(
+        1 for row in open_items if now - parse_time(row["updated"]) > STALE_AFTER
+    )
+    return {
+        "issues": counts["issues"],
+        "ready": counts["ready"],
+        "gated": counts["gate"],
+        "drafts": counts["drafts"],
+        "bots": counts["bots"],
+        # records hold integers only, so the median and share are rounded
+        "readyWaitDays": round(statistics.median(ages)) if ages else 0,
+        "stalePermille": round(1000 * stale / len(open_items)) if open_items else 0,
+    }
+
+
+def flow(before: list[dict], after: list[dict]) -> dict:
+    """Items that entered and left each stage between two snapshots."""
+    was = {row["n"]: stage(row) for row in before}
+    now = {row["n"]: stage(row) for row in after}
+    out = {}
+    for name in STAGES:
+        old = {n for n, s in was.items() if s == name}
+        new = {n for n, s in now.items() if s == name}
+        out[name] = {"in": len(new - old), "out": len(old - new)}
+    return out
+
+
+def day_totals(day: str) -> dict:
+    """Items opened, closed and merged on one UTC day."""
+
+    def count(q: str, kinds: tuple[str, ...] = ("issue", "pr")) -> int:
+        return sum(
+            gh(f"search/issues?per_page=1&q=repo:{REPO}+is:{k}+{q}")["total_count"]
+            for k in kinds
+        )
+
+    return {
+        "opened": count(f"created:{day}"),
+        "closed": count(f"is:closed+closed:{day}"),
+        "merged": count(f"is:merged+merged:{day}", ("pr",)),
+    }
+
+
 def xrpc(pds: str, method: str, body: dict, token: str | None = None) -> dict:
     request = urllib.request.Request(
         f"{pds.rstrip('/')}/xrpc/{method}",
@@ -175,12 +268,15 @@ def xrpc_get(pds: str, method: str, params: dict) -> dict | None:
         raise RuntimeError(f"{method} failed with HTTP {exc.code}") from None
 
 
-def put_snapshot(pds: str, did: str, token: str, snap: dict) -> bool:
+def put_snapshot(
+    pds: str, did: str, token: str, snap: dict
+) -> tuple[bool, dict | None]:
     """Write the snapshot unless a run that collected later already did.
 
     Runs overlap, so a run that read GitHub before a close could finish after
     the run that saw it. Compare-and-swap on the record's CID, and give way to
-    any snapshot collected after ours.
+    any snapshot collected after ours. Returns whether it wrote, and the
+    snapshot it replaced.
     """
     for _ in range(3):
         current = xrpc_get(
@@ -188,8 +284,9 @@ def put_snapshot(pds: str, did: str, token: str, snap: dict) -> bool:
             "com.atproto.repo.getRecord",
             {"repo": did, "collection": f"{NSID}.snapshot", "rkey": "self"},
         )
-        if current and current["value"].get("updatedAt", "") >= snap["updatedAt"]:
-            return False
+        previous = current["value"] if current else None
+        if previous and previous.get("updatedAt", "") >= snap["updatedAt"]:
+            return False, None
         body = {
             "repo": did,
             "collection": f"{NSID}.snapshot",
@@ -201,11 +298,69 @@ def put_snapshot(pds: str, did: str, token: str, snap: dict) -> bool:
             body["swapRecord"] = current["cid"]
         try:
             xrpc(pds, "com.atproto.repo.putRecord", body, token)
-            return True
+            return True, previous
         except RuntimeError as exc:
             if "HTTP 400" not in str(exc):  # InvalidSwap: someone wrote first
                 raise
-    return False
+    return False, None
+
+
+def put_day(pds: str, did: str, token: str, record: dict, moved: dict | None) -> None:
+    """Rewrite today's history record, adding this run's stage movements.
+
+    Counts are replaced by the newest snapshot's; movements accumulate over the
+    day.
+    Compare-and-swap keeps two overlapping runs from losing each other's.
+    """
+    for _ in range(3):
+        current = xrpc_get(
+            pds,
+            "com.atproto.repo.getRecord",
+            {"repo": did, "collection": f"{NSID}.day", "rkey": record["day"]},
+        )
+        stored = (current or {}).get("value", {})
+        old = stored.get("flow", {})
+        totals = {
+            name: {
+                k: old.get(name, {}).get(k, 0) + (moved or {}).get(name, {}).get(k, 0)
+                for k in ("in", "out")
+            }
+            for name in STAGES
+        }
+        body = {
+            "repo": did,
+            "collection": f"{NSID}.day",
+            "rkey": record["day"],
+            # an older run that finishes last keeps the newer counts and only
+            # adds its movements
+            "record": {
+                **(
+                    stored
+                    if stored.get("updatedAt", "") > record.get("updatedAt", "")
+                    else record
+                ),
+                "flow": totals,
+            },
+            "validate": False,
+            "swapRecord": current["cid"] if current else None,
+        }
+        try:
+            xrpc(pds, "com.atproto.repo.putRecord", body, token)
+            return
+        except RuntimeError as exc:
+            if "HTTP 400" not in str(exc):
+                raise
+
+
+def day_record(snap: dict, now: datetime) -> dict:
+    day = now.strftime("%Y-%m-%d")
+    return {
+        "$type": f"{NSID}.day",
+        "day": day,
+        **day_counts(snap["open"], now),
+        **day_totals(day),
+        "updatedAt": snap["updatedAt"],
+    }
 
 
 ACCESS_TTL = timedelta(minutes=90)  # bsky access tokens live about two hours
@@ -288,8 +443,11 @@ def main() -> int:
         return 0
     pds = os.environ["ATPROTO_PDS"]
     did, token = session(pds, args.session_file, now)
-    put_snapshot(pds, did, token, snap)
-    print("published snapshot")
+    wrote, previous = put_snapshot(pds, did, token, snap)
+    if wrote:
+        moved = flow(previous["open"], snap["open"]) if previous else None
+        put_day(pds, did, token, day_record(snap, now), moved)
+    print("published snapshot" if wrote else "a newer snapshot was already published")
     return 0
 
 
