@@ -121,7 +121,7 @@ def _yielding(read):
 def _revocation_is_per_grant() -> bool:
     """True while revoking an access token and then refreshing revives it.
 
-    The probe runs the minimal history from FINDINGS.md: redeem a code,
+    The probe runs the minimal history from #6620: redeem a code,
     revoke the access token, refresh, and check the revoked token.
     """
     machine = OAuthMachine(probe=True)
@@ -408,5 +408,5 @@ class OAuthMachine(RuleBasedStateMachine):
             assert got is not None, "an issued access token does not validate"
 
 
-ACCESS_REVOCATION_PER_GRANT = still_open("F10", _revocation_is_per_grant)
+ACCESS_REVOCATION_PER_GRANT = still_open("#6620", _revocation_is_per_grant)
 TestOAuthProxy = OAuthMachine.TestCase

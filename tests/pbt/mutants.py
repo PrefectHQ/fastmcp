@@ -73,8 +73,8 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
     ],
     "schema_fixes": [
         {
-            "name": "F1 undone: nested non-object default merged",
-            "fixes": "F1",
+            "name": "#6552 undone: nested non-object default merged",
+            "fixes": "#6552",
             "file": SCHEMA_TYPE,
             "old": "            if not isinstance(nested_default, Mapping):\n"
             "                nested_default = None\n",
@@ -82,16 +82,16 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F1 undone: root non-object default merged",
-            "fixes": "F1",
+            "name": "#6552 undone: root non-object default merged",
+            "fixes": "#6552",
             "file": SCHEMA_TYPE,
             "old": 'elif isinstance(schema.get("default"), Mapping):',
             "new": 'elif "default" in schema:',
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F3 undone: positions read from the closure",
-            "fixes": "F3",
+            "name": "#6553 undone: positions read from the closure",
+            "fixes": "#6553",
             "file": SCHEMA_TYPE,
             "old": "positions_type, tail_type = get_args(source)\n"
             "        resolved_prefix = get_args(positions_type)",
@@ -99,16 +99,16 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F5 undone: placeholders inherit validate_default",
-            "fixes": "F5",
+            "name": "#6572 undone: placeholders inherit validate_default",
+            "fixes": "#6572",
             "file": SCHEMA_TYPE,
             "old": "default=None,\n                    validate_default=False,",
             "new": "default=None,",
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F2 undone: a broken merged default is never dropped",
-            "fixes": "F2",
+            "name": "#6582 undone: a broken merged default is never dropped",
+            "fixes": "#6582",
             "file": SCHEMA_TYPE,
             "old": "            if not broken:\n                raise\n",
             "new": "            raise\n",
@@ -124,7 +124,7 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": MACHINE,
         },
         {
-            "name": "F4 undone: unversioned never matches a requested version",
+            "name": "#6582 docs undone: unversioned never matches a requested version",
             "file": "fastmcp_slim/fastmcp/utilities/versions.py",
             "old": "        if version is None:\n            return match_none\n",
             "new": "        if version is None:\n            return False\n",
@@ -230,12 +230,12 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": "tests/pbt/test_oauth_proxy_machine.py",
         },
         {
-            "name": "revoked access token's mapping kept (undoes F10)",
+            "name": "revoked access token's mapping kept (undoes #6620)",
             "file": OAUTH,
             "old": "            await self._jti_mapping_store.delete(key=token.fastmcp_jti)",
             "new": "            pass",
             "test": "tests/pbt/test_oauth_proxy_machine.py",
-            "fixes": "F10",
+            "fixes": "#6620",
         },
         {
             "name": "revoked refresh token leaves its grant's access tokens live",

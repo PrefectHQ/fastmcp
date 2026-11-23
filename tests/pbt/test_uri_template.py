@@ -16,8 +16,12 @@ from .strategies import DrawnTemplate, uri_templates
 
 
 def known_divergence(t: DrawnTemplate) -> str | None:
-    """Name a divergence already recorded in FINDINGS.md, so the run still
-    stops on anything new."""
+    """Name a known divergence, so the run still stops on anything new.
+
+    A list param holding `[""]` reads back as `[]`: RFC 6570 expands both to
+    an empty value, and `match_uri_template` maps an empty raw value to `[]`
+    on purpose. Not a bug.
+    """
     for v in t.vars:
         if v.kind == "list" and v.value == [""]:
             return "list-of-one-empty-item"
