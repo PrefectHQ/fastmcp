@@ -40,16 +40,16 @@ from fastmcp.utilities.versions import dedupe_with_versions
 from .known import still_open
 
 
-def _f7_reproduces() -> bool:
-    """F7: equal versions from two servers are listed twice in `versions`."""
+def _duplicate_versions_reproduce() -> bool:
+    """Equal versions from two servers are listed twice in `versions` (#6612)."""
     twins = [Tool.from_function(lambda: "", name="t", version="1") for _ in range(2)]
     listed = dedupe_with_versions(twins, key_fn=lambda c: c.name)
     meta = listed[0].meta or {}
     return meta.get("fastmcp", {}).get("versions") == ["1", "1"]
 
 
-def _f8_reproduces() -> bool:
-    """F8: a hidden parent tool shadows the mounted tool listed in its place."""
+def _hidden_twin_shadows() -> bool:
+    """A hidden parent tool shadows the mounted tool listed in its place (#6611)."""
     parent, child = FastMCP("p"), FastMCP("c")
     parent.tool(name="t")(lambda: "parent")
     child.tool(name="t", tags={"x"})(lambda: "child")
@@ -70,8 +70,8 @@ def _f8_reproduces() -> bool:
 
 # Skip a known finding only while it reproduces, so the property checks the
 # shape again once the fix lands. Undo mutants set PBT_ASSUME_FIXED.
-F7_OPEN = still_open("F7", _f7_reproduces)
-F8_OPEN = still_open("F8", _f8_reproduces)
+DUPLICATE_VERSIONS_OPEN = still_open("#6612", _duplicate_versions_reproduce)
+HIDDEN_TWIN_OPEN = still_open("#6611", _hidden_twin_shadows)
 
 KINDS = ["tool", "prompt", "resource"]
 IDENTS = {
@@ -249,7 +249,8 @@ class ComponentMachine(RuleBasedStateMachine):
         """Versioned and unversioned under one name, from different servers.
 
         One server refuses the mix, but nothing checks across a mount without
-        a namespace, and no doc says what a client should see then (F6).
+        a namespace, so the listing and a versioned call can disagree. #6613 kept that
+        behavior and warns about it instead.
         Hidden components count: they still take part in the lookup.
         """
         versioned = {
@@ -403,11 +404,11 @@ class ComponentMachine(RuleBasedStateMachine):
         assert set(got) == set(want), "the listing shows a different set of components"
         for ident, versions in want.items():
             if self.mixed(kind, ident):
-                event("known: F6 cross-mount version mix")
+                event("known: #6613 cross-mount version mix")
                 continue
-            if F7_OPEN and got[ident] != versions:
+            if DUPLICATE_VERSIONS_OPEN and got[ident] != versions:
                 if list(dict.fromkeys(got[ident])) == versions:
-                    event("known: F7 equal versions listed twice")
+                    event("known: #6612 equal versions listed twice")
                     continue
             assert got[ident] == versions, "the listing reports different versions"
 
@@ -468,12 +469,12 @@ class ComponentMachine(RuleBasedStateMachine):
         name = self.exposed(kind, owner, ident)
         entries = self.candidates(kind).get(name, [])
         if self.mixed(kind, name):
-            event("known: F6 cross-mount version mix")
+            event("known: #6613 cross-mount version mix")
             return
         if version is None or entries[:1] and entries[0][0] is None:
             # No version asked, or only unversioned components: serve the
             # first in order. An unversioned component matches any requested
-            # version (docs/servers/versioning.mdx, F4 in FINDINGS.md).
+            # version (docs/servers/versioning.mdx, settled in #6582).
             pick = entries[0] if entries else None
             if version is not None and pick:
                 event(f"explicit version on unversioned {kind}")
@@ -483,11 +484,11 @@ class ComponentMachine(RuleBasedStateMachine):
         if pick:
             v, o = pick
             want = f"{o}:{ident}@{v}"
-            if F8_OPEN and o == "child" and self.namespace is None:
+            if HIDDEN_TWIN_OPEN and o == "child" and self.namespace is None:
                 twin = (kind, "parent", ident, v)
                 if twin in self.comps:
                     # The parent's equal, hidden twin answers the lookup first.
-                    event("known: F8 hidden twin shadows the mounted one")
+                    event("known: #6611 hidden twin shadows the mounted one")
                     return
         try:
             got = self.run(self._call(kind, name, version))

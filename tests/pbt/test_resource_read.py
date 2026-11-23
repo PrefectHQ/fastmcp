@@ -46,7 +46,11 @@ def _make_fn(t: DrawnTemplate):
 def wire_divergence(uri: str) -> str | None:
     """Name a known way the wire's `AnyUrl` rewrites an expanded URI.
 
-    Each name is an entry in FINDINGS.md. Anything else that fails is new.
+    None of these is a fastmcp bug. A segment of `.` or `..` is legal RFC 6570
+    output that the SDK's `AnyUrl` removes per RFC 3986, before matching. A
+    literal `:` or `@` in the authority (`data://{h}:{p}` with a non-numeric
+    port, two `@`) makes a URI that RFC 3986 rejects or reads differently.
+    Anything else that fails is new.
     """
     try:
         wire = str(AnyUrl(uri))
@@ -95,5 +99,5 @@ async def test_read_roundtrip(t: DrawnTemplate):
     assert got == t.params, "the function received different values"
 
 
-# Wire rewrites recorded in FINDINGS.md; "other-rewrite" is deliberately absent.
+# The rewrites `wire_divergence` explains; "other-rewrite" is deliberately absent.
 KNOWN = {"not-a-url", "authority-rewritten", "dot-segment-removed"}
