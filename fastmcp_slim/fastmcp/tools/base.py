@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import base64
 import inspect
 import json
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
@@ -75,7 +76,55 @@ def _default_title(name: str) -> str:
 
 
 def default_serializer(data: Any) -> str:
-    return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
+    try:
+        return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
+    except pydantic_core.PydanticSerializationError:
+        # JSON can't carry bytes that aren't valid UTF-8. Send them as base64,
+        # the same way a bare `bytes` result is sent, and retry once.
+        encoded = _base64_non_utf8_bytes(data)
+        if encoded is data:
+            raise
+        return _JSONABLE_ADAPTER.dump_json(encoded, fallback=str).decode()
+
+
+class _UnsafeToRetry(Exception):
+    pass
+
+
+def _base64_non_utf8_bytes(data: Any) -> Any:
+    """Return `data` with non-UTF-8 `bytes` values base64-encoded.
+
+    Walks plain dicts, lists, tuples, and sets, and returns `data` itself when
+    there is nothing to encode or when encoding would be unsafe. Dict keys are
+    left alone: an encoded key could collide with an existing string key and
+    silently drop an entry. A value holding an iterator is left alone too,
+    since the failed serialization attempt may already have consumed it.
+    """
+
+    changed = False
+
+    def encode(value: Any) -> Any:
+        nonlocal changed
+        if isinstance(value, bytes):
+            try:
+                value.decode("utf-8")
+            except UnicodeDecodeError:
+                changed = True
+                return base64.b64encode(value).decode("ascii")
+            return value
+        if isinstance(value, Iterator):
+            raise _UnsafeToRetry
+        if isinstance(value, dict):
+            return {key: encode(item) for key, item in value.items()}
+        if isinstance(value, list | tuple | set | frozenset):
+            return [encode(item) for item in value]
+        return value
+
+    try:
+        encoded = encode(data)
+    except _UnsafeToRetry:
+        return data
+    return encoded if changed else data
 
 
 @lru_cache(maxsize=5000)

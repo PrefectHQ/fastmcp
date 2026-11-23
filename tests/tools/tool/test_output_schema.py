@@ -14,7 +14,7 @@ from mcp_types import (
     ImageContent,
     TextContent,
 )
-from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
+from pydantic import AnyUrl, Base64Bytes, BaseModel, Field, PlainSerializer, TypeAdapter
 from typing_extensions import TypedDict
 
 from fastmcp import Client, FastMCP
@@ -132,6 +132,30 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         # Image, Audio, File types don't generate output schemas since they're converted to content directly
         assert tool.output_schema is None
+
+    @pytest.mark.parametrize(
+        "annotation, has_schema",
+        [
+            (bytes, False),
+            (bytes | None, False),
+            (Base64Bytes, False),
+            (dict[str, bytes], False),
+            (list[bytes], False),
+            (list[bytes | None], False),
+            (dict[str, list[tuple[int, bytes]]], False),
+            (list[Annotated[bytes, Field(description="raw")]], False),
+            (list[Base64Bytes], True),
+            (dict[str, Base64Bytes | None], True),
+            (Annotated[list[bytes], PlainSerializer(repr, return_type=str)], True),
+        ],
+    )
+    def test_bytes_return_annotation(self, annotation, has_schema):
+        def func():
+            pass
+
+        func.__annotations__["return"] = annotation
+        tool = Tool.from_function(func)
+        assert (tool.output_schema is not None) is has_schema
 
     async def test_tool_result_return_annotation_no_output_schema(self):
         def func() -> ToolResult:
