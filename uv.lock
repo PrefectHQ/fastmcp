@@ -125,19 +125,6 @@ wheels = [
 ]
 
 [[package]]
-name = "authlib"
-version = "1.9.5"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "joserfc" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/04/96/6e7ed72bb49762a9b65d51c4cb235d793f0485cd8d6f7e9404ce955a4808/authlib-1.9.5.tar.gz", hash = "sha256:3f031d5e9b6486089e91e8f7f1b68f36275f3151c66460d650fc90d420545fd7", size = 183564, upload-time = "2026-11-05T16:13:18.409Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/58/d7/d384e7a639dd1d018767ba0fe39601b61cded066bb7af38db31ec998252d/authlib-1.9.5-py2.py3-none-any.whl", hash = "sha256:e32a63e3d869196b61816b2602231862179a2ffc29358c009d1f022c8b86a8b2", size = 267074, upload-time = "2026-11-05T16:13:16.766Z" },
-]
-
-[[package]]
 name = "azure-core"
 version = "1.41.0"
 source = { registry = "https://pypi.org/simple" }
@@ -944,7 +931,6 @@ azure = [
     { name = "pyjwt" },
 ]
 client = [
-    { name = "authlib" },
     { name = "beartype", version = "0.23.0rc2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15'" },
     { name = "exceptiongroup" },
     { name = "httpx2" },
@@ -976,7 +962,6 @@ openai = [
     { name = "openai" },
 ]
 server = [
-    { name = "authlib" },
     { name = "beartype", version = "0.23.0rc2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15'" },
     { name = "certifi" },
     { name = "cyclopts" },
@@ -1005,8 +990,6 @@ server = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.48.0,<2" },
-    { name = "authlib", marker = "extra == 'client'", specifier = ">=1.9.5" },
-    { name = "authlib", marker = "extra == 'server'", specifier = ">=1.9.5" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
     { name = "beartype", marker = "python_full_version >= '3.15' and extra == 'client'", specifier = ">=0.23.0rc2" },
     { name = "beartype", marker = "python_full_version >= '3.15' and extra == 'server'", specifier = ">=0.23.0rc2" },
