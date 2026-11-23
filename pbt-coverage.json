@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T19:33:43+00:00",
- "source_commit": "4c3713d4dbee3898d1f4a8f0e44172aa19d45daf",
+ "generated_at": "2026-11-23T23:38:42+00:00",
+ "source_commit": "875d066e52498f5eae7fd9f0392db6d57bd67432",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -2609,7 +2609,7 @@
    "path": "fastmcp_slim/fastmcp/server/auth/redirect_validation.py",
    "public": false,
    "statements": 165,
-   "hit": 128,
+   "hit": 129,
    "functions": 16,
    "functions_hit": 15,
    "symbols": [],
@@ -4676,9 +4676,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 637,
-   "hit": 433,
+   "hit": 436,
    "functions": 59,
-   "functions_hit": 47,
+   "functions_hit": 46,
    "symbols": [],
    "tests": 4,
    "test_ids": [
