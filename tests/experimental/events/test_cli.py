@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import anyio
 import pytest
+from mcp.shared.exceptions import MCPError
 
 from fastmcp import Client, FastMCP
 from fastmcp.cli import client as client_module
@@ -15,6 +16,7 @@ from fastmcp.experimental.events import (
     EventsClientExtension,
     EventsExtension,
 )
+from fastmcp.experimental.events._constants import FORBIDDEN
 from fastmcp.experimental.events.models import EventType
 
 
@@ -180,3 +182,21 @@ async def test_watch_escapes_markup_in_what_the_server_sends(
     captured = capsys.readouterr()
     assert "cursor [link=https://x.test]c" in captured.out
     assert "--cursor [link=https://x.test]c" in captured.err
+
+
+async def test_watch_escapes_markup_in_a_server_error(
+    capsys: pytest.CaptureFixture[str],
+):
+    server = FastMCP("hostile")
+    events = EventsExtension(poll_interval_ms=10)
+    server.add_extension(events)
+
+    @events.event(name="tick")
+    def tick(poll: EventPoll) -> EventBatch:
+        raise MCPError(code=FORBIDDEN, message="[link=https://x.test]denied[/link]")
+
+    resolve, build = patch_client(server)
+    with resolve, build, pytest.raises(SystemExit), anyio.fail_after(10):
+        await watch_command("fake", "tick", delivery="poll")
+
+    assert "[link=https://x.test]denied[/link]" in capsys.readouterr().out

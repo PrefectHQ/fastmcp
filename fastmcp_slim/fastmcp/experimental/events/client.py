@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
@@ -36,6 +36,8 @@ class EventsClientExtension(ClientExtension):
 
     def __init__(self) -> None:
         self._streams: dict[RequestId, MemoryObjectSendStream[Frame]] = {}
+        # Per stream: stops the `events/stream` request when its buffer fills.
+        self._stoppers: dict[RequestId, Callable[[], None]] = {}
         # Streams ended because their consumer fell behind.
         self._overflowed: set[RequestId] = set()
         # Per event name: argument path -> x-mcp-header token, from events/list.
@@ -51,12 +53,16 @@ class EventsClientExtension(ClientExtension):
             for kind in _STREAM_KINDS
         ]
 
-    def _open(self, subscription_id: RequestId) -> MemoryObjectReceiveStream[Frame]:
+    def _open(
+        self, subscription_id: RequestId, stop: Callable[[], None]
+    ) -> MemoryObjectReceiveStream[Frame]:
         send, receive = anyio.create_memory_object_stream[Frame](_MAX_PENDING_FRAMES)
         self._streams[subscription_id] = send
+        self._stoppers[subscription_id] = stop
         return receive
 
     def _close(self, subscription_id: RequestId) -> None:
+        self._stoppers.pop(subscription_id, None)
         send = self._streams.pop(subscription_id, None)
         if send is not None:
             send.close()
@@ -78,6 +84,9 @@ class EventsClientExtension(ClientExtension):
             logger.warning("Event stream backlog is full; ending the subscription")
             subscription_id = frame.meta[SUBSCRIPTION_ID_META_KEY]
             self._overflowed.add(subscription_id)
+            stop = self._stoppers.get(subscription_id)
             self._close(subscription_id)
+            if stop is not None:
+                stop()
         except anyio.ClosedResourceError:
             pass

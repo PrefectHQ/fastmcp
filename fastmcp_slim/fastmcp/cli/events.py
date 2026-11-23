@@ -108,7 +108,7 @@ async def list_events_command(
             _require_events(client)
             event_types = await list_events(client)
     except Exception as exc:
-        _fail(str(exc))
+        _fail(_safe(str(exc)))
         return
 
     if json_output:
@@ -251,7 +251,7 @@ async def watch_command(
     except KeyboardInterrupt:
         pass
     except Exception as exc:
-        _fail(str(exc))
+        _fail(_safe(str(exc)))
     finally:
         if subscription is not None:
             if subscription.truncated:

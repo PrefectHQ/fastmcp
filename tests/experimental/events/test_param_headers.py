@@ -6,6 +6,7 @@ from typing import Literal
 
 import anyio
 import pytest
+from mcp.shared.exceptions import MCPError
 from mcp_types import HEADER_MISMATCH
 from starlette.testclient import TestClient
 
@@ -20,6 +21,7 @@ from fastmcp.experimental.events import (
     poll_events_mcp,
     subscribe_events,
 )
+from fastmcp.experimental.events import subscription as subscription_module
 from fastmcp.experimental.events._constants import EVENTS_EXTENSION_ID
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.utilities.tests import run_server_async
@@ -190,3 +192,64 @@ async def test_client_drops_an_event_type_with_an_invalid_annotation() -> None:
 
     async with Client(server, extensions=[EventsClientExtension()]) as client:
         assert await list_events(client) == []
+
+
+@pytest.mark.parametrize("delivery", ["poll", "push"])
+async def test_a_header_mismatch_lists_again_and_retries(
+    delivery: Literal["poll", "push"],
+) -> None:
+    seen: list[str | None] = []
+    server, _ = make_server(seen)
+
+    async with run_server_async(server) as url:
+        extension = EventsClientExtension()
+        async with Client(url, extensions=[extension]) as client:
+            # Listed before the server annotated `region`: no headers known.
+            extension._header_maps["incident.created"] = {}
+            subscription = subscribe_events(
+                client,
+                "incident.created",
+                {"region": "us-east1"},
+                cursor="0",
+                delivery=delivery,
+            )
+            with anyio.fail_after(15):
+                async for event in subscription:
+                    assert event.data == {"region": "us-east1"}
+                    break
+
+    assert extension._header_maps["incident.created"] == {("region",): "Region"}
+    assert "us-east1" in seen
+
+
+@pytest.mark.parametrize("delivery", ["poll", "push"])
+async def test_a_header_mismatch_is_retried_only_once(
+    delivery: Literal["poll", "push"], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, _ = make_server([])
+    listings = 0
+
+    async def stale_listing(client: Client) -> list:
+        nonlocal listings
+        listings += 1
+        return []
+
+    monkeypatch.setattr(subscription_module, "list_events", stale_listing)
+
+    async with run_server_async(server) as url:
+        extension = EventsClientExtension()
+        async with Client(url, extensions=[extension]) as client:
+            extension._header_maps["incident.created"] = {}
+            subscription = subscribe_events(
+                client,
+                "incident.created",
+                {"region": "us-east1"},
+                cursor="0",
+                delivery=delivery,
+            )
+            with pytest.raises(MCPError) as exc_info, anyio.fail_after(15):
+                async for _ in subscription:
+                    pass
+
+    assert exc_info.value.error.code == HEADER_MISMATCH
+    assert listings == 1

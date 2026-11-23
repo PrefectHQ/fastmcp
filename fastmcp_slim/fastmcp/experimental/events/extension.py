@@ -431,9 +431,12 @@ class EventsExtension(ServerExtension):
                 )
                 batch = EventBatch(cursor=cursor)
             if batch.truncated:
+                # As on the first batch: a gap whose events are still to come
+                # keeps the position before them, so a client that persists
+                # this cursor and stops never skips the batch.
                 await send(
                     "active",
-                    cursor=batch.cursor,
+                    cursor=cursor if batch.events else batch.cursor,
                     truncated=True,
                     heartbeat_ms=heartbeat_ms,
                 )

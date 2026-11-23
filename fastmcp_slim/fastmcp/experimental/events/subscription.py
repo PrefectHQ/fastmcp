@@ -20,6 +20,7 @@ from mcp.shared.inbound import (
     mcp_param_headers,
     x_mcp_header_map,
 )
+from mcp_types import CONNECTION_CLOSED, HEADER_MISMATCH
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.client.telemetry import client_span
@@ -48,6 +49,13 @@ logger = get_logger(__name__)
 AUTO_PAGINATION_MAX_PAGES = 250
 _REMEMBERED_EVENT_IDS = 1024
 _ACTIVATION_TIMEOUT = 90.0
+# A push stream that drops is reopened from its cursor this many times in a
+# row before the subscription gives up. A stream that completed a batch of new
+# events, or was still sending frames _HEALTHY_STREAM_SECONDS after it opened,
+# resets the count.
+_MAX_RECONNECTS = 4
+_RECONNECT_BASE_DELAY = 1.0
+_HEALTHY_STREAM_SECONDS = 10.0
 _stream_ids = count(1)
 
 Delivery = Literal["poll", "push"]
@@ -66,6 +74,11 @@ class EventBacklogFullError(RuntimeError):
 
 class _SubscriptionTerminated(MCPError):
     """The server ended a push subscription with `notifications/events/terminated`."""
+
+
+def _reconnect_delay(attempt: int) -> float:
+    """Exponential backoff with jitter: 0.5-1 s, then 1-2 s, 2-4 s, 4-8 s."""
+    return _RECONNECT_BASE_DELAY * 2**attempt * random.uniform(0.5, 1)  # noqa: S311
 
 
 def _trace_meta() -> mcp_types.RequestParamsMeta | None:
@@ -156,16 +169,37 @@ class EventSubscription:
             async for event in events:
                 yield event
 
+    async def _relist(self, error: MCPError) -> None:
+        """Refresh `Mcp-Param-*` headers after the server rejected them."""
+        logger.warning(
+            "[%s] Server rejected the headers for %r (%s); listing event types again",
+            self._client.name,
+            self.name,
+            error.error.message,
+        )
+        await list_events(self._client)
+
     async def _poll(self) -> AsyncGenerator[EventOccurrence, None]:
+        relisted = False
         while True:
-            result = await poll_events_mcp(
-                self._client,
-                self.name,
-                self.arguments,
-                cursor=self.cursor,
-                max_age_ms=self._max_age_ms,
-                max_events=self._max_events,
-            )
+            try:
+                result = await poll_events_mcp(
+                    self._client,
+                    self.name,
+                    self.arguments,
+                    cursor=self.cursor,
+                    max_age_ms=self._max_age_ms,
+                    max_events=self._max_events,
+                )
+            except MCPError as error:
+                # SEP-3415: on HeaderMismatch, list again and retry with the
+                # headers the current inputSchema asks for. Once.
+                if error.error.code != HEADER_MISMATCH or relisted:
+                    raise
+                relisted = True
+                await self._relist(error)
+                continue
+            relisted = False
             if result.truncated:
                 self._note_gap()
             # The cursor is the position after the whole batch, so it moves
@@ -183,7 +217,14 @@ class EventSubscription:
                 )
 
     async def _push(self) -> AsyncGenerator[EventOccurrence, None]:
-        """Hold an `events/stream` request open, reopening it if it goes quiet."""
+        """Hold an `events/stream` request open, reopening it if it drops.
+
+        A stream that ends with a connection error, or goes quiet for three
+        heartbeats, is reopened from `cursor` after a jittered backoff, up to
+        `_MAX_RECONNECTS` times in a row. Events replayed by the new stream
+        are dropped by `eventId`. A termination, a backlog overflow and any
+        error response from the server end the subscription instead.
+        """
         client = self._client
         _require_events_extension(client)
         extension = _events_extension(client)
@@ -192,7 +233,12 @@ class EventSubscription:
         if task_group is None:
             raise RuntimeError("The client session is not running")
 
+        reconnects = 0
+        relisted = False
         while True:
+            opened_from = self.cursor
+            opened_at = last_frame_at = anyio.current_time()
+            progressed = False
             request_id = f"events-{next(_stream_ids)}"
             request = StreamEventsRequest(
                 params=StreamEventsParams(
@@ -210,15 +256,17 @@ class EventSubscription:
             headers[MCP_NAME_HEADER] = encode_header_value(self.name)
             headers.update(_event_param_headers(client, self.name, self.arguments))
 
-            frames = extension._open(request_id)
-            failures: list[MCPError] = []
+            failures: list[Exception] = []
             scope = anyio.CancelScope()
+            # On overflow the client stops the server's stream at once rather
+            # than after the consumer drains what is buffered.
+            frames = extension._open(request_id, scope.cancel)
 
             async def drive(
                 data: dict[str, Any] = data,
                 options: CallOptions = options,
                 request_id: str = request_id,
-                failures: list[MCPError] = failures,
+                failures: list[Exception] = failures,
                 scope: anyio.CancelScope = scope,
             ) -> None:
                 # No result timeout: the response arrives when the stream ends.
@@ -227,8 +275,10 @@ class EventSubscription:
                         await session._dispatcher.send_raw_request(
                             data["method"], data.get("params"), options
                         )
-                    except MCPError as failure:
-                        failures.append(failure)
+                    except Exception as exc:
+                        # Raised to the consumer below, not into the session's
+                        # task group, where it would tear the session down.
+                        failures.append(exc)
                     finally:
                         extension._close(request_id)
 
@@ -250,8 +300,10 @@ class EventSubscription:
                     except TimeoutError:
                         went_quiet = True
                         break
+                    last_frame_at = anyio.current_time()
                     if kind == "active":
                         self.cursor = frame.cursor
+                        relisted = False
                         if frame.truncated:
                             self._note_gap()
                         if frame.heartbeat_ms:
@@ -262,6 +314,11 @@ class EventSubscription:
                         event = EventOccurrence.model_validate(frame.model_extra)
                         self.cursor = frame.cursor
                         if self._is_new(event):
+                            # Only a batch's last event moves the cursor, so a
+                            # stream that keeps dropping inside one batch, or
+                            # replays old events, never counts as progress.
+                            if frame.cursor != opened_from:
+                                progressed = True
                             yield event
                     elif kind == "error":
                         logger.warning(
@@ -283,15 +340,46 @@ class EventSubscription:
                 extension._take_overflow(request_id)
 
             if failures:
-                raise failures[0]
-            if not went_quiet:
+                failure = failures[0]
+                # A transport exception means the server cannot be reached,
+                # and the SDK's session does not recover from that.
+                if not isinstance(failure, MCPError):
+                    raise failure
+                if failure.error.code == HEADER_MISMATCH and not relisted:
+                    relisted = True
+                    await self._relist(failure)
+                    continue
+                # Any other error response came from the server and is final;
+                # only a stream that was cut off is worth reopening.
+                if failure.error.code != CONNECTION_CLOSED:
+                    raise failure
+                reason = failure
+            elif went_quiet:
+                reason = MCPError(
+                    code=CONNECTION_CLOSED,
+                    message=f"Event stream for {self.name!r} went quiet",
+                )
+            else:
                 return
+            # Measured to the last frame, so a stream that hung counts as dead.
+            lived = last_frame_at - opened_at
+            if progressed or lived >= _HEALTHY_STREAM_SECONDS:
+                reconnects = 0
+            if reconnects >= _MAX_RECONNECTS:
+                raise reason
+            delay = _reconnect_delay(reconnects)
+            reconnects += 1
             logger.warning(
-                "[%s] Event stream for %r went quiet; reconnecting",
+                "[%s] Event stream for %r ended (%s); reconnecting in %.1fs "
+                "(attempt %d of %d)",
                 client.name,
                 self.name,
+                reason.error.message,
+                delay,
+                reconnects,
+                _MAX_RECONNECTS,
             )
-            await anyio.sleep(random.uniform(0, 1))  # noqa: S311
+            await anyio.sleep(delay)
 
 
 def _events_extension(client: Client) -> EventsClientExtension:
@@ -489,7 +577,8 @@ def subscribe_events(
     """Subscribe to one event type and iterate its events as they arrive.
 
     With push delivery the client holds an `events/stream` request open
-    and the server writes events to it. With poll delivery the client asks
+    and the server writes events to it; a stream that is cut off or goes
+    quiet is reopened from the cursor a few times before the error is raised. With poll delivery the client asks
     on the interval the server recommends and drains a backlog without
     waiting. Either way events already yielded are dropped, and the
     subscription runs only while iterated: leaving the `async for` ends it.
