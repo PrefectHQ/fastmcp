@@ -32,6 +32,7 @@ from fastmcp.server.auth import ssrf
 from fastmcp.server.auth.cimd import CIMDClientManager, CIMDFetcher
 from fastmcp.server.auth.redirect_validation import (
     build_client_redirect,
+    is_loopback_host,
     matches_allowed_pattern,
 )
 
@@ -391,9 +392,20 @@ def test_an_exact_pattern_matches_only_itself(data):
     assert matches_allowed_pattern(uri, uri), "a registered URI does not match itself"
     edit, other = data.draw(_changes(uri), label="edit")
     event(edit)
+    p = urlparse(uri)
     if (
         edit in ("changed path", "child path")
-        and urlparse(uri).path == "/"
+        and p.path == "/"
+        and p.port is None
+        and is_loopback_host(p.hostname)
+    ):
+        # By design since #6703: a portless loopback pattern already accepts
+        # any port (RFC 8252 §7.3), so its root path accepts any path too.
+        event("by design: portless loopback root accepts any path")
+        return
+    if (
+        edit in ("changed path", "child path")
+        and p.path == "/"
         and still_open("#6689", _root_path_probe)
     ):
         event("known: #6689")
