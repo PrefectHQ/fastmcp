@@ -497,6 +497,24 @@ class TestKeepAlive:
 
         assert pid1 != pid2
 
+    async def test_client_keep_alive_false_applies_to_inferred_transport(
+        self, stdio_script
+    ):
+        client = Client(stdio_script, keep_alive=False)
+        assert isinstance(client.transport, PythonStdioTransport)
+
+        async with client:
+            result1 = await client.call_tool("pid")
+            pid1: int = result1.data
+
+        await wait_for_process_exit(pid1)
+
+        async with client:
+            result2 = await client.call_tool("pid")
+            pid2: int = result2.data
+
+        assert pid1 != pid2
+
     # https://github.com/PrefectHQ/fastmcp/issues/4471
     @pytest.mark.timeout(30)
     async def test_keep_alive_reconnects_on_a_different_event_loop(self, stdio_script):
