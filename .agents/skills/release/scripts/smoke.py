@@ -601,7 +601,6 @@ async def _events(url):
 
 
 def events_probe():
-
     port = free_port()
     proc = subprocess.Popen(
         [sys.executable, "-I", str(WORK / "events_server.py"), str(port)],
