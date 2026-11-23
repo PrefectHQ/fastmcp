@@ -326,12 +326,13 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             # shadow them. Cyclopts drops the trailing underscore from the flag.
             safe_name = f"{safe_name}_"
 
-        # Check for name collisions after sanitization
-        if safe_name in seen_names:
-            raise ValueError(
-                f"Parameter name collision: '{prop_name}' and '{seen_names[safe_name]}' "
-                f"both sanitize to '{safe_name}'"
-            )
+        # Properties that sanitize to the same identifier (``a-b``/``a_b``)
+        # get a numeric suffix; ``_arguments`` keeps the original names.
+        base_name = safe_name
+        suffix = 2
+        while safe_name in seen_names:
+            safe_name = f"{base_name}_{suffix}"
+            suffix += 1
         seen_names[safe_name] = prop_name
 
         # For complex types, add schema to help text. An optional string takes
@@ -343,7 +344,9 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             help_text = f"{help_text}\\n{schema_help}" if help_text else schema_help
             json_params.append((prop_name, "json.loads"))
 
-        _, explicit_name = param_flags[prop_name]
+        flag, explicit_name = param_flags[prop_name]
+        if explicit_name is None and safe_name != base_name:
+            explicit_name = flag
         flag_arg = f'name="{explicit_name}", ' if explicit_name else ""
 
         # Build parameter annotation

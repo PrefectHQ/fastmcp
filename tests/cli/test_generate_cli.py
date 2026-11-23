@@ -362,20 +362,38 @@ class TestToolFunctionSource:
         assert "isinstance(_arguments['options'], str)" in source
         compile(source, "<test>", "exec")
 
-    def test_name_collision_detection(self):
-        """Test that parameter name collisions are detected."""
+    def test_sanitize_collisions_get_suffixed_names(self):
+        """Properties that sanitize to one identifier each get their own parameter."""
         tool = mcp_types.Tool(
             name="test",
             input_schema={
                 "properties": {
                     "content-type": {"type": "string"},
                     "content_type": {"type": "string"},
+                    "content.type": {"type": "string"},
                 },
             },
         )
-        # Should raise ValueError for collision
-        with pytest.raises(ValueError, match="both sanitize to 'content_type'"):
-            _tool_function_source(tool)
+        source = _tool_function_source(tool)
+        compile(source, "<test>", "exec")
+        assert "'content-type': content_type," in source
+        assert "'content_type': content_type_2," in source
+        assert "'content.type': content_type_3" in source
+
+    def test_sanitize_collision_does_not_abort_script(self):
+        """One tool with colliding properties must not stop the whole script."""
+        colliding = mcp_types.Tool(
+            name="do",
+            input_schema={
+                "properties": {"a-b": {"type": "string"}, "a_b": {"type": "string"}},
+            },
+        )
+        other = mcp_types.Tool(name="other", input_schema={"properties": {}})
+        script = generate_cli_script(
+            "s", "s", repr("http://x/mcp"), set(), [colliding, other]
+        )
+        compile(script, "<test>", "exec")
+        assert "name='other'" in script
 
 
 # ---------------------------------------------------------------------------
