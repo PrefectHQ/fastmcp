@@ -33,7 +33,9 @@ from fastmcp import Context, FastMCP
 from fastmcp.server.dependencies import CurrentFastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.proxy import ClientFactoryT, ProxyTool
+from fastmcp.server.transforms import ToolTransform
 from fastmcp.tools.base import ToolResult
+from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.tasks import TaskConfig
 from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
@@ -149,6 +151,34 @@ class TestMountedToolTasks:
             final = await wait_for_task(
                 parent,
                 (await submit_task(parent, "child_gc_linked_resource", {})).task_id,
+            )
+
+        assert final.result is not None
+        assert final.result["content"][0]["uri"] == "resource://child/gc/data"
+
+    async def test_renamed_nested_namespaced_task_rewrites_resource_link_results(
+        self,
+    ):
+        grandchild = FastMCP("grandchild")
+
+        @grandchild.tool(task=True)
+        async def linked_resource() -> mt.ResourceLink:
+            return mt.ResourceLink(name="data", uri="resource://data")
+
+        child = FastMCP("child")
+        child.mount(grandchild, namespace="gc")
+        parent = FastMCP("parent")
+        parent.add_extension(TasksExtension())
+        parent.mount(child, namespace="child")
+        parent.add_transform(
+            ToolTransform(
+                {"child_gc_linked_resource": ToolTransformConfig(name="short")}
+            )
+        )
+
+        async with running_task_server(parent):
+            final = await wait_for_task(
+                parent, (await submit_task(parent, "short", {})).task_id
             )
 
         assert final.result is not None

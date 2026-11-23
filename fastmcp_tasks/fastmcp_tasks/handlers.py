@@ -217,9 +217,16 @@ async def _delegation_chain(tool: Tool) -> list[Tool]:
     recovered here to apply the same transforms.
     """
     from fastmcp.server.providers.fastmcp_provider import FastMCPProviderTool
+    from fastmcp.tools.tool_transform import TransformedTool
 
     chain = [tool]
-    while isinstance(tool, FastMCPProviderTool) and tool._original_name:
+    while True:
+        # A TransformedTool already carries its parent's result transforms, so
+        # walk through it to the delegating tool without adding a level.
+        while isinstance(tool, TransformedTool):
+            tool = tool.parent_tool
+        if not (isinstance(tool, FastMCPProviderTool) and tool._original_name):
+            break
         version = VersionSpec(eq=tool.version) if tool.version else None
         try:
             inner = await tool._server.get_tool(tool._original_name, version)
