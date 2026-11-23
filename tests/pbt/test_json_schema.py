@@ -92,7 +92,7 @@ _RECURSIVE_TAIL_NODE = {
         }
     },
 }
-# Findings fixed in #6552 (a non-object default crashed building the type),
+# Findings fixed on main in #6552 (a non-object default crashed building the type),
 # #6553 (a recursive positional array left it unbuildable), #6582 and #6572
 # (a valid instance was rejected).
 # A finding is skipped only while it still reproduces in this tree; once it is
@@ -164,8 +164,8 @@ def adapter_known_divergence(schema: dict[str, Any]) -> str | None:
         for node in nodes
     ):
         return "#6552 object with a non-object default"
-    # #6553: a `$ref` cycle through a positional array, in a prefix position or
-    # in the `items` tail; #6553 fixes both.
+    # #6553 fixed a `$ref` cycle through a positional array, in a prefix
+    # position or in the `items` tail.
     if REF_IN_POSITIONAL_ARRAY_OPEN and any(
         "prefixItems" in node
         and "$ref" in str(node["prefixItems"]) + str(node.get("items"))

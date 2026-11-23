@@ -76,9 +76,10 @@ measured.
 
 ## known findings
 
-Every bug a property finds is a GitHub issue that says "Found by
-property-based testing", with the minimal case and a cross-SDK check. There
-is no findings file. A shape with a known finding is skipped by its issue or
+Every new bug a property finds is a GitHub issue that says "Found by
+property-based testing", with the minimal case and a cross-SDK check. Bugs
+found before that were fixed directly, and their fix PR carries the record.
+There is no findings file. A shape with a known finding is skipped by its issue or
 fix number (`still_open("#6690", probe)`, `event("known: #6690")`), only
 while the probe still reproduces it, so the same harness checks a fix as soon
 as it lands and a run still stops on anything new. A mutant that undoes a fix

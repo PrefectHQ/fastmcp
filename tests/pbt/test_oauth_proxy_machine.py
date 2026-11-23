@@ -392,10 +392,10 @@ class OAuthMachine(RuleBasedStateMachine):
             ACCESS_REVOCATION_PER_GRANT
             and self.grant[token] in self.grants_with_revocation
         ):
-            # Known finding: every access token of a grant validates against
+            # Known finding (#6620): every access token of a grant validates against
             # the grant's latest upstream token, so revoking one revokes the
             # grant's current upstream token and a refresh revives them all.
-            event("known: access revocation is per grant and undone by refresh")
+            event("known: #6620 access revocation is per grant")
             return
         if token in self.revoked_access:
             event("check access: revoked")
