@@ -356,11 +356,16 @@ class EventsExtension(ServerExtension):
         )
         last_sent = time.monotonic()
 
-        async def send(kind: str, **fields: Any) -> None:
+        async def send(
+            kind: str, *, event_meta: dict[str, Any] | None = None, **fields: Any
+        ) -> None:
             nonlocal last_sent
+            # An event's own `_meta` rides along, but the subscription ID is
+            # what routes the frame, so it wins on a clash.
+            frame_meta = {**event_meta, **meta} if event_meta else meta
             notification = StreamNotification(
                 method=f"notifications/events/{kind}",
-                params=StreamFrame(meta=meta, **fields),
+                params=StreamFrame(meta=frame_meta, **fields),
             )
             # The session only needs a model that dumps to a method and params.
             await context.session.send_notification(
@@ -397,7 +402,10 @@ class EventsExtension(ServerExtension):
                 await send(
                     "event",
                     cursor=after,
-                    **occurrence.model_dump(by_alias=True, exclude_none=True),
+                    event_meta=occurrence.meta,
+                    **occurrence.model_dump(
+                        by_alias=True, exclude_none=True, exclude={"meta"}
+                    ),
                 )
             cursor = batch.cursor
             if not batch.has_more:

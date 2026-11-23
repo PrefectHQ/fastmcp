@@ -36,6 +36,7 @@ from fastmcp.experimental.events.models import (
     PollEventsRequest,
     PollEventsResult,
 )
+from fastmcp.experimental.events.subscription import Delivery
 from fastmcp.utilities.tests import run_server_async
 
 FIRED_AT = datetime(2026, 11, 14, 2, 17, 30, tzinfo=UTC)
@@ -256,6 +257,48 @@ async def test_stopping_partway_through_a_batch_keeps_the_rest_resumable() -> No
 
     assert seen == ["0", "1", "2"]
     assert resumed.cursor == "3"
+
+
+@pytest.mark.parametrize("delivery", ["poll", "push"])
+async def test_iterating_again_after_stopping_partway_yields_the_rest(
+    delivery: Delivery,
+) -> None:
+    log = [{"key": str(n), "severity": "low"} for n in range(3)]
+    server = make_server(log, poll_interval_ms=10)
+
+    async with events_client(server) as client:
+        subscription = subscribe_events(
+            client, "alert.fired", cursor="0", min_poll_interval=0, delivery=delivery
+        )
+        with anyio.fail_after(10):
+            first = await collect(subscription, 1)
+            rest = await collect(subscription, 2)
+
+    assert [event.event_id for event in first + rest] == ["0", "1", "2"]
+    assert subscription.cursor == "3"
+
+
+@pytest.mark.parametrize("delivery", ["poll", "push"])
+async def test_an_events_own_meta_reaches_the_client(delivery: Delivery) -> None:
+    server = FastMCP("meta")
+    events = EventsExtension(poll_interval_ms=10)
+    server.add_extension(events)
+
+    @events.event(name="tick")
+    async def tick(poll: EventPoll) -> EventBatch:
+        if poll.cursor == "0":
+            return EventBatch(
+                events=[Event(data={}, event_id="a", meta={"source": "upstream"})],
+                cursor="1",
+            )
+        return EventBatch(cursor="1")
+
+    async with events_client(server) as client:
+        subscription = subscribe_events(client, "tick", cursor="0", delivery=delivery)
+        with anyio.fail_after(10):
+            (event,) = await collect(subscription, 1)
+
+    assert event.meta == {"source": "upstream"}
 
 
 async def test_subscription_reports_a_gap() -> None:

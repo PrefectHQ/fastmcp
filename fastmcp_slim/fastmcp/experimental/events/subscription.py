@@ -20,6 +20,7 @@ from mcp.shared.inbound import (
     mcp_param_headers,
     x_mcp_header_map,
 )
+from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
 from mcp_types import CONNECTION_CLOSED, HEADER_MISMATCH
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
@@ -37,6 +38,7 @@ from fastmcp.experimental.events.models import (
     PollEventsResult,
     StreamEventsParams,
     StreamEventsRequest,
+    StreamFrame,
 )
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.logging import get_logger
@@ -118,6 +120,7 @@ class EventSubscription:
         self._seen: OrderedDict[str, None] = OrderedDict()
 
     def _is_new(self, event: EventOccurrence) -> bool:
+        """Whether `event` has not been yielded; if so, it is now counted as yielded."""
         if event.event_id in self._seen:
             return False
         self._seen[event.event_id] = None
@@ -206,11 +209,19 @@ class EventSubscription:
             # The cursor is the position after the whole batch, so it moves
             # with the batch's last event: a consumer that stops partway
             # resumes from the batch's start instead of skipping the rest.
-            fresh = [event for event in result.events if self._is_new(event)]
+            # Each event counts as seen only as it is yielded, so the events
+            # such a consumer never got are not dropped when it resumes.
+            unseen: dict[str, EventOccurrence] = {}
+            for event in result.events:
+                if event.event_id not in self._seen:
+                    unseen.setdefault(event.event_id, event)
+            fresh = list(unseen.values())
             for event in fresh[:-1]:
+                self._is_new(event)
                 yield event
             self.cursor = result.cursor
             if fresh:
+                self._is_new(fresh[-1])
                 yield fresh[-1]
             if not result.has_more:
                 await anyio.sleep(
@@ -233,6 +244,9 @@ class EventSubscription:
         task_group = session._task_group
         if task_group is None:
             raise RuntimeError("The client session is not running")
+        # Frames must reach the stream in wire order: a heartbeat's cursor is
+        # only safe once the events sent before it have arrived.
+        extension._attach(session._dispatcher)
 
         reconnects = 0
         relisted = False
@@ -312,7 +326,7 @@ class EventSubscription:
                     elif kind == "heartbeat":
                         self.cursor = frame.cursor
                     elif kind == "event":
-                        event = EventOccurrence.model_validate(frame.model_extra)
+                        event = _occurrence(frame)
                         self.cursor = frame.cursor
                         if self._is_new(event):
                             # Only a batch's last event moves the cursor, so a
@@ -385,6 +399,18 @@ class EventSubscription:
                 _MAX_RECONNECTS,
             )
             await anyio.sleep(delay)
+
+
+def _occurrence(frame: StreamFrame) -> EventOccurrence:
+    """The event an `event` frame carries, with its own `_meta` and not the routing ID."""
+    event = EventOccurrence.model_validate(frame.model_extra)
+    meta = {
+        key: value
+        for key, value in frame.meta.items()
+        if key != SUBSCRIPTION_ID_META_KEY
+    }
+    event.meta = meta or None
+    return event
 
 
 def _events_extension(client: Client) -> EventsClientExtension:

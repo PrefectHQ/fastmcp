@@ -8,7 +8,9 @@ from typing import Any
 import anyio
 import pytest
 from mcp.shared.exceptions import MCPError
-from mcp_types import CONNECTION_CLOSED
+from mcp.shared.message import SessionMessage
+from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
+from mcp_types import CONNECTION_CLOSED, JSONRPCNotification
 
 from fastmcp import Client, FastMCP
 from fastmcp.experimental.events import (
@@ -23,6 +25,7 @@ from fastmcp.experimental.events import (
 from fastmcp.experimental.events import client as events_client_module
 from fastmcp.experimental.events import subscription as subscription_module
 from fastmcp.experimental.events._constants import NOT_FOUND
+from fastmcp.experimental.events.client import Frame
 from fastmcp.experimental.events.models import StreamFrame
 
 SendRaw = Callable[[str, Any, Any], Awaitable[Any]]
@@ -245,8 +248,8 @@ async def test_an_overflowing_stream_is_stopped_before_the_consumer_drains_it(
 
     real_route = EventsClientExtension._route
 
-    async def route(self: EventsClientExtension, kind: str, frame: StreamFrame):
-        await real_route(self, kind, frame)
+    def route(self: EventsClientExtension, kind: str, frame: StreamFrame) -> None:
+        real_route(self, kind, frame)
         if self._overflowed and not checks_at_overflow:
             checks_at_overflow.append(checks)
 
@@ -285,9 +288,9 @@ async def test_a_mid_stream_gap_keeps_the_cursor_before_its_events(
     frames: list[tuple[str, str | None]] = []
     real_route = EventsClientExtension._route
 
-    async def route(self: EventsClientExtension, kind: str, frame: StreamFrame):
+    def route(self: EventsClientExtension, kind: str, frame: StreamFrame) -> None:
         frames.append((kind, frame.cursor))
-        await real_route(self, kind, frame)
+        real_route(self, kind, frame)
 
     monkeypatch.setattr(EventsClientExtension, "_route", route)
 
@@ -375,3 +378,80 @@ async def test_a_closed_session_is_not_reconnected(
     assert exc_info.value.error.code == CONNECTION_CLOSED
     assert opens == 1
     assert delays == []
+
+
+async def test_frames_reach_the_stream_in_the_order_they_were_received(
+    monkeypatch: pytest.MonkeyPatch, delays: list[int]
+) -> None:
+    """The SDK queues each notification method separately, so without wire-order
+    routing a heartbeat overtakes the events read just before it, and its cursor
+    skips them if the stream drops before they arrive."""
+    log = ["a", "b", "c"]
+    opened_from: list[str | None] = []
+    arrived: list[list[str]] = []
+    real_open = EventsClientExtension._open
+
+    def recording_open(
+        self: EventsClientExtension, subscription_id: Any, stop: Callable[[], None]
+    ) -> Any:
+        frames = real_open(self, subscription_id, stop)
+        kinds: list[str] = []
+        arrived.append(kinds)
+        receive = frames.receive
+
+        async def receive_and_record() -> Frame:
+            kind, frame = await receive()
+            kinds.append(kind)
+            return kind, frame
+
+        frames.receive = receive_and_record  # type: ignore[method-assign]
+        return frames
+
+    monkeypatch.setattr(EventsClientExtension, "_open", recording_open)
+
+    async with events_client(replaying_server(log)) as client:
+        session = client.session
+        dispatcher = session._dispatcher
+
+        async def burst_then_drop(
+            real: SendRaw, method: str, params: Any, options: Any
+        ):
+            opened_from.append(params.get("cursor"))
+            if len(opened_from) > 1:
+                return await real(method, params, options)
+            meta = {SUBSCRIPTION_ID_META_KEY: options["request_id"]}
+            event = {"name": "tick", "timestamp": "2026-11-23T00:00:00Z", "data": {}}
+            wire = [
+                ("active", {"cursor": "0", "heartbeatMs": 30_000}),
+                ("event", {**event, "eventId": "a", "cursor": "0"}),
+                ("event", {**event, "eventId": "b", "cursor": "0"}),
+                ("event", {**event, "eventId": "c", "cursor": "3"}),
+                ("heartbeat", {"cursor": "3"}),
+            ]
+            # One read off the wire, handed to the dispatcher's receive path.
+            for kind, frame in wire:
+                message = JSONRPCNotification(
+                    jsonrpc="2.0",
+                    method=f"notifications/events/{kind}",
+                    params={**frame, "_meta": meta},
+                )
+                await dispatcher._dispatch(  # type: ignore[attr-defined]
+                    SessionMessage(message), None, session._on_notify, None
+                )
+            while len(arrived[0]) < len(wire):
+                await anyio.sleep(0.01)
+            log.append("d")
+            raise MCPError(code=CONNECTION_CLOSED, message="SSE stream ended")
+
+        intercept_streams(client, monkeypatch, burst_then_drop)
+        subscription = subscribe_events(client, "tick", cursor="0", delivery="push")
+        received: list[str] = []
+        with anyio.fail_after(10):
+            async for event in subscription:
+                received.append(event.event_id)
+                if len(received) == 4:
+                    break
+
+    assert arrived[0] == ["active", "event", "event", "event", "heartbeat"]
+    assert received == ["a", "b", "c", "d"]
+    assert opened_from == ["0", "3"]
