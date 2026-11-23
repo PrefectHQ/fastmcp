@@ -243,6 +243,8 @@ def test_prefect_run_needs_the_token_and_publishes_only_safe_fields(
         "startedAt",
         "at",
     }
+    plan = {**RUN, "flow": "fastmcp-stack-triage_review"}
+    assert post_prefect(post, plan, token="tok")[0] == 202
     other = {**RUN, "flow": "someone-elses-flow"}
     assert post_prefect(post, other, token="tok")[1] == "nothing to show"
 

@@ -149,15 +149,10 @@ def to_ci(payload: dict) -> tuple[str, dict] | None:
     return f"{run['id']:016d}", {k: v for k, v in record.items() if v is not None}
 
 
-# Prefect flows the floor shows, by flow name. Anything else is ignored.
-FLOWS = {
-    "fastmcp-stack-batch",
-    "fastmcp-triage-intake",
-    "fastmcp-triage-verify",
-    "fastmcp-triage-finalize",
-    "fastmcp-verify-contribution",
-    "fastmcp-triage-sweep",
-}
+# Prefect flows the floor may show: the triage stack's flows, all named
+# fastmcp-*. The automation picks which ones post here; the site picks which
+# station each one works in.
+FLOW_NAME = re.compile(r"fastmcp-[a-z0-9_-]{1,60}")
 # intake: config.issues / config.pull_requests; stack batch:
 # batch.groups[].items[].issue_number; contribution: spec.issue_number / pr_number
 NUMBER_KEYS = {
@@ -198,7 +193,13 @@ def to_run(body: dict) -> tuple[str, dict] | None:
     state = str(body.get("event") or "").rsplit(".", 1)[-1]
     created = stamp(body.get("created"))
     at = stamp(body.get("occurred"), precise=True)
-    if flow not in FLOWS or not created or not at or not state.isalpha():
+    if (
+        not isinstance(flow, str)
+        or not FLOW_NAME.fullmatch(flow)
+        or not created
+        or not at
+        or not state.isalpha()
+    ):
         return None
     if not re.fullmatch(r"[0-9a-f-]{36}", run_id):
         return None
