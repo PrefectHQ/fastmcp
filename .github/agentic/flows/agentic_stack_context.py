@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from flows.agentic_people import people
 from flows.agentic_review_publication import EvidenceChanged
 from flows.agentic_stack import digest
+from flows.agentic_vouch import load_standing
 
 Read = Callable[[str], dict]
 REPOSITORY = "repos/PrefectHQ/fastmcp"
@@ -206,7 +207,7 @@ def assessment_context(item: dict, read: Read, now: datetime | None = None) -> d
         "route": item["route"],
         "group_rationale": item["group_rationale"],
         "retained_intake_sha256": digest(raw),
-        "people": people(evidence, read, now or datetime.now(UTC)),
+        "people": people(evidence, read, now or datetime.now(UTC), load_standing()),
         "context_policy": "Full discussion text is preserved. Timelines contain event and source identities rather than repeated issue bodies; successful checks are counted. The complete original intake is retained separately. Revision evidence covers open and closed unmerged contributions; closure does not supersede current-head review. Missing or bounded patches are explicit. Verification work belongs to agents, not maintainer questions.",
     }
     if len(json.dumps(projected).encode()) > 160000:

@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, datetime
 
+import httpx
 from prefect import flow, get_run_logger
 from prefect.variables import Variable
 
@@ -26,6 +27,8 @@ from flows.agentic_memory import (
     sync,
 )
 from flows.agentic_stack_runtime import secret_sync
+from flows.agentic_vouch import PASSWORD_BLOCK, SpaceStore, sync_graph, vouch_config
+from flows.agentic_work import PdsError
 
 MAX_PAGES = 400  # 40,000 rows: all items, or all comments, with headroom
 
@@ -70,4 +73,23 @@ def triage_memory_sync(lookback_hours: int = 2, backfill: bool = False) -> int:
 
     written = sync(items, comments_of, index.replace)
     logger.info("Indexed %d items updated since %s", written, since.isoformat())
+    update_contributors(items, github, logger)
     return written
+
+
+def update_contributors(items: list[dict], github: GitHub, logger) -> None:
+    """Feed the same items to the contributor graph (flows/agentic_vouch.py).
+
+    The graph is a side job of this sync: if its space is unreachable, the
+    memory index is still current and the next run catches up.
+    """
+    config = vouch_config(Variable.get(CONFIG_VARIABLE, default={}))
+    if config.mode == "off":
+        return
+    try:
+        store = SpaceStore(config, lambda: secret_sync(PASSWORD_BLOCK))
+        result = sync_graph(store, items, github.request, config, datetime.now(UTC))
+    except (PdsError, httpx.HTTPError, ValueError, OSError) as error:
+        logger.warning("Contributor graph not updated: %s", type(error).__name__)
+        return
+    logger.info("Contributor graph: %s", result)
