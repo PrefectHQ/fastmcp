@@ -583,7 +583,11 @@ REQUEUED = frozenset({"stale", "baseline_changed"})
 def attention(review: dict, exhausted: set[int]) -> list[str]:
     reasons = []
     for item in review["bins"]["operational"]:
-        if item.get("status") in REQUEUED or item.get("issue_number") not in exhausted:
+        number = item.get("issue_number")
+        # A controller-wide failure has no issue number and fails every selected issue.
+        if item.get("status") in REQUEUED or not (
+            number in exhausted or (number is None and exhausted)
+        ):
             continue
         detail = str(item.get("detail") or "")[:300]
         reason = item.get("reason") or detail or item.get("status")

@@ -73,14 +73,12 @@ def artifacts(key: str, limit: int) -> list[dict]:
     return [record.data for record in records if isinstance(record.data, dict)]
 
 
-def waiting(read: Callable[[str], object]) -> list[dict]:
-    """Open issues labeled `needs:triage`, oldest first."""
-    found = read(
+def waiting(pages: Callable[[str], list[dict]]) -> list[dict]:
+    """Every open issue labeled `needs:triage`, oldest first."""
+    found = pages(
         f"repos/{REPOSITORY}/issues?state=open&labels={quote(TRIAGE_LABEL)}"
-        "&sort=created&direction=asc&per_page=100"
+        "&sort=created&direction=asc"
     )
-    if not isinstance(found, list):
-        return []
     return [item for item in found if "pull_request" not in item]
 
 
@@ -163,7 +161,7 @@ def digest(mode: Literal["morning", "check"] = "morning") -> dict:
         "mode": mode,
         "now": now.isoformat(),
         "queue_url": QUEUE_URL,
-        "queue": [queue_entry(item, now) for item in waiting(read.request)],
+        "queue": [queue_entry(item, now) for item in waiting(read.pages)],
         "runs": intake_runs(now - timedelta(hours=24)),
         "recent": artifacts(POSTED_KEY, 3),
     }

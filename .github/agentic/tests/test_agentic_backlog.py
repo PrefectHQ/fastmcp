@@ -552,3 +552,7 @@ def test_only_exhausted_unrequeued_operational_work_raises_an_alert():
     ]
     operational = review["bins"]["operational"][:2]
     assert attention({"bins": {"operational": operational}}, {1, 2}) == []
+    # A controller-wide failure names no issue; it alerts once any issue is exhausted.
+    batch = {"bins": {"operational": [{"reason": "Controller stopped", "run_id": "r"}]}}
+    assert attention(batch, {5}) == ["#?: Controller stopped"]
+    assert attention(batch, set()) == []

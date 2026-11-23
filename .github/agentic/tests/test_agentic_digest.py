@@ -23,16 +23,15 @@ def test_digest_plan_reads_the_config_key():
 def test_waiting_reads_the_triage_queue_and_drops_pull_requests():
     paths = []
 
-    def read(path):
+    def pages(path):
         paths.append(path)
         return [{"number": 1}, {"number": 2, "pull_request": {}}]
 
-    assert digest.waiting(read) == [{"number": 1}]
+    assert digest.waiting(pages) == [{"number": 1}]
     assert paths == [
         "repos/PrefectHQ/fastmcp/issues?state=open&labels=needs%3Atriage"
-        "&sort=created&direction=asc&per_page=100"
+        "&sort=created&direction=asc"
     ]
-    assert digest.waiting(lambda path: {"message": "rate limited"}) == []
 
 
 def test_queue_entry_carries_the_recorded_next_step(monkeypatch):
