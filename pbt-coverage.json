@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T00:18:45+00:00",
- "source_commit": "6481b571888be8708151cd5623851a45952098de",
+ "generated_at": "2026-11-23T00:56:19+00:00",
+ "source_commit": "db2bd7e7757b9c422eace4aaa3920247a53fa6e1",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -731,15 +731,15 @@
    "module": "fastmcp.client.client",
    "path": "fastmcp_slim/fastmcp/client/client.py",
    "public": true,
-   "statements": 396,
+   "statements": 404,
    "hit": 176,
-   "functions": 45,
+   "functions": 47,
    "functions_hit": 22,
    "symbols": [
     {
      "name": "Client",
      "kind": "class",
-     "statements": 375,
+     "statements": 383,
      "hit": 164
     }
    ],
@@ -2736,8 +2736,8 @@
    "module": "fastmcp.server.low_level",
    "path": "fastmcp_slim/fastmcp/server/low_level.py",
    "public": false,
-   "statements": 144,
-   "hit": 106,
+   "statements": 148,
+   "hit": 110,
    "functions": 19,
    "functions_hit": 17,
    "symbols": [],
@@ -3120,9 +3120,9 @@
    "module": "fastmcp.server.providers.aggregate",
    "path": "fastmcp_slim/fastmcp/server/providers/aggregate.py",
    "public": false,
-   "statements": 138,
+   "statements": 139,
    "hit": 82,
-   "functions": 22,
+   "functions": 23,
    "functions_hit": 16,
    "symbols": [],
    "tests": 4,
@@ -3137,16 +3137,16 @@
    "module": "fastmcp.server.providers.base",
    "path": "fastmcp_slim/fastmcp/server/providers/base.py",
    "public": true,
-   "statements": 162,
-   "hit": 76,
-   "functions": 40,
-   "functions_hit": 24,
+   "statements": 163,
+   "hit": 77,
+   "functions": 41,
+   "functions_hit": 25,
    "symbols": [
     {
      "name": "Provider",
      "kind": "class",
-     "statements": 143,
-     "hit": 72
+     "statements": 144,
+     "hit": 73
     }
    ],
    "tests": 4,
@@ -3161,16 +3161,16 @@
    "module": "fastmcp.server.providers.fastmcp_provider",
    "path": "fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py",
    "public": true,
-   "statements": 112,
-   "hit": 71,
-   "functions": 34,
-   "functions_hit": 25,
+   "statements": 113,
+   "hit": 72,
+   "functions": 35,
+   "functions_hit": 26,
    "symbols": [
     {
      "name": "FastMCPProvider",
      "kind": "class",
-     "statements": 66,
-     "hit": 47
+     "statements": 67,
+     "hit": 48
     }
    ],
    "tests": 1,
@@ -3431,7 +3431,7 @@
    "module": "fastmcp.server.providers.proxy",
    "path": "fastmcp_slim/fastmcp/server/providers/proxy.py",
    "public": true,
-   "statements": 617,
+   "statements": 622,
    "hit": 232,
    "functions": 98,
    "functions_hit": 42,
@@ -3554,9 +3554,9 @@
    "module": "fastmcp.server.providers.wrapped_provider",
    "path": "fastmcp_slim/fastmcp/server/providers/wrapped_provider.py",
    "public": false,
-   "statements": 21,
+   "statements": 22,
    "hit": 18,
-   "functions": 16,
+   "functions": 17,
    "functions_hit": 13,
    "symbols": [],
    "tests": 1,
@@ -3568,16 +3568,16 @@
    "module": "fastmcp.server.server",
    "path": "fastmcp_slim/fastmcp/server/server.py",
    "public": true,
-   "statements": 593,
-   "hit": 372,
-   "functions": 73,
-   "functions_hit": 50,
+   "statements": 623,
+   "hit": 382,
+   "functions": 81,
+   "functions_hit": 52,
    "symbols": [
     {
      "name": "FastMCP",
      "kind": "class",
-     "statements": 512,
-     "hit": 317
+     "statements": 542,
+     "hit": 327
     },
     {
      "name": "create_proxy",
@@ -4486,9 +4486,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 624,
-   "hit": 405,
+   "hit": 426,
    "functions": 57,
-   "functions_hit": 43,
+   "functions_hit": 46,
    "symbols": [],
    "tests": 4,
    "test_ids": [
