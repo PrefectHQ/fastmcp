@@ -13,6 +13,7 @@ from fastmcp import Client
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.transports import (
     ClientTransport,
+    MCPConfigTransport,
     SSETransport,
     StreamableHttpTransport,
 )
@@ -406,3 +407,25 @@ class TestSSLVerify:
                 httpx_client_factory=factory,
                 verify=False,
             )
+
+
+def test_single_server_config_transport_reports_inner_session_id(monkeypatch):
+    transport = MCPConfigTransport(
+        {"mcpServers": {"only": {"url": "http://localhost:8000/mcp"}}}
+    )
+    monkeypatch.setattr(transport.transport, "get_session_id", lambda: "abc123")
+
+    assert transport.get_session_id() == "abc123"
+
+
+def test_multi_server_config_transport_has_no_session_id():
+    transport = MCPConfigTransport(
+        {
+            "mcpServers": {
+                "a": {"url": "http://localhost:8000/mcp"},
+                "b": {"url": "http://localhost:8001/mcp"},
+            }
+        }
+    )
+
+    assert transport.get_session_id() is None

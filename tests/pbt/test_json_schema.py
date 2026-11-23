@@ -149,6 +149,23 @@ F5_OPEN = still_open(
 )
 
 
+HUGE_INTEGRAL_FLOAT_OPEN = still_open(
+    "#6695",
+    lambda: _reproduces({"type": "integer"}, 1e20, ValidationError),
+)
+
+
+def _holds_huge_integral_float(value: Any) -> bool:
+    """An integer-valued float past what pydantic parses as an int (#6695)."""
+    if isinstance(value, float):
+        return value.is_integer() and abs(value) >= 2**63
+    if isinstance(value, dict):
+        return any(_holds_huge_integral_float(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_holds_huge_integral_float(v) for v in value)
+    return False
+
+
 def adapter_known_divergence(schema: dict[str, Any]) -> str | None:
     """Name an open finding recorded in FINDINGS.md, so the run stops on anything new."""
     nodes = list(_walk(schema))
@@ -293,6 +310,9 @@ def test_adapter_accepts_valid_instances(drawn):
         return
     assert sys.getrecursionlimit() == limit
     for instance in valid:
+        if HUGE_INTEGRAL_FLOAT_OPEN and _holds_huge_integral_float(instance):
+            event("known: #6695 integer-valued float above 2^63")
+            continue
         note(f"instance: {instance!r}")
         try:
             adapter.validate_python(instance)
