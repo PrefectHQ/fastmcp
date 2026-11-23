@@ -10,9 +10,8 @@ from dataclasses import dataclass
 from typing import Annotated, Any, Generic, Union, get_args, get_origin, get_type_hints
 
 import mcp_types
-from pydantic import PlainSerializer, PydanticSchemaGenerationError, WrapSerializer
+from pydantic import PydanticSchemaGenerationError
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
-from pydantic.types import EncodedBytes
 from pydantic_core import core_schema
 from typing_extensions import TypeAliasType
 from typing_extensions import TypeVar as TypeVarExt
@@ -31,38 +30,14 @@ from fastmcp.utilities.types import (
     replace_type,
 )
 
-_BYTES_SERIALIZERS = (EncodedBytes, PlainSerializer, WrapSerializer)
 
-
-def _is_union(tp: Any) -> bool:
-    return get_origin(tp) in (Union, types.UnionType)
-
-
-def _is_bytes_or_bytes_union(tp: Any) -> bool:
-    return tp is bytes or (_is_union(tp) and bytes in get_args(tp))
-
-
-def _contains_bytes_type(tp: Any, *, nested: bool = False) -> bool:
-    """Check if *tp* is or contains raw bytes, which JSON output can't represent.
-
-    Recurses through unions, Annotated, and generic containers such as
-    `list[bytes]` or `dict[str, bytes]`. Inside a container, bytes annotated
-    with their own serializer (e.g. pydantic's `Base64Bytes`) are JSON-safe
-    and don't count. At the top level they still do, because a bare `bytes`
-    result never gets structured content.
-    """
+def _contains_bytes_type(tp: Any) -> bool:
+    """Check if *tp* is or contains bytes, recursing through unions and Annotated."""
     if tp is bytes:
         return True
     origin = get_origin(tp)
-    if origin is Annotated:
-        inner, *metadata = get_args(tp)
-        if any(isinstance(m, _BYTES_SERIALIZERS) for m in metadata):
-            return not nested and _is_bytes_or_bytes_union(inner)
-        return _contains_bytes_type(inner, nested=nested)
-    if _is_union(tp):
-        return any(_contains_bytes_type(a, nested=nested) for a in get_args(tp))
-    if origin is not None:
-        return any(_contains_bytes_type(a, nested=True) for a in get_args(tp))
+    if origin is Union or origin is types.UnionType or origin is Annotated:
+        return any(_contains_bytes_type(a) for a in get_args(tp))
     return False
 
 

@@ -580,11 +580,17 @@ class Tool(FastMCPComponent):
                 # (the MCP SDK's client-side validation rejects the result
                 # without it), so a silent content-only fallback would report
                 # success while breaking that contract.
+                bytes_hint = (
+                    " To send bytes that aren't valid UTF-8 in structured "
+                    "output, annotate them as pydantic's Base64Bytes."
+                    if "utf-8" in str(e).lower()
+                    else ""
+                )
                 raise ToolError(
                     f"Could not serialize the return value of tool {self.name!r} "
                     f"for its output schema: {e}. If this is unexpected, set the "
                     "tool's output_schema to None to disable automatic "
-                    "serialization."
+                    f"serialization.{bytes_hint}"
                 ) from e
             return ToolResult(content=content)
 
