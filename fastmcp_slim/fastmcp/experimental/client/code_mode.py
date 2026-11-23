@@ -5,6 +5,8 @@ discovery + execute meta-tools as the server-side `CodeMode` transform. The
 sandbox runs locally; each `call_tool` inside it is an ordinary `tools/call`
 on the wrapped client, so servers never see the generated code and need no
 CodeMode support of their own.
+
+This module is experimental and may change without deprecation.
 """
 
 from __future__ import annotations

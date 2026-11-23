@@ -385,8 +385,6 @@ The `external_functions` dict contains async callables injected into the sandbox
 
 ## Client-Side CodeMode
 
-<VersionBadge version="4.1.0" />
-
 You don't control every server your agent talks to, and most servers don't run CodeMode. `CodeModeClient` applies CodeMode on the client side instead. It wraps a `Client` and presents the same discovery and `execute` tools, so your agent gets on-demand discovery and chained calls against any MCP server, with no change on the server.
 
 The sandbox runs in your process. Each `call_tool()` inside it becomes an ordinary `tools/call` on the wrapped client, so the server never sees the generated code:
