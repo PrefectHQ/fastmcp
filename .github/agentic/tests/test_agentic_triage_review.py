@@ -282,16 +282,37 @@ def test_triage_plan_follows_the_tier():
             Path(__file__).resolve().parents[1] / "workflows/stack-models.json"
         ).read_text()
     )
-    plan = build_triage_plan(tier_models(models, "haiku"), uuid4(), uuid4())
+    plan = build_triage_plan(tier_models(models, "haiku"))
     agents = [n for n in plan["nodes"].values() if n["kind"] == "AgentNode"]
     assert agents and all(n["model"]["id"] == "claude-haiku-5-5" for n in agents)
     assert all("Luna" not in n["label"] for n in agents)
-    default = build_triage_plan(models, uuid4(), uuid4())
+    default = build_triage_plan(models)
     assert all(
         n["model"]["id"] == "gpt-6-luna"
         for n in default["nodes"].values()
         if n["kind"] == "AgentNode"
     )
+
+
+def test_triage_plan_has_no_deployment_nodes():
+    # Cloud only passes `parameters` to a DeploymentNode's child, so a deployment
+    # step can't wait on the assessment; intake verifies and bins instead.
+    models = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "workflows/stack-models.json"
+        ).read_text()
+    )
+    plan = build_triage_plan(models)
+    assert set(plan["nodes"]) == {"assess", "reproduce"}
+    assert {
+        (edge["from"].get("node", edge["from"].get("input")), edge["to"]["node"])
+        for edge in plan["edges"]
+    } == {
+        ("assess_request", "assess"),
+        ("reproduce_request", "reproduce"),
+        ("assess", "reproduce"),
+    }
+    assert set(plan["inputs"]) == {"assess_request", "reproduce_request"}
 
 
 def test_repeated_norm_check_keeps_the_first_evidence():

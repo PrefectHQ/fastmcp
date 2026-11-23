@@ -264,8 +264,8 @@ Return one decision:
 - skip or environment_failure, with the reason.
 
 Set area to the one label that names the part of FastMCP the issue is about: auth, cli,
-client, contrib, fastmcp.json, http, mcp apps, openapi, provider, server or tasks. Leave it
-empty when none fits.
+client, contrib, fastmcp.json, http, mcp apps, openapi, provider, server or tasks. When
+several fit, pick the one a maintainer of that area would need to look at.
 
 Leave question empty unless you return maintainer. Respect route holds, human interventions
 and labels owned by other workflows. Nothing you return is acted on automatically.""",

@@ -84,7 +84,9 @@ case "${1:-}" in
     git cat-file -e "$current^{commit}" 2>/dev/null || {
       echo "Live source $current is not in this checkout; fetch full history" >&2; exit 1;
     }
-    git diff --quiet "$current" "$revision" -- 'workflows/*.plan.json' workflows/stack-models.json || {
+    # The connected triage plan isn't committed as JSON: it's built from these modules.
+    git diff --quiet "$current" "$revision" -- 'workflows/*.plan.json' workflows/stack-models.json \
+      flows/agentic_stack_plans.py flows/agentic_triage_plan.py || {
       echo "Execution plans changed since $current; publish them and update the automations' plan versions by hand" >&2; exit 1;
     }
     validate
