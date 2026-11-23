@@ -115,6 +115,7 @@ def stack(tmp_path):
         executable.chmod(0o755)
 
     def commit(path: str, content: str) -> str:
+        (agentic / path).parent.mkdir(parents=True, exist_ok=True)
         (agentic / path).write_text(content)
         git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "add", ".")
         git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", path)
@@ -224,9 +225,18 @@ def test_deploy_waits_for_in_flight_runs(stack):
     assert not list(state.glob("put-*.json"))
 
 
-def test_deploy_refuses_changed_execution_plans(stack):
+@pytest.mark.parametrize(
+    "path",
+    [
+        "workflows/fastmcp-stack-assess.plan.json",
+        # Sources of the connected triage plan, which has no committed JSON.
+        "flows/agentic_triage_plan.py",
+        "flows/agentic_stack_plans.py",
+    ],
+)
+def test_deploy_refuses_changed_execution_plans(stack, path):
     commit, deploy, state, _ = stack
-    commit("workflows/fastmcp-stack-assess.plan.json", "{}\n")
+    commit(path, "# changed\n")
 
     result = deploy()
 

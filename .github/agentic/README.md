@@ -10,11 +10,12 @@ Two event automations (`fastmcp-triage-on-github-issue` and `-pr`) start
 `cloud-triage-intake` when an issue changes or a ready PR that references an issue
 changes. Intake collects bounded GitHub evidence and hands a batch to
 `cloud-stack-batch`. The connected triage plan (`flows.agentic_triage_plan`)
-assesses each item, verifies existing contributions through
-`cloud-contribution-verification` or reproduces the report, and sends every
+assesses each item and, on the reproduce branch, reproduces the report. The batch then
+verifies existing contributions through `cloud-contribution-verification` itself (a
+DeploymentNode in the plan can't wait on the assessment), and sends every
 public-facing outcome through the Sol `triage_review` node, which loads
 `.agents/skills/adversarial-review/SKILL.md` from the pinned revision.
-`cloud-triage-finalize` records the outcome, and accepted reviews are posted as
+The batch records the outcome, and accepted reviews are posted as
 COMMENT reviews by the triage review app. Two reviewed outcomes also become GitHub
 labels (`flows/agentic_labels.py`), which the repository's closers act on: a request for a
 reproduction gets `needs MRE` (closed after 7 days without the author) and a duplicate gets
@@ -148,6 +149,13 @@ live commit. Then, from a clean checkout of the new commit, rebuild the plans
 Workflows tooling, run `agentic_stack.sh register`, and update `source_sha` and the
 plan versions in both automations right away. If the alert template changed, re-run
 `agentic_stack.sh alerts`.
+
+The connected triage plan has no committed JSON, so the guard also refuses when
+`flows/agentic_triage_plan.py` or `flows/agentic_stack_plans.py` changed. Rebuild it
+with `uv run python -m flows.agentic_triage_plan --output triage.plan.json` (add
+`--tier` only if the live runtime uses one), diff it against the active version of
+the `runtime.triage_plan` flow, validate, publish it to that flow, and update
+`runtime.triage_plan.version_id` in both automations.
 
 ## Roll back
 
