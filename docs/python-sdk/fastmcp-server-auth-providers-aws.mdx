@@ -15,14 +15,15 @@ the complexity of AWS Cognito's OAuth flow, token validation, and user managemen
 Example:
     ```python
     from fastmcp import FastMCP
-    from fastmcp.server.auth.providers.aws_cognito import AWSCognitoProvider
+    from fastmcp.server.auth.providers.aws import AWSCognitoProvider
 
     # Simple AWS Cognito OAuth protection
     auth = AWSCognitoProvider(
         user_pool_id="your-user-pool-id",
         aws_region="eu-central-1",
         client_id="your-cognito-client-id",
-        client_secret="your-cognito-client-secret"
+        client_secret="your-cognito-client-secret",
+        base_url="https://my-server.com",
     )
 
     mcp = FastMCP("My Protected Server", auth=auth)
@@ -31,7 +32,7 @@ Example:
 
 ## Classes
 
-### `AWSCognitoTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/aws.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AWSCognitoTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/aws.py#L45" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token verifier for Cognito access tokens.
@@ -44,7 +45,7 @@ to the parent (skipping the ``aud`` check) and validates the
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/aws.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/aws.py#L58" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -53,7 +54,7 @@ verify_token(self, token: str) -> AccessToken | None
 Verify token and filter claims to Cognito-specific subset.
 
 
-### `AWSCognitoProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/aws.py#L95" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AWSCognitoProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/aws.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Complete AWS Cognito OAuth provider for FastMCP.
@@ -71,7 +72,7 @@ Features:
 
 **Methods:**
 
-#### `get_token_verifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/aws.py#L244" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_token_verifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/aws.py#L245" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_token_verifier(self) -> AWSCognitoTokenVerifier

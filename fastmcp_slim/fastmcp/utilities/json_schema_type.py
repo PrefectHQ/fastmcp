@@ -5,7 +5,7 @@ for validation with Pydantic. It supports:
 
 - Basic types (string, number, integer, boolean, null)
 - Complex types (arrays, objects)
-- Format constraints (date-time, date, time, duration, uuid, email, uri)
+- Format constraints (date-time, date, time, duration, uuid, binary, email, uri)
 - Numeric constraints (minimum, maximum, multipleOf)
 - String constraints (minLength, maxLength, pattern)
 - Array constraints (minItems, maxItems, uniqueItems)
@@ -166,6 +166,11 @@ FORMAT_TYPES: dict[str, Any] = {
     "time": time,
     "duration": timedelta,
     "uuid": UUID,
+    # Pydantic's default JSON mode writes `bytes` as utf-8 text under this
+    # format (base64 output uses "base64url"), so with default serialization
+    # encoding back is exact. A custom serializer without a `-> str` return
+    # type still reports "binary", and its text comes back as bytes.
+    "binary": bytes,
     "email": EmailStr,
     "uri": AnyUrl,
     "json": Json,
@@ -397,6 +402,13 @@ def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
         # Always use the top-level schema for references
         if schema.get("type") == "object":
             result = _object_schema_to_type(schema, schemas=schema, name=name)
+            if not schema.get("properties") and ("const" in schema or "enum" in schema):
+                result = Annotated[
+                    result,  # ty:ignore[invalid-type-form]
+                    BeforeValidator(
+                        lambda value: _validate_object_literals(value, schema)
+                    ),
+                ]
         elif name:
             raise ValueError(f"Can not apply name to non-object schema: {name}")
         else:
@@ -775,6 +787,18 @@ def _json_values_equal(left: Any, right: Any) -> bool:
         )
 
     return left == right
+
+
+def _validate_object_literals(value: Any, schema: Mapping[str, Any]) -> Any:
+    """Validate raw object literals before hydration changes their representation."""
+    if isinstance(value, Mapping):
+        if "const" in schema and not _json_values_equal(value, schema["const"]):
+            raise ValueError("Object does not match const")
+        if "enum" in schema and not any(
+            _json_values_equal(value, allowed) for allowed in schema["enum"]
+        ):
+            raise ValueError("Object does not match any enum value")
+    return value
 
 
 def _json_value_key(value: Any) -> tuple[Any, ...]:
@@ -1441,6 +1465,21 @@ def _build_pydantic_model(
         config=ConfigDict(extra="allow", validate_default=extra_value_type is not None),
         extra_value_type=extra_value_type,
     )
+    if "const" in schema or "enum" in schema:
+
+        def validate_literals(value: Any) -> Any:
+            return _validate_object_literals(value, schema)
+
+        model = create_model(
+            name,
+            __base__=model,
+            __validators__={
+                "_validate_object_literals": cast(
+                    Callable[..., Any],
+                    model_validator(mode="before")(validate_literals),
+                )
+            },
+        )
     conversion = _conversion.get()
     conversion.unchecked_defaults.extend((model, prop) for prop in unchecked)
     return model
@@ -1574,6 +1613,7 @@ def _build_dataclass(
     def _apply_defaults(cls, data: Any, handler: ValidatorFunctionWrapHandler):
         if not isinstance(data, dict):
             return handler(data)
+        _validate_object_literals(data, original_schema)
         # Omitted fields fall back to the field defaults, which validate only
         # when valid; object defaults are still merged here.
         merged = _merge_defaults(data, original_schema, apply_property_defaults=False)

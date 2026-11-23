@@ -103,10 +103,12 @@ from fastmcp.server.auth.oauth_proxy.models import (
     HTTP_TIMEOUT_SECONDS,
     ClientCode,
     ConsentCSRFToken,
+    EndedGrant,
     JTIMapping,
     OAuthTransaction,
     ProxyDCRClient,
     RefreshTokenMetadata,
+    RotatedRefreshToken,
     UpstreamTokenSet,
     _hash_token,
 )
@@ -127,6 +129,11 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 _REFRESH_LOCK_CACHE_SIZE = 10_000
+
+# A rotated refresh token presented again within this many seconds is taken
+# as a duplicate (concurrent refreshes, a retry after a lost response) and
+# only rejected; later, it is a replay and ends the grant (OAuth 2.1 §4.3.1).
+_REFRESH_REUSE_GRACE_SECONDS = 60.0
 
 #: SEP-837: the client's declared `application_type`, recovered from the raw DCR
 #: request body by `_ApplicationTypeRegistrationHandler` before the SDK's
@@ -358,6 +365,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         fastmcp_access_token_expiry_seconds: int | None = None,
         # Token refresh threshold
         token_expiry_threshold_seconds: int = 0,
+        # Dynamic client registration lifetime
+        client_registration_ttl_seconds: int | None = None,
         # CIMD (Client ID Metadata Document) support
         enable_cimd: bool = True,
         # Identity assertion (SEP-990 ID-JAG) support
@@ -435,6 +444,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 protections unless the deployment supplies an equivalent CSP header.
                 This allows organizations with their own CSP policies to override or disable
                 the built-in CSP directives.
+            client_registration_ttl_seconds: How long a dynamically registered client
+                is kept in `client_storage` without getting tokens. Each successful
+                token exchange or refresh renews it, so active clients keep their
+                registration while abandoned ones expire. Registration is
+                unauthenticated, so without a lifetime every registration stays in a
+                persistent store forever. Defaults to None (never expire).
             fallback_access_token_expiry_seconds: Expiry time to use when upstream provider
                 doesn't return `expires_in` in the token response. If not set, uses smart
                 defaults: 1 hour if a refresh token is available (since we can refresh),
@@ -468,7 +483,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs. When True, clients can authenticate using HTTPS URLs as client
                 IDs, with metadata fetched from the URL. Supports private_key_jwt auth.
-            identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
+            identity_assertion: Beta. Optional SEP-990 identity assertion (ID-JAG) configuration.
                 When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
                 carrying an ID-JAG issued by one of the configured trusted issuers, and
                 mints a short-lived access token (no refresh token) for the asserted
@@ -564,6 +579,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Extra parameters for authorization and token endpoints
         self._extra_authorize_params: dict[str, str] = extra_authorize_params or {}
         self._extra_token_params: dict[str, str] = extra_token_params or {}
+
+        if client_registration_ttl_seconds is not None and (
+            client_registration_ttl_seconds <= 0
+        ):
+            raise ValueError("client_registration_ttl_seconds must be positive")
+        self._client_registration_ttl_seconds: int | None = (
+            client_registration_ttl_seconds
+        )
 
         # Token expiry fallback (None means use smart default based on refresh token)
         self._fallback_access_token_expiry_seconds: int | None = (
@@ -721,6 +744,28 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 default_collection="mcp-refresh-tokens",
                 raise_on_validation_error=True,
             )
+        )
+
+        # Refresh tokens that were already rotated, keyed by token hash, so a
+        # later replay can end the grant (OAuth 2.1 §4.3.1).
+        self._rotated_refresh_store: PydanticAdapter[RotatedRefreshToken] = (
+            PydanticAdapter[RotatedRefreshToken](
+                key_value=self._client_storage,
+                pydantic_model=RotatedRefreshToken,
+                default_collection="mcp-rotated-refresh-tokens",
+                raise_on_validation_error=True,
+            )
+        )
+
+        # Grants ended by revocation or refresh-token reuse, so an in-flight
+        # refresh cannot bring one back by rewriting its upstream record.
+        self._ended_grant_store: PydanticAdapter[EndedGrant] = PydanticAdapter[
+            EndedGrant
+        ](
+            key_value=self._client_storage,
+            pydantic_model=EndedGrant,
+            default_collection="mcp-ended-grants",
+            raise_on_validation_error=True,
         )
 
         # Use the provided token validator
@@ -1145,6 +1190,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         await self._client_store.put(
             key=client_info.client_id,
             value=proxy_client,
+            ttl=self._client_registration_ttl_seconds,
         )
 
         # The SDK's RegistrationHandler serializes this same `client_info` object
@@ -1357,6 +1403,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             scopes=code_model.scopes,
             expires_at=code_model.expires_at,
             code_challenge=code_model.code_challenge or "",
+        )
+
+    async def _renew_client_registration(
+        self, client: OAuthClientInformationFull
+    ) -> None:
+        """Restart a stored registration's lifetime after the client got tokens."""
+        if self._client_registration_ttl_seconds is None or client.client_id is None:
+            return
+        stored = await self._client_store.get(key=client.client_id)
+        if stored is None or stored.cimd_document is not None:
+            return
+        await self._client_store.put(
+            key=client.client_id,
+            value=stored,
+            ttl=self._client_registration_ttl_seconds,
         )
 
     @override
@@ -1582,6 +1643,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             refresh_jti[:8] if refresh_jti else "none",
         )
 
+        await self._renew_client_registration(client)
+
         # Return FastMCP-issued tokens (NOT upstream tokens!)
         return OAuthToken(
             access_token=fastmcp_access_token,
@@ -1708,6 +1771,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             access_jti[:8],
         )
 
+        await self._renew_client_registration(client)
+
         # SEP-990: no refresh token — the IdP controls session lifetime.
         return OAuthToken(
             access_token=access_token,
@@ -1823,6 +1888,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_hash = _hash_token(refresh_token)
         metadata = await self._refresh_token_store.get(key=token_hash)
         if not metadata:
+            await self._end_grant_on_refresh_reuse(client, token_hash)
             logger.warning(
                 "Refresh token not found for client=%s (token_hash=%s); it was "
                 "already rotated, expired, or revoked. Rejecting with invalid_grant, "
@@ -1844,6 +1910,71 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             client_id=metadata.client_id,
             scopes=metadata.scopes,
             expires_at=metadata.expires_at,
+        )
+
+    async def _end_grant(self, upstream_token_id: str) -> None:
+        """End a grant so every FastMCP token that maps to it stops working.
+
+        The marker is written before the record is deleted, and writers check
+        it after they store the record (`_store_upstream_token_set`), so a
+        refresh racing with this call cannot leave the grant alive.
+        """
+        await self._ended_grant_store.put(
+            key=upstream_token_id,
+            value=EndedGrant(ended_at=time.time()),
+            ttl=self._fallback_refresh_token_expiry_seconds,
+        )
+        await self._upstream_token_store.delete(key=upstream_token_id)
+
+    async def _store_upstream_token_set(
+        self, upstream_token_set: UpstreamTokenSet, ttl: int
+    ) -> bool:
+        """Store a refreshed upstream record unless its grant has ended.
+
+        Returns False, with the record removed again, when the grant was
+        ended while the refresh was in flight.
+        """
+        await self._upstream_token_store.put(
+            key=upstream_token_set.upstream_token_id,
+            value=upstream_token_set,
+            ttl=ttl,
+        )
+        if await self._ended_grant_store.get(key=upstream_token_set.upstream_token_id):
+            await self._upstream_token_store.delete(
+                key=upstream_token_set.upstream_token_id
+            )
+            return False
+        return True
+
+    async def _end_grant_on_refresh_reuse(
+        self, client: OAuthClientInformationFull, token_hash: str
+    ) -> None:
+        """End the grant of a rotated refresh token that is presented again.
+
+        OAuth 2.1 §4.3.1: a server that rotates refresh tokens should treat a
+        reused one as possibly stolen and revoke the tokens issued from it.
+        A reuse within `_REFRESH_REUSE_GRACE_SECONDS` of the rotation is taken
+        as a duplicate (two concurrent refreshes, or a retry after a lost
+        response) and only rejected; after it, the grant ends, so the
+        newer access and refresh tokens stop working for whoever holds them.
+        """
+        rotated = await self._rotated_refresh_store.get(key=token_hash)
+        if rotated is None or rotated.client_id != client.client_id:
+            return
+        if time.time() - rotated.rotated_at <= _REFRESH_REUSE_GRACE_SECONDS:
+            return
+
+        upstream_token_set = await self._upstream_token_store.get(
+            key=rotated.upstream_token_id
+        )
+        if upstream_token_set is not None and upstream_token_set.refresh_token:
+            await self._revoke_upstream(upstream_token_set.refresh_token)
+        await self._end_grant(rotated.upstream_token_id)
+        logger.warning(
+            "Rotated refresh token reused for client=%s (token_hash=%s); ended "
+            "its grant",
+            client.client_id,
+            token_hash[:8],
         )
 
     async def exchange_refresh_token(
@@ -2018,19 +2149,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # FastMCP token that points at this upstream session. The refreshed
         # (possibly rotated) upstream tokens are persisted even if the
         # extraction raises.
+        grant_alive = True
         try:
             upstream_claims = await self._extract_upstream_claims(
                 upstream_token_set.raw_token_data
             )
             upstream_token_set.upstream_claims = upstream_claims or {}
         finally:
-            await self._upstream_token_store.put(
-                key=upstream_token_set.upstream_token_id,
-                value=upstream_token_set,
-                ttl=max(
-                    refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1
-                ),  # Keep until longest-lived token expires (min 1s for safety)
+            grant_alive = await self._store_upstream_token_set(
+                upstream_token_set,
+                # Keep until longest-lived token expires (min 1s for safety)
+                ttl=max(refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1),
             )
+        if not grant_alive:
+            raise TokenError("invalid_grant", "Grant was revoked")
 
         # Consume the FastMCP refresh token before issuing successors.
         # delete() reports whether this call removed the key, so of two
@@ -2093,6 +2225,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         # Invalidate old refresh token (refresh token rotation - enforces one-time use)
         await self._jti_mapping_store.delete(key=refresh_jti)
+        # Remember it was rotated so a later replay ends the grant.
+        await self._rotated_refresh_store.put(
+            key=_hash_token(refresh_token.token),
+            value=RotatedRefreshToken(
+                client_id=client.client_id,
+                upstream_token_id=upstream_token_set.upstream_token_id,
+                rotated_at=time.time(),
+            ),
+            ttl=refresh_ttl,
+        )
         logger.debug(
             "Rotated refresh token (old JTI invalidated - one-time use enforced)"
         )
@@ -2115,6 +2257,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             new_access_jti[:8],
             new_refresh_jti[:8],
         )
+
+        await self._renew_client_registration(client)
 
         # Return new FastMCP tokens (both access AND refresh are new)
         return OAuthToken(
@@ -2250,9 +2394,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if upstream_token_set.refresh_token_expires_at
             else self._fallback_refresh_token_expiry_seconds
         )
-        await self._upstream_token_store.put(
-            key=upstream_token_set.upstream_token_id,
-            value=upstream_token_set,
+        if not await self._store_upstream_token_set(
+            upstream_token_set,
             # Include the configured FastMCP lifetime so the upstream token never
             # expires before an extended access JTI mapping that still points at it.
             ttl=max(
@@ -2261,7 +2404,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 self._fastmcp_access_token_expiry_seconds or 0,
                 1,
             ),
-        )
+        ):
+            raise TokenError("invalid_grant", "Grant was revoked")
 
         return upstream_token_set
 
@@ -2573,7 +2717,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             await self._revoke_upstream(upstream_token_set.refresh_token)
 
         await self._jti_mapping_store.delete(key=refresh_jti)
-        await self._upstream_token_store.delete(key=jti_mapping.upstream_token_id)
+        await self._end_grant(jti_mapping.upstream_token_id)
         logger.debug("Revoked refresh token and ended its grant")
 
     async def _revoke_upstream(self, upstream_token: str) -> None:

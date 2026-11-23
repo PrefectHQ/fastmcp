@@ -6,6 +6,73 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.2.5" description="2026-11-23">
+
+**[v4.2.5: Smoke Signals](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.5)**
+
+This release serves `subscriptions/listen` on 2026-07-28 connections, so clients can open a stream and receive tool, prompt and resource change events, and `FastMCP.notify_tools_changed()` and its siblings now push those events to listening clients. A new opt-in `UsageMiddleware` records per-user, per-tool usage as the OpenTelemetry `mcp.server.operation.duration` histogram for `tools/call` and `prompts/get`; add it before any error-handling middleware. An experimental Events extension (SEP-3415) lands in `fastmcp.experimental.events`, with poll and push delivery and a `fastmcp experimental events list|watch` CLI; it is opt-in, and its API may change in any release without a deprecation period.
+
+The release also tightens several OAuth and OpenAPI checks and fixes a batch of proxy, schema and CLI bugs. A CIMD client's metadata document can no longer widen the scopes a server allows; if you set neither `valid_scopes` nor `required_scopes`, CIMD clients can no longer request any scope, so set `valid_scopes` to the scopes you accept. A redirect URI must now match an exact allowed pattern's query and may not carry a fragment, and an exact pattern at a host's root (such as `https://app.example/`) now matches only that path; append `/*` to allow any path, while wildcard and portless loopback patterns are unchanged. Revoking a refresh token now also ends that grant's access tokens, and presenting a refresh token more than 60 seconds after it was rotated ends the whole grant as a suspected theft, so clients that copy one stored refresh token between processes must share the rotated one too. A new `client_registration_ttl_seconds` on `OAuthProxy` and `OIDCProxy` lets unused dynamic client registrations expire from persistent storage; it is off by default. `AzureProvider` with a multi-tenant `tenant_id` (`organizations`, `consumers` or `common`) no longer checks the token issuer, so users from any tenant are accepted; pass `token_issuer` to pin one. Behind a proxy, a backend now sees only the roots, sampling and elicitation support the real client declared.
+
+OpenAPI tools no longer forward MCP transport headers such as `mcp-protocol-version` to the wrapped API, and a new `forward_client_headers` option on `FastMCP.from_openapi`, `FastMCP.from_fastapi` and `OpenAPIProvider` takes `False` to forward no client headers or a list of names to forward only those. OpenAPI cookie parameter values are now percent-encoded outside the characters cookies allow, so a backend that reads a cookie containing `;`, spaces or non-ASCII text must decode it.
+
+**Listen streams are on by default.** On 2026-07-28 connections, servers now advertise `listChanged` and `resources.subscribe`, and clients that support it hold one open `subscriptions/listen` stream per connection for as long as they stay connected. Each server process accepts up to 1024 open listen streams, and refuses further listen requests with an error.
+
+**Who should check:** servers on hosts where an open request is costly or cut off, such as serverless platforms with request time limits, servers with a small fixed pool of workers or connections, and deployments that bill per open connection. Change events are delivered within one process, so with several workers or replicas a `notify_*` call reaches only the listeners connected to the same process.
+
+**To turn it off**, set `FASTMCP_ENABLE_SUBSCRIPTIONS_LISTEN=false` in the server's environment before `fastmcp` is imported, or set `fastmcp.settings.enable_subscriptions_listen = False` in code before the server is created. The server then behaves exactly as in v4.2.4: it advertises `listChanged` and `resources.subscribe` as `false`, answers `subscriptions/listen` with `-32601`, and `notify_*` does nothing. Handshake-era (2025-11-25 and earlier) connections are unaffected either way.
+
+Want to see where fixes like these come from? Watch fastmcp's issues and PRs move through triage live on the [triage floor](https://sites.wisp.place/prefect.io/triage-floor/).
+
+Thanks to our 25 contributors, including 6 first-time contributors.
+
+### Enhancements ✨
+* Serve subscriptions/listen and add server-wide change notifications by [@zzstoatzz](https://github.com/zzstoatzz), [@daniel-k](https://github.com/daniel-k), [@vriesdemichael](https://github.com/vriesdemichael), and [@eachimei](https://github.com/eachimei) in [#6551](https://github.com/PrefectHQ/fastmcp/pull/6551)
+* Add UsageMiddleware for per-user, per-tool usage metrics by [@zzstoatzz](https://github.com/zzstoatzz) in [#6510](https://github.com/PrefectHQ/fastmcp/pull/6510)
+* Add the experimental Events extension with poll and push delivery (SEP-3415) by [@zzstoatzz](https://github.com/zzstoatzz) in [#6489](https://github.com/PrefectHQ/fastmcp/pull/6489)
+### Security 🔒
+* fix: enforce valid_scopes for CIMD clients by [@BlueX888](https://github.com/BlueX888) in [#5829](https://github.com/PrefectHQ/fastmcp/pull/5829)
+* Match the query component when validating redirect URIs against allowed patterns by [@08raviyadav](https://github.com/08raviyadav) and [@Tardfyou](https://github.com/Tardfyou) in [#6000](https://github.com/PrefectHQ/fastmcp/pull/6000)
+* Compare an exact redirect URI pattern's root path exactly by [@zzstoatzz](https://github.com/zzstoatzz) in [#6703](https://github.com/PrefectHQ/fastmcp/pull/6703)
+* Percent-encode OpenAPI cookie parameter values by [@zzstoatzz](https://github.com/zzstoatzz) in [#6704](https://github.com/PrefectHQ/fastmcp/pull/6704)
+* Stop forwarding MCP transport headers to OpenAPI backends; add forward_client_headers by [@zzstoatzz](https://github.com/zzstoatzz) and [@SyedAnas01](https://github.com/SyedAnas01) in [#6705](https://github.com/PrefectHQ/fastmcp/pull/6705)
+* End the grant when a rotated refresh token is reused by [@zzstoatzz](https://github.com/zzstoatzz) and [@fedorello](https://github.com/fedorello) in [#6706](https://github.com/PrefectHQ/fastmcp/pull/6706)
+* Let dynamic client registrations expire when unused by [@zzstoatzz](https://github.com/zzstoatzz) and [@fedorello](https://github.com/fedorello) in [#6707](https://github.com/PrefectHQ/fastmcp/pull/6707)
+### Fixes 🐞
+* End a grant's access tokens when its refresh token is revoked by [@zzstoatzz](https://github.com/zzstoatzz) in [#6627](https://github.com/PrefectHQ/fastmcp/pull/6627)
+* Fix TokenCache handling for expired access tokens by [@pradeep-ramola](https://github.com/pradeep-ramola) and [@Harsh23Kashyap](https://github.com/Harsh23Kashyap) in [#5195](https://github.com/PrefectHQ/fastmcp/pull/5195)
+* Skip issuer validation in AzureProvider for multi-tenant authorities by [@asasemahmed](https://github.com/asasemahmed) in [#5694](https://github.com/PrefectHQ/fastmcp/pull/5694)
+* fix(auth): render the registration and discovery endpoints on the unregistered-client page by [@Winoren](https://github.com/Winoren) in [#5745](https://github.com/PrefectHQ/fastmcp/pull/5745)
+* fix(auth): reject malformed URL ports as SSRFError in validate_url by [@nosmile99](https://github.com/nosmile99) and [@BlueX888](https://github.com/BlueX888) in [#5773](https://github.com/PrefectHQ/fastmcp/pull/5773)
+* Accept the tool name as the first argument of `call --command` by [@asasemahmed](https://github.com/asasemahmed) in [#5883](https://github.com/PrefectHQ/fastmcp/pull/5883)
+* Skip the Docket total update when report_progress total is below 1 by [@asasemahmed](https://github.com/asasemahmed) in [#5905](https://github.com/PrefectHQ/fastmcp/pull/5905)
+* Accept optional fields in elicitation schemas by [@asasemahmed](https://github.com/asasemahmed) in [#5907](https://github.com/PrefectHQ/fastmcp/pull/5907)
+* Forward sampling tools through the proxy's sampling relay by [@Kushal9889](https://github.com/Kushal9889) in [#5978](https://github.com/PrefectHQ/fastmcp/pull/5978)
+* Apply the client's init_timeout to each backend in a multi-server MCPConfig by [@asasemahmed](https://github.com/asasemahmed) in [#6028](https://github.com/PrefectHQ/fastmcp/pull/6028)
+* Resolve JSON Schema references through arrays by [@JackyHsu-X](https://github.com/JackyHsu-X) and [@jesko2004](https://github.com/jesko2004) in [#6098](https://github.com/PrefectHQ/fastmcp/pull/6098)
+* Accept plain values for optional parameters in generated CLIs by [@tanishqbaweja](https://github.com/tanishqbaweja) and [@jasonpaulso](https://github.com/jasonpaulso) in [#6106](https://github.com/PrefectHQ/fastmcp/pull/6106)
+* fix: from_openapi: cookie parameters with array/object values send Python repr strings by [@xixi-box](https://github.com/xixi-box) and [@AWUQAQ](https://github.com/AWUQAQ) in [#6171](https://github.com/PrefectHQ/fastmcp/pull/6171)
+* Let started proxy log forwards finish before disconnecting by [@zzstoatzz](https://github.com/zzstoatzz), [@HootRock](https://github.com/HootRock), and [@alpaylan](https://github.com/alpaylan) in [#6420](https://github.com/PrefectHQ/fastmcp/pull/6420)
+* Relay proxy input requests the front client can answer by [@zzstoatzz](https://github.com/zzstoatzz), [@Ch-Balaji](https://github.com/Ch-Balaji), and [@Prasad-178](https://github.com/Prasad-178) in [#6516](https://github.com/PrefectHQ/fastmcp/pull/6516)
+### Docs 📚
+* Keep experimental features off stable surface; fix Skills and identity assertion labels by [@zzstoatzz](https://github.com/zzstoatzz) in [#6702](https://github.com/PrefectHQ/fastmcp/pull/6702)
+### Other Changes 🦾
+* Keep process history out of release notes by [@zzstoatzz](https://github.com/zzstoatzz) in [#6626](https://github.com/PrefectHQ/fastmcp/pull/6626)
+* Let triage search its memory as a tool by [@zzstoatzz](https://github.com/zzstoatzz) in [#6668](https://github.com/PrefectHQ/fastmcp/pull/6668)
+* Claim fastmcp work over the triage MCP server by [@zzstoatzz](https://github.com/zzstoatzz) in [#6675](https://github.com/PrefectHQ/fastmcp/pull/6675)
+
+## New Contributors
+* @pradeep-ramola made their first contribution in [#5195](https://github.com/PrefectHQ/fastmcp/pull/5195)
+* @08raviyadav made their first contribution in [#6000](https://github.com/PrefectHQ/fastmcp/pull/6000)
+* @JackyHsu-X made their first contribution in [#6098](https://github.com/PrefectHQ/fastmcp/pull/6098)
+* @tanishqbaweja made their first contribution in [#6106](https://github.com/PrefectHQ/fastmcp/pull/6106)
+* @SyedAnas01 made their first contribution in [#6705](https://github.com/PrefectHQ/fastmcp/pull/6705)
+* @fedorello made their first contribution in [#6706](https://github.com/PrefectHQ/fastmcp/pull/6706)
+
+**Full Changelog**: [v4.2.4...v4.2.5](https://github.com/PrefectHQ/fastmcp/compare/v4.2.4...v4.2.5)
+
+</Update>
+
 <Update label="v4.2.4" description="2026-11-20">
 
 **[v4.2.4: Burn After Reading](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.4)**

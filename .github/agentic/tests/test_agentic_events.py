@@ -214,9 +214,8 @@ def test_failure_alert_shows_the_cause_and_one_run_link(automations):
             },
         },
     )
-    assert "triage skipped some issues" in message
+    assert "triage gave up on an issue after 3 tries" in message
     assert "#4866: contribution verification did not complete" in message
-    assert "retry on later runs" in message
     assert message.count("https://app.prefect.cloud/runs/run") == 1
     failed = render_user_template_sync(
         configs["fastmcp-triage-failure-alert"]["actions"][0]["body"],

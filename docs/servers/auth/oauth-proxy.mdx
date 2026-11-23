@@ -374,6 +374,10 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
   so a token that is about to expire is refreshed before use.
 </ParamField>
 
+<ParamField body="client_registration_ttl_seconds" type="int | None" default="None">
+  How long a dynamically registered client stays in `client_storage` without getting tokens. Each successful token exchange or refresh renews it, so active clients keep their registration and abandoned ones expire. Registration is unauthenticated, so with a persistent store and no lifetime, every registration is kept forever. Set this when `client_storage` is Redis or another shared store.
+</ParamField>
+
 <ParamField body="consent_csp_policy" type="str | None" default="None">
   Content Security Policy for the consent page.
 

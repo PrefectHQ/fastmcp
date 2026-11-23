@@ -11,6 +11,7 @@ from types import EllipsisType, UnionType
 from typing import (
     Annotated,
     Any,
+    Literal,
     Protocol,
     TypeAlias,
     Union,
@@ -26,6 +27,9 @@ from pydantic import AnyUrl, BaseModel, ConfigDict, Field, TypeAdapter, UrlConst
 from typing_extensions import TypeVar
 
 T = TypeVar("T", default=Any)
+
+CacheScope = Literal["public", "private"]
+"""Whether a cached result may be shared across authorization contexts ("public") or reused only within the one that produced it ("private")."""
 
 # MCP SDK v2 dropped the `AnyFunction` alias; FastMCP owns it now with the same `Callable[..., Any]` meaning.
 AnyFunction: TypeAlias = Callable[..., Any]

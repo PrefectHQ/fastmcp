@@ -52,6 +52,9 @@ def test_real_base_head_execution_detects_fix_and_independent_regression(
     (repo / "tests/unrelated/test_trap.py").write_text(
         "def test_outside_verification_scope():\n    assert False\n"
     )
+    # A tests/ tree whose full listing is longer than execute() keeps.
+    for index in range(600):
+        (repo / f"tests/unrelated/test_padding_module_number_{index:04}.py").touch()
     subprocess.run(["uv", "lock"], cwd=repo, check=True, capture_output=True)
     base = commit(repo, "Broken value")
     (repo / "implementation.py").write_text("value = 2\nflag = 1\n")
