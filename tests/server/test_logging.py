@@ -26,10 +26,10 @@ async def test_uvicorn_logging_default_level(
     mcp_server: FastMCP,
 ):
     """Tests that FastMCP passes log_level to uvicorn.Config if no log_config is given."""
-    mock_server_instance = MagicMock(serve=AsyncMock())
+    mock_server_instance = MagicMock(_serve=AsyncMock())
     mock_uvicorn_server_constructor.return_value = mock_server_instance
     serve_finished_event = anyio.Event()
-    mock_server_instance.serve.side_effect = serve_finished_event.wait
+    mock_server_instance._serve.side_effect = serve_finished_event.wait
 
     test_log_level = "warning"
 
@@ -47,7 +47,7 @@ async def test_uvicorn_logging_default_level(
     mock_uvicorn_server_constructor.assert_called_once_with(
         mock_uvicorn_config_constructor.return_value
     )
-    mock_server_instance.serve.assert_awaited_once()
+    mock_server_instance._serve.assert_awaited_once()
 
     # Signal the mock to finish and cancel with timeout
     # Required for uvicorn 0.39+ due to context isolation
@@ -67,10 +67,10 @@ async def test_uvicorn_logging_with_custom_log_config(
     mcp_server: FastMCP,
 ):
     """Tests that FastMCP passes log_config to uvicorn.Config and not log_level."""
-    mock_server_instance = MagicMock(serve=AsyncMock())
+    mock_server_instance = MagicMock(_serve=AsyncMock())
     mock_uvicorn_server_constructor.return_value = mock_server_instance
     serve_finished_event = anyio.Event()
-    mock_server_instance.serve.side_effect = serve_finished_event.wait
+    mock_server_instance._serve.side_effect = serve_finished_event.wait
 
     sample_log_config = {
         "version": 1,
@@ -112,7 +112,7 @@ async def test_uvicorn_logging_with_custom_log_config(
     mock_uvicorn_server_constructor.assert_called_once_with(
         mock_uvicorn_config_constructor.return_value
     )
-    mock_server_instance.serve.assert_awaited_once()
+    mock_server_instance._serve.assert_awaited_once()
 
     # Signal the mock to finish and cancel with timeout
     # Required for uvicorn 0.39+ due to context isolation
@@ -132,10 +132,10 @@ async def test_uvicorn_logging_custom_log_config_overrides_log_level_param(
     mcp_server: FastMCP,
 ):
     """Tests log_config precedence if log_level is also passed to run_http_async."""
-    mock_server_instance = MagicMock(serve=AsyncMock())
+    mock_server_instance = MagicMock(_serve=AsyncMock())
     mock_uvicorn_server_constructor.return_value = mock_server_instance
     serve_finished_event = anyio.Event()
-    mock_server_instance.serve.side_effect = serve_finished_event.wait
+    mock_server_instance._serve.side_effect = serve_finished_event.wait
 
     sample_log_config = {
         "version": 1,
@@ -180,7 +180,7 @@ async def test_uvicorn_logging_custom_log_config_overrides_log_level_param(
     mock_uvicorn_server_constructor.assert_called_once_with(
         mock_uvicorn_config_constructor.return_value
     )
-    mock_server_instance.serve.assert_awaited_once()
+    mock_server_instance._serve.assert_awaited_once()
 
     # Signal the mock to finish and cancel with timeout
     # Required for uvicorn 0.39+ due to context isolation

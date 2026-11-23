@@ -351,10 +351,10 @@ class TransportMixin:
         with temporary_log_level(log_level):
             config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
             server = uvicorn.Server(config)
-            # `serve()` replays a captured SIGTERM/SIGINT when it returns, and
-            # SIGTERM's default action would end the process before the
-            # lifespan below tears down. Capturing signals around the lifespan
-            # defers that replay until teardown has finished.
+            # `serve()` is `capture_signals()` around `_serve()`, and the capture
+            # replays SIGTERM/SIGINT on exit; SIGTERM's default action would end
+            # the process before the lifespan below tears down. Capture around
+            # the lifespan instead, so the replay waits for teardown.
             with server.capture_signals():
                 async with self._lifespan_manager():
                     path = getattr(app.state, "path", "").lstrip("/")
@@ -365,9 +365,9 @@ class TransportMixin:
                     )
 
                     if sockets is not None:
-                        await server.serve(sockets=sockets)
+                        await server._serve(sockets=sockets)
                     else:
-                        await server.serve()
+                        await server._serve()
 
     def http_app(
         self: FastMCP,
