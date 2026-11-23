@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-23T00:56:19+00:00",
- "source_commit": "db2bd7e7757b9c422eace4aaa3920247a53fa6e1",
+ "generated_at": "2026-11-23T01:31:25+00:00",
+ "source_commit": "41f59cd441b8c277fb63df45c3f4db5291f281a9",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -3014,6 +3014,25 @@
    "test_ids": []
   },
   {
+   "module": "fastmcp.server.middleware.usage",
+   "path": "fastmcp_slim/fastmcp/server/middleware/usage.py",
+   "public": true,
+   "statements": 74,
+   "hit": 0,
+   "functions": 9,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "UsageMiddleware",
+     "kind": "class",
+     "statements": 62,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
    "module": "fastmcp.server.mixins",
    "path": "fastmcp_slim/fastmcp/server/mixins/__init__.py",
    "public": false,
@@ -4486,9 +4505,9 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 624,
-   "hit": 426,
+   "hit": 405,
    "functions": 57,
-   "functions_hit": 46,
+   "functions_hit": 43,
    "symbols": [],
    "tests": 4,
    "test_ids": [
