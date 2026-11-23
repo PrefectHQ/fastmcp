@@ -66,11 +66,14 @@ def candidates(
     config: SweepConfig,
     now: datetime,
     maintainer: Callable[[str], bool] = lambda login: False,
+    kept: Callable[[dict], bool] = lambda item: False,
 ) -> list[dict]:
     """Open items from outside contributors that nobody has touched in a while.
 
     `author_association` misses maintainers whose org membership is private, so
     `maintainer` checks effective repository permission for the survivors.
+    `kept` drops survivors a maintainer has already vouched for, which idleness
+    alone can't see.
     """
     protected = set(config.protected_labels) | {SWEEP_LABEL}
     picked = []
@@ -89,13 +92,15 @@ def candidates(
             continue
         picked.append(item)
     picked.sort(key=lambda item: item["updated_at"])
-    kept = []
+    chosen: list[dict] = []
     for item in picked:
-        if len(kept) == config.max_items:
+        if len(chosen) == config.max_items:
             break
-        if not maintainer((item.get("user") or {}).get("login") or ""):
-            kept.append(item)
-    return kept
+        if not maintainer((item.get("user") or {}).get("login") or "") and not kept(
+            item
+        ):
+            chosen.append(item)
+    return chosen
 
 
 def labeled_at(timeline: list[dict]) -> datetime | None:
@@ -155,6 +160,39 @@ def is_maintainer(read: GitHub, login: str) -> bool:
         return True
 
 
+ASKED_REPORTER = frozenset({"needs MRE", "needs more info"})
+
+
+def vouched_for(
+    item: dict, timeline: list[dict], maintainer: Callable[[str], bool]
+) -> bool:
+    """A maintainer has said this is worth keeping, or someone is fixing it.
+
+    Either a maintainer commented on it (unless they asked the reporter for
+    something the reporter never gave), or an open pull request in this repository
+    refers to it. Idleness doesn't undo either: a confirmed bug nobody has fixed yet
+    goes quiet too.
+    """
+    labels = {label.get("name") for label in item.get("labels") or []}
+    for event in timeline:
+        if event.get("event") == "commented" and not labels & ASKED_REPORTER:
+            author = event.get("user") or event.get("actor") or {}
+            if author.get("type") == "User" and (
+                event.get("author_association") in MAINTAINERS
+                or maintainer(author.get("login") or "")
+            ):
+                return True
+        source = (event.get("source") or {}).get("issue") or {}
+        if (
+            event.get("event") == "cross-referenced"
+            and "pull_request" in source
+            and source.get("state") == "open"
+            and (source.get("repository") or {}).get("full_name") == REPOSITORY
+        ):
+            return True
+    return False
+
+
 def ensure_label(request: Callable[..., object]) -> None:
     if request(f"repos/{REPOSITORY}/labels/{SWEEP_LABEL.replace(':', '%3A')}") is None:
         request(
@@ -176,7 +214,23 @@ def propose(
     items = read.pages(
         f"repos/{REPOSITORY}/issues?state=open&sort=updated&direction=asc"
     )
-    picked = candidates(items, config, now, lambda login: is_maintainer(read, login))
+    known: dict[str, bool] = {}
+
+    def maintainer(login: str) -> bool:
+        if login not in known:
+            known[login] = is_maintainer(read, login)
+        return known[login]
+
+    def kept(item: dict) -> bool:
+        try:
+            timeline = read.pages(
+                f"repos/{REPOSITORY}/issues/{item['number']}/timeline"
+            )
+        except (ValueError, OSError):
+            return True
+        return vouched_for(item, timeline, maintainer)
+
+    picked = candidates(items, config, now, maintainer, kept)
     if write is not None and picked:
         ensure_label(write)
         for item in picked:

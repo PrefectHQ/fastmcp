@@ -7,6 +7,7 @@ from flows.agentic_sweep import (
     close,
     due,
     propose,
+    vouched_for,
 )
 
 NOW = datetime(2026, 11, 19, 12, tzinfo=UTC)
@@ -111,7 +112,7 @@ class FakeGitHub:
 
 
 def test_propose_dry_run_writes_nothing_and_on_labels() -> None:
-    github = FakeGitHub([item(1, 60)], {})
+    github = FakeGitHub([item(1, 60)], {1: []})
     assert [i["number"] for i in propose(github, None, SweepConfig(), NOW)] == [1]  # type: ignore[arg-type]
     calls = []
 
@@ -146,3 +147,62 @@ def test_close_comments_then_closes_due_items_only() -> None:
         {"state": "closed", "state_reason": "not_planned"},
         "PATCH",
     )
+
+
+def maintainer_comment(login: str = "jlowin", association: str = "MEMBER") -> dict:
+    return {
+        "event": "commented",
+        "user": {"type": "User", "login": login},
+        "author_association": association,
+    }
+
+
+def open_pr(number: int, repository: str = "PrefectHQ/fastmcp") -> dict:
+    return {
+        "event": "cross-referenced",
+        "source": {
+            "issue": {
+                "number": number,
+                "state": "open",
+                "pull_request": {},
+                "repository": {"full_name": repository},
+            }
+        },
+    }
+
+
+def test_sweep_keeps_items_a_maintainer_vouched_for() -> None:
+    # #2154 and #3680: a maintainer endorsed the request, then nobody built it.
+    assert vouched_for(item(1, 90), [maintainer_comment()], lambda login: False)
+    # A maintainer whose org membership is private shows up as a contributor.
+    assert vouched_for(
+        item(1, 90),
+        [maintainer_comment("hidden", "CONTRIBUTOR")],
+        lambda login: login == "hidden",
+    )
+    # #4927 and #5182: an open fix PR here refers to the issue.
+    assert vouched_for(item(1, 90), [open_pr(5235)], lambda login: False)
+
+
+def test_sweep_still_takes_items_nobody_vouched_for() -> None:
+    def never(login: str) -> bool:
+        return False
+
+    assert not vouched_for(item(1, 90), [], never)
+    assert not vouched_for(item(1, 90), [comment(5)], never)
+    assert not vouched_for(item(1, 90), [open_pr(9, "someone/fork")], never)
+    closed = open_pr(9)
+    closed["source"]["issue"]["state"] = "closed"
+    assert not vouched_for(item(1, 90), [closed], never)
+    # A maintainer asked the reporter for a reproducer and never got one.
+    asked = item(1, 90, labels=[{"name": "needs MRE"}])
+    assert not vouched_for(asked, [maintainer_comment()], never)
+
+
+def test_propose_skips_vouched_items_before_capping() -> None:
+    github = FakeGitHub(
+        [item(1, 90), item(2, 80), item(3, 70)],
+        {1: [open_pr(5)], 2: [], 3: []},
+    )
+    picked = propose(github, None, SweepConfig(max_items=2), NOW)  # type: ignore[arg-type]
+    assert [i["number"] for i in picked] == [2, 3]
