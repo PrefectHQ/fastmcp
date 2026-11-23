@@ -7,6 +7,8 @@ description: Carry a selected FastMCP bug from reproduction through a scoped fix
 
 Read AGENTS.md and the contribution policy in [the development guide](../../../docs/development/contributing.mdx). Read the issue's full discussion, relevant history, and associated PRs in all states. Evaluate existing contributions before writing a competing fix; use [review-issue](../review-issue/SKILL.md) when assignment is the next decision. Preserve contributor authorship when carrying existing work forward.
 
+Claim the work before you start, with the triage MCP server's `claim_work` tool (target `issue:<number>`, a worker id that stays the same for this task, and your agent kind). If someone else holds it, don't start competing work: tell the maintainer who holds it and since when. A granted claim returns a fence and context (the item's triage labels, related past items, earlier attempts); report each phase change with `report_progress` and renew at least every 30 minutes, and end with `release_work`: `pr` with the PR number, `handed_back` with a reason, or `abandoned`. List the related items that actually helped in `used_related`. Claims are public, so never claim security work. If the server isn't connected, say so and carry on.
+
 ## Establish the contract
 
 Trace the public request to the failing operation. Confirm supported behavior is broken, not merely surprising. State the scope and compatibility boundary before implementation: which inputs must change, which adjacent behavior must remain, and any migration needed. If the intended contract is unresolved, bring that precise question to the maintainer.

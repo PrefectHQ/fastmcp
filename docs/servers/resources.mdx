@@ -389,7 +389,9 @@ Use these when the content is static or sourced directly from a file/URL, bypass
 
 Adding, removing, enabling, or disabling resources at the server or provider level does not notify connected clients. Clients see the change the next time they list resources.
 
-When a request changes the resource set, the tool handling it can tell the calling session by sending `notifications/resources/list_changed` itself. The notification reaches only that session.
+To tell every client listening for resource changes, including from a background task, call `await mcp.notify_resources_changed()`. It works like [`notify_tools_changed()`](/servers/tools#notifications) and reaches clients on the `2026-07-28` protocol. `notify_resource_updated(uri)` does the same for a single resource, reaching clients that listen to that URI.
+
+For handshake-era clients, the tool handling a request can tell the calling session by sending `notifications/resources/list_changed` itself. The notification reaches only that session.
 
 ```python
 from fastmcp import FastMCP

@@ -21,6 +21,9 @@ logger = get_logger(__name__)
 
 _MAX_PATH_DECODINGS = 32
 _PATH_TEMPLATE_PARAM = re.compile(r"\{([^{}]+)\}")
+# RFC 6265 cookie-octets left as-is in a cookie value (`%` is not, so the
+# encoding stays unambiguous). Everything else is percent-encoded.
+_COOKIE_SAFE = "!#$&'()*+-./:<=>?@[]^_`{|}~"
 
 
 def _query_scalar_to_str(value: Any) -> str:
@@ -389,13 +392,23 @@ class RequestDirector:
             raw_content_type = next(iter(route.request_body.content_schema))
             declared_content_type = raw_content_type.split(";")[0].strip().lower()
 
-        # httpx requires cookie values to be strings; use OpenAPI-style
-        # serialization (e.g. true/false for booleans, not True/False)
-        cookies = (
-            {k: _query_scalar_to_str(v) for k, v in cookie_params.items()}
-            if cookie_params
-            else None
-        )
+        # Cookie parameters always use the OpenAPI "form" style. Build the
+        # Cookie header directly so exploded arrays and objects can repeat
+        # names, which httpx's cookies= mapping cannot express.
+        cookie_pairs = self._serialize_cookie_params(route, cookie_params)
+        if cookie_pairs:
+            headers = dict(headers) if headers else {}
+            cookie_value = "; ".join(f"{name}={value}" for name, value in cookie_pairs)
+            existing_cookie = next(
+                (name for name in headers if name.lower() == "cookie"), None
+            )
+            if existing_cookie is None:
+                headers["Cookie"] = cookie_value
+            else:
+                existing = str(headers[existing_cookie])
+                headers[existing_cookie] = (
+                    f"{existing}; {cookie_value}" if existing else cookie_value
+                )
 
         # Step 6: Handle request body — dispatch on declared content type.
         # httpx body kwargs (json, content, data, files) are mutually exclusive
@@ -503,7 +516,6 @@ class RequestDirector:
             content=content,
             data=data,
             files=files,
-            cookies=cookies,
         )
 
     def _unflatten_arguments(
@@ -619,6 +631,97 @@ class RequestDirector:
         "spaceDelimited": " ",
         "pipeDelimited": "|",
     }
+
+    def _serialize_cookie_params(
+        self, route: HTTPRoute, cookie_params: dict[str, Any]
+    ) -> list[tuple[str, str]]:
+        """Serialize cookie parameter values per the OpenAPI form style.
+
+        Cookie parameters always use the form style, where `explode` defaults
+        to true. Exploded arrays repeat the parameter name and exploded
+        objects use each property name, while the non-exploded forms join with
+        commas. Empty collections are omitted.
+        """
+        if not cookie_params:
+            return []
+
+        param_lookup: dict[str, ParameterInfo] = {
+            p.name: p for p in route.parameters if p.location == "cookie"
+        }
+
+        pairs: list[tuple[str, str]] = []
+        for name, value in cookie_params.items():
+            param_info = param_lookup.get(name)
+            explode = (
+                param_info.explode
+                if param_info is not None and param_info.explode is not None
+                else True
+            )
+            if isinstance(value, dict):
+                if not value:
+                    continue
+                if explode:
+                    for key, item in value.items():
+                        pairs.append(
+                            (
+                                quote(
+                                    _query_scalar_to_str(key),
+                                    safe=_COOKIE_SAFE.replace("=", ""),
+                                ),
+                                self._cookie_scalar_to_str(name, item),
+                            )
+                        )
+                else:
+                    parts: list[str] = []
+                    for key, item in value.items():
+                        parts.append(self._cookie_joined_item(name, key))
+                        parts.append(self._cookie_joined_item(name, item))
+                    pairs.append((name, ",".join(parts)))
+            elif isinstance(value, list | tuple):
+                if not value:
+                    continue
+                if explode:
+                    pairs.extend(
+                        (name, self._cookie_scalar_to_str(name, item)) for item in value
+                    )
+                else:
+                    pairs.append(
+                        (
+                            name,
+                            ",".join(
+                                self._cookie_joined_item(name, item) for item in value
+                            ),
+                        )
+                    )
+            else:
+                pairs.append((name, self._cookie_scalar_to_str(name, value)))
+        return pairs
+
+    @staticmethod
+    def _cookie_scalar_to_str(param_name: str, value: Any) -> str:
+        """Serialize a cookie scalar, percent-encoding it for the Cookie header.
+
+        RFC 6265 cookie values exclude `;`, `,`, `"`, `\\`, whitespace, controls
+        and non-ASCII, and OpenAPI's form style percent-encodes them. Without
+        this, a `;` in a tool argument would split the header and add cookies
+        the operation never declared.
+        """
+        if isinstance(value, dict | list | tuple):
+            raise ValueError(
+                f"Cookie parameter '{param_name}' contains a nested "
+                f"{type(value).__name__}; cookie form serialization supports "
+                "only scalar values"
+            )
+        return quote(_query_scalar_to_str(value), safe=_COOKIE_SAFE)
+
+    @classmethod
+    def _cookie_joined_item(cls, param_name: str, value: Any) -> str:
+        """Encode a non-exploded cookie item; `,` and `=` also separate items."""
+        return (
+            cls._cookie_scalar_to_str(param_name, value)
+            .replace(",", "%2C")
+            .replace("=", "%3D")
+        )
 
     def _serialize_query_params(
         self,

@@ -6,6 +6,18 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.2.5" description="November 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.2.5: Smoke Signals"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.5"
+cta="Read the release notes"
+>
+This release serves `subscriptions/listen` on 2026-07-28 connections, so clients can open a stream and receive tool, prompt and resource change events, and `FastMCP.notify_tools_changed()` and its siblings now push those events to listening clients. A new opt-in `UsageMiddleware` records per-user, per-tool usage as the OpenTelemetry `mcp.server.operation.duration` histogram for `tools/call` and `prompts/get`; add it before any error-handling middleware. An experimental Events extension (SEP-3415) lands in `fastmcp.experimental.events`, with poll and push delivery and a `fastmcp experimental events list|watch` CLI; it is opt-in, and its API may change in any release without a deprecation period.
+
+Thanks to our 25 contributors, including 6 first-time contributors.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.2.4" description="November 20, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.2.4: Burn After Reading"

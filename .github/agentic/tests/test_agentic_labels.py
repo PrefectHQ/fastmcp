@@ -1,10 +1,12 @@
 from flows.agentic_labels import (
     DUPLICATE_LABEL,
     MRE_LABEL,
+    TRIAGE_LABEL,
     apply_writes,
     mode,
     planned_writes,
     summary,
+    triage_labels,
 )
 
 
@@ -155,3 +157,86 @@ def test_summary_names_mode() -> None:
         writes, "dry_run"
     )
     assert "Applied" in summary(writes, "on")
+
+
+def test_assessed_issues_get_area_and_maintainer_queue_labels() -> None:
+    review = {
+        "bins": {
+            "existing_review": [{"issue_number": 1, "assessment": {"area": "client"}}],
+            "decisions": [{"issue_number": 2, "area": "auth"}],
+            "evidence": [
+                {"issue_number": 3, "decision": "reproduced", "assessment": {}},
+                {"issue_number": 4, "decision": "evidence_needed", "area": "cli"},
+            ],
+            "pruning": [{"issue_number": 5}, duplicate_item(6, 1)],
+            "unchanged": [{"issue_number": 7, "area": "server"}],
+            "operational": [{"issue_number": 8, "assessment": {"area": "http"}}],
+        }
+    }
+    writes = triage_labels(review, lambda n: issue(n))
+    assert [(w["issue_number"], w["label"]) for w in writes] == [
+        (1, "client"),
+        (1, TRIAGE_LABEL),
+        (2, "auth"),
+        (2, TRIAGE_LABEL),
+        (3, TRIAGE_LABEL),
+        (4, "cli"),
+        (5, TRIAGE_LABEL),
+        (7, "server"),
+        (8, "http"),
+    ]
+    assert not any(w.get("comment") for w in writes)
+
+
+def test_triage_labels_respect_existing_labels_and_unwritable_items() -> None:
+    live = {
+        1: issue(1, labels=("server",)),
+        2: issue(2, labels=(TRIAGE_LABEL,)),
+        3: issue(3, labels=(MRE_LABEL,)),
+        4: issue(4, state="closed"),
+        5: issue(5, pull_request={}),
+        6: issue(6, user={"type": "Bot"}),
+    }
+    review = {
+        "bins": {
+            "decisions": [{"issue_number": n, "area": "client"} for n in range(1, 7)]
+            + [{"issue_number": 9, "area": "not-an-area"}],
+        }
+    }
+    writes = triage_labels(review, live.get)
+    assert [(w["issue_number"], w["label"]) for w in writes] == [
+        (1, TRIAGE_LABEL),
+        (2, "client"),
+        (3, "client"),
+    ]
+
+
+def test_label_only_writes_skip_the_comment() -> None:
+    calls = []
+    apply_writes(
+        [{"issue_number": 5, "label": "client"}],
+        lambda path, body: calls.append((path, body)),
+    )
+    assert calls == [
+        ("repos/PrefectHQ/fastmcp/issues/5/labels", {"labels": ["client"]}),
+    ]
+
+
+def test_assessor_must_answer_area_but_old_assessments_still_validate() -> None:
+    from flows.agentic_stack_plans import Assessment
+
+    schema = Assessment.model_json_schema()
+    assert "area" in schema["required"]
+    # A blank area satisfies "required", so the assessor is never offered one.
+    assert "" not in schema["properties"]["area"]["enum"]
+    assert "anyOf" not in schema["properties"]["area"]
+    old = Assessment.model_validate(
+        {
+            "decision": "skip",
+            "reason": "Retained before areas existed",
+            "contract": "",
+            "prior_art": [],
+            "question": "",
+        }
+    )
+    assert old.area == ""

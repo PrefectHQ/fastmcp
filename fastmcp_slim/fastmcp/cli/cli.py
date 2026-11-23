@@ -23,6 +23,7 @@ from fastmcp.cli import run as run_module
 from fastmcp.cli.auth import auth_app
 from fastmcp.cli.client import call_command, discover_command, list_command
 from fastmcp.cli.deploy.command import login, logout, whoami
+from fastmcp.cli.events import events_app
 from fastmcp.cli.generate import generate_cli_command
 from fastmcp.cli.install import install_app
 from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
@@ -1123,6 +1124,14 @@ app.command(list_command, name="list")
 app.command(call_command, name="call")
 app.command(discover_command, name="discover")
 app.command(generate_cli_command, name="generate-cli")
+
+# Experimental commands may change in any release without a deprecation period
+experimental_app = cyclopts.App(
+    name="experimental",
+    help="Experimental commands that may change in any release",
+)
+experimental_app.command(events_app)
+app.command(experimental_app)
 
 # Add auth subcommand group (includes CIMD commands)
 app.command(auth_app)

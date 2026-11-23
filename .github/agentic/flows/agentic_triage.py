@@ -26,7 +26,9 @@ from prefect.variables import Variable
 
 from flows.agentic_artifacts import plain, published_reviews, retain_markdown
 from flows.agentic_backlog import Intake, due, inventory, settle
+from flows.agentic_burst import burst, burst_config, burst_line
 from flows.agentic_claims import claim_work
+from flows.agentic_digest import record_next_step
 from flows.agentic_freshness import revalidate
 from flows.agentic_github import can_write
 from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
@@ -36,8 +38,9 @@ from flows.agentic_labels import (
     mode,
     planned_writes,
     summary,
+    triage_labels,
 )
-from flows.agentic_outcome import outcome_lines, subjects
+from flows.agentic_outcome import next_steps, subjects
 from flows.agentic_review_app import LABEL_PERMISSIONS, review_client
 from flows.agentic_stack import same_json
 from flows.agentic_stack_policy import Batch
@@ -115,6 +118,21 @@ def maintainer(sender: str, read: Callable[[str], object] = github) -> bool:
         return can_write(read, sender)
     except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
         return False
+
+
+def sender_burst(config: Intake, read: Callable[[str], object] = github) -> dict | None:
+    """The sender's burst, if this event's item is past their limit.
+
+    A failed lookup counts as no burst, so an API error never drops an event.
+    """
+    trigger = max([*config.issues, *config.pull_requests], default=0)
+    if not config.sender or not trigger:
+        return None
+    try:
+        limits = burst_config(Variable.get(CONFIG_VARIABLE, default={}))
+        return burst(read, config.sender, trigger, limits, datetime.now(UTC))
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError, KeyError):
+        return None
 
 
 def admit(
@@ -435,10 +453,36 @@ def triage_intake(
     deadline = datetime.now(UTC) + timedelta(hours=2)
     with tempfile.TemporaryDirectory(prefix="fastmcp-intake-") as temporary:
         intake_tools(Path(temporary))
-        if config.sender and maintainer(config.sender):
+        # A maintainer's own PR needs no triage, but an issue they file (often
+        # through an agent) still gets assessed and labeled like anyone's.
+        if config.sender and config.pull_requests and maintainer(config.sender):
             return Completed(
                 data={"skipped": "maintainer_sender", "sender": config.sender},
                 message=f"Skipped: {config.sender} is a maintainer",
+            )
+        if config.sender and (found := sender_burst(config)):
+            # Edits and pushes to the crossing item rerun intake; announce once.
+            claim = f"fastmcp-burst-{config.sender.lower()}-{found['crossing']}"
+            if found["announce"] and latest(claim) is None:
+                with get_client(sync_client=True) as client:
+                    client.create_artifact(
+                        ArtifactCreate(
+                            key=claim,
+                            flow_run_id=current.id,
+                            type="fastmcp-triage-intake",
+                            data=found,
+                        )
+                    )
+                emit_event(
+                    event="fastmcp.triage.outcome",
+                    resource={
+                        "prefect.resource.id": f"fastmcp.triage.intake.{current.id}"
+                    },
+                    payload={"text": burst_line(found)},
+                )
+            return Completed(
+                data={"skipped": "burst", **found},
+                message=f"Skipped: {config.sender} opened {found['count']} items",
             )
         with claim_work([config.scope()], current.id, deadline):
             return triage(config, runtime, controller_id, current.id)
@@ -464,7 +508,14 @@ def triage(
     result = finish(plan, owner, config.scope(), run_id)
     announce(owner, result)
     write_labels(owner, config.scope(), runtime, result)
-    reasons = attention(result["review"]) if result["review"] else []
+    # Retries are quiet; the run is Degraded (and alerts) only for issues that
+    # used their last try.
+    exhausted = {
+        receipt["issue_number"]
+        for receipt in result["receipts"]
+        if receipt["status"] == "operational"
+    }
+    reasons = attention(result["review"], exhausted) if result["review"] else []
     if reasons:
         return Completed(
             name="Degraded", data=result, message="; ".join(reasons)[:2000]
@@ -473,16 +524,16 @@ def triage(
 
 
 def announce(owner: UUID, state: dict) -> None:
-    """Emit the Slack outcome when any admitted issue now waits on a maintainer."""
+    """Record the next step for each issue now waiting on a maintainer.
+
+    Nothing is posted here: the digest agent reads these and decides what to say.
+    """
     if not state["review"]:
         return
-    lines = outcome_lines(state["review"], state.get("issues", []), live_item)
-    if lines:
-        emit_event(
-            event="fastmcp.triage.outcome",
-            resource={"prefect.resource.id": f"fastmcp.triage.intake.{owner}"},
-            payload={"text": "\n".join(lines)},
-        )
+    for number, line in next_steps(
+        state["review"], state.get("issues", []), live_item
+    ).items():
+        record_next_step(owner, number, line)
 
 
 def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None:
@@ -498,6 +549,7 @@ def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None
         if current_mode == "off":
             return
         writes = planned_writes(state["review"], live_item)
+        writes += triage_labels(state["review"], live_item)
         if writes and current_mode == "on":
             app = runtime.reviewer_app
             if app is None:
@@ -512,11 +564,6 @@ def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None
             )
     except Exception as error:  # noqa: BLE001 - reported, never fatal to intake
         get_run_logger().warning("Label writes failed: %s", error)
-        emit_event(
-            event="fastmcp.triage.outcome",
-            resource={"prefect.resource.id": f"fastmcp.triage.intake.{owner}"},
-            payload={"text": f"Triage label writes failed: {str(error)[:300]}"},
-        )
 
 
 def live_item(number: int) -> dict | None:
@@ -533,10 +580,14 @@ def live_item(number: int) -> dict | None:
 REQUEUED = frozenset({"stale", "baseline_changed"})
 
 
-def attention(review: dict) -> list[str]:
+def attention(review: dict, exhausted: set[int]) -> list[str]:
     reasons = []
     for item in review["bins"]["operational"]:
-        if item.get("status") in REQUEUED:
+        number = item.get("issue_number")
+        # A controller-wide failure has no issue number and fails every selected issue.
+        if item.get("status") in REQUEUED or not (
+            number in exhausted or (number is None and exhausted)
+        ):
             continue
         detail = str(item.get("detail") or "")[:300]
         reason = item.get("reason") or detail or item.get("status")
