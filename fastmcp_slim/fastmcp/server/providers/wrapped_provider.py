@@ -52,6 +52,9 @@ class _WrappedProvider(Provider):
         """Preserve bundled extensions through transforms and namespaces."""
         return self._inner.required_extensions()
 
+    def _served_servers(self) -> Sequence[FastMCP]:
+        return self._inner._served_servers()
+
     @contextmanager
     def _extension_runtime(
         self, available: frozenset[str], *, root: FastMCP | None

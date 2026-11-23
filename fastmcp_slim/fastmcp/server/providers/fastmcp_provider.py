@@ -419,6 +419,9 @@ class FastMCPProvider(Provider):
         """Expose the mounted server's bundled and auto-registerable extensions."""
         return self.server.required_extensions()
 
+    def _served_servers(self) -> Sequence[FastMCP]:
+        return (self.server,)
+
     @contextmanager
     def _extension_runtime(
         self, available: frozenset[str], *, root: FastMCP | None

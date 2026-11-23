@@ -3,10 +3,11 @@
 # Jetstream, so the floor updates within seconds without anyone polling GitHub.
 #
 # SECURITY: pull_request_target runs with secrets, so this workflow never checks
-# out or runs PR-head code; it reads only the event payload and the GitHub API.
-# The cached session is encrypted with the app password, which PR runs from
-# forks cannot read. Reviews are picked up from the repo's event feed by
-# these runs, since reviews on fork PRs trigger workflows without secrets.
+# out or runs PR-head code; it reads only the GitHub API. The cached session is
+# encrypted with the app password, which PR runs from forks cannot read.
+#
+# Each event's record comes from the webhook receiver (scripts/floor_receiver).
+# This workflow writes only the snapshot of open work.
 name: Triage floor feed
 
 on:
@@ -15,10 +16,6 @@ on:
   pull_request_target:
     types:
       [opened, reopened, closed, labeled, ready_for_review, converted_to_draft]
-  issue_comment:
-    types: [created]
-  release:
-    types: [published]
   schedule:
     - cron: "17,47 * * * *"
   workflow_dispatch:

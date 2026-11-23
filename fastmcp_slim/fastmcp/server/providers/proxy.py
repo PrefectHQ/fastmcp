@@ -1874,7 +1874,15 @@ async def default_proxy_message_handler(
     """
     if isinstance(message, _FORWARDED_LIST_CHANGED_NOTIFICATIONS):
         ctx = get_context()
+        # Handshake-era downstream clients get it on the session's push
+        # channel; 2026-07-28 clients only see it on their listen streams.
         await ctx.send_notification(message)
+        if isinstance(message, mcp_types.ToolListChangedNotification):
+            await ctx.fastmcp.notify_tools_changed()
+        elif isinstance(message, mcp_types.ResourceListChangedNotification):
+            await ctx.fastmcp.notify_resources_changed()
+        else:
+            await ctx.fastmcp.notify_prompts_changed()
 
 
 def _restore_request_context(
