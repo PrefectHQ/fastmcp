@@ -223,7 +223,7 @@ class MCPServerConfig(BaseModel):
     def from_file(cls, file_path: Path) -> MCPServerConfig:
         """Load configuration from a JSON file.
 
-        Relative `source.path` and `environment.requirements` values are
+        Relative `source.path` and `environment` file paths are
         anchored to the configuration file's directory (see `anchor_paths`).
 
         Args:
@@ -250,7 +250,8 @@ class MCPServerConfig(BaseModel):
     def anchor_paths(self, config_dir: Path) -> None:
         """Make relative file paths absolute against the config file's directory.
 
-        Anchors `source.path` and `environment.requirements`, so a config
+        Anchors `source.path` and the environment's `requirements`, `project`
+        and `editable` paths, so a config
         loaded from another working directory still finds its files. Paths are
         made absolute without following symlinks, so a symlinked `fastmcp.json`
         resolves paths beside the link. Other paths, such as `deployment.cwd`,
@@ -265,12 +266,19 @@ class MCPServerConfig(BaseModel):
         if not source_path.is_absolute():
             self.source.path = os.path.abspath(config_dir / source_path)
 
-        requirements = self.environment.requirements
-        if requirements is not None:
-            requirements = requirements.expanduser()
-            if not requirements.is_absolute():
-                requirements = Path(os.path.abspath(config_dir / requirements))
-            self.environment.requirements = requirements
+        def anchor(path: Path) -> Path:
+            path = path.expanduser()
+            if path.is_absolute():
+                return path
+            return Path(os.path.abspath(config_dir / path))
+
+        environment = self.environment
+        if environment.requirements is not None:
+            environment.requirements = anchor(environment.requirements)
+        if environment.project is not None:
+            environment.project = anchor(environment.project)
+        if environment.editable is not None:
+            environment.editable = [anchor(path) for path in environment.editable]
 
     @classmethod
     def from_cli_args(

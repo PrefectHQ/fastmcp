@@ -380,6 +380,29 @@ class TestMCPServerConfig:
         assert config.environment.requirements == config_dir / "requirements.txt"
         assert config.deployment.cwd == "runtime"
 
+    def test_from_file_resolves_project_and_editable_from_config_directory(
+        self, tmp_path, monkeypatch
+    ):
+        config_dir = tmp_path / "proj"
+        config_dir.mkdir()
+        caller_dir = tmp_path / "elsewhere"
+        caller_dir.mkdir()
+        config_file = config_dir / "fastmcp.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "source": {"path": "server.py"},
+                    "environment": {"project": ".", "editable": [".", "../lib"]},
+                }
+            )
+        )
+        monkeypatch.chdir(caller_dir)
+
+        config = MCPServerConfig.from_file(config_file)
+
+        assert config.environment.project == config_dir
+        assert config.environment.editable == [config_dir, tmp_path / "lib"]
+
     def test_from_file_preserves_absolute_paths(self, tmp_path):
         source_path = (tmp_path / "server.py").resolve()
         requirements = (tmp_path / "requirements.txt").resolve()
