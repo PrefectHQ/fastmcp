@@ -78,7 +78,11 @@ one gets a follow-up patch, never a re-tag.
    honor opt-outs, and deduplicate entries. Save the completed generated notes to
    `/tmp/generated-notes.md`.
 
-2. **Propose titles.** Titles are `v<version>: <pun>`, pun on the release's main
+2. **Classify and smoke before proposing anything.** For every user-facing entry in the preview, take the compatibility line from its review verdict (or write one per [review-pr](../review-pr/SKILL.md) step 4) and sort the release into: fixes only, tightening, loosening, new defaults, new capabilities, dependency floor changes. List public symbols added or removed since the last tag on the target line. Recommend patch or minor against the versioning policy in [releases](../../../docs/development/releases.mdx) and prior releases; the maintainer decides. Every tightening, loosening, and new default gets a sentence in the handwritten notes with its opt-out or workaround.
+
+   Then build the wheels (`uv build --all-packages`), install them into a fresh venv outside the repository, and run a smoke script against them, kept at `scripts/smoke.py` in this skill's directory so each release extends the last one instead of rewriting it: a server and client over stdio and HTTP in both protocol eras, a proxy, the OAuth proxy flow, and the CLI. Add one probe per tightening or new default and run it against both the previous release from PyPI and the new wheels, so the notes describe observed behavior. A smoke failure stops the release; a smoke pass does not settle compatibility.
+
+3. **Propose titles.** Titles are `v<version>: <pun>`, pun on the release's main
    theme from the release preview. Check prior titles with
    `gh release list --repo PrefectHQ/fastmcp --limit 60` to avoid repeats and keep
    the options on brand: two to four words, a familiar phrase bent toward the
@@ -91,13 +95,13 @@ one gets a follow-up patch, never a re-tag.
    and downstream projects by name. `changelog_entry.py` refuses an intro that reads
    as process history. Get sign-off on both before anything is pushed.
 
-3. **Write the notes file** outside the repository (a temp directory), intro only.
+4. **Write the notes file** outside the repository (a temp directory), intro only.
    The release title is the heading, so the file has none.
 
    The changelog entry built from it and the completed `/tmp/generated-notes.md`
    becomes the GitHub release body, so the credit added in step 1 carries over.
 
-4. **Docs entries.** Branch `docs/changelog-<new>` from `origin/main` (for every line) and insert
+5. **Docs entries.** Branch `docs/changelog-<new>` from `origin/main` (for every line) and insert
    both blocks (the last argument is the branch the notes are generated against):
 
    ```bash
@@ -117,7 +121,7 @@ one gets a follow-up patch, never a re-tag.
    The docs PR itself appears in the GitHub notes but not in the mirror; that is
    expected.
 
-5. **Publish the draft.** The docs PR's merge runs `Draft release`, which turns the
+6. **Publish the draft.** The docs PR's merge runs `Draft release`, which turns the
    new changelog block into a draft release titled `v<new>: <pun>`, targeting the
    merge commit on `main`, or the head of `release/<major>.<minor>` (else
    `release/<major>.x`) when that branch exists. A draft has no tag and publishes
@@ -139,7 +143,7 @@ one gets a follow-up patch, never a re-tag.
    read `v<prev>...v<new>`. Verify the published contributor entries and
    `New Contributors` list against the completed notes.
 
-6. **Watch the fan-out.** The slim run is keyed to the tag; the others are
+7. **Watch the fan-out.** The slim run is keyed to the tag; the others are
    `workflow_run` events on the default branch, so select them by workflow name.
    The slim run appears within a minute of the tag and waits for the maintainer to
    approve the `pypi` deployment; the `fastmcp` run is queued the
@@ -154,7 +158,7 @@ one gets a follow-up patch, never a re-tag.
    Confirm each package with `curl -fsS https://pypi.org/pypi/<pkg>/<new>/json | jq .info.version`;
    the unversioned endpoint lags a few minutes.
 
-7. **Publish docs** (eligible stable releases from the default-branch lineage only;
+8. **Publish docs** (eligible stable releases from the default-branch lineage only;
    maintenance releases leave gofastmcp.com/docs on the current major). After a
    successful eligible `fastmcp` run, its last job has opened
    `Publish FastMCP v<new> docs` against `published-docs`:
