@@ -350,39 +350,41 @@ def to_json(value: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def _f14_probe() -> bool:
-    """F14: a choice of one option is sent as `const` (no spec shape), and a
-    multi-select of one option is refused when the server builds the form."""
+def _issue_6692_probe() -> bool:
+    """A choice of one option is sent as `const` (no spec shape), and a
+    multi-select of one option is refused when the server builds the form.
+    https://github.com/PrefectHQ/fastmcp/issues/6692"""
     schema = parse_elicit_response_type(["a"]).schema
     return spec_shape(schema["properties"]["value"]) is None
 
 
-def _f15_probe() -> bool:
-    """F15: an integer `Literal` or `Enum` is sent as an integer enum, which no
-    spec shape has (enums are strings), so a spec client drops the choices."""
+def _issue_6693_probe() -> bool:
+    """An integer `Literal` or `Enum` is sent as an integer enum, which no
+    spec shape has (enums are strings), so a spec client drops the choices.
+    https://github.com/PrefectHQ/fastmcp/issues/6693"""
     schema = parse_elicit_response_type(Literal[1, 2]).schema
     return spec_shape(schema["properties"]["value"]) is None
 
 
-F14_OPEN = still_open("F14", _f14_probe)
-F15_OPEN = still_open("F15", _f15_probe)
+ISSUE_6692_OPEN = still_open("#6692", _issue_6692_probe)
+ISSUE_6693_OPEN = still_open("#6693", _issue_6693_probe)
 INT_CHOICES = {"literal int", "int enum"}
 
 
 def known(s: Spec) -> str | None:
     """The open finding one field runs into, if any."""
-    if F14_OPEN and len(s.choices) == 1:
-        return "F14"
-    if F15_OPEN and s.kind in INT_CHOICES:
-        return "F15"
+    if ISSUE_6692_OPEN and len(s.choices) == 1:
+        return "#6692"
+    if ISSUE_6693_OPEN and s.kind in INT_CHOICES:
+        return "#6693"
     return None
 
 
 def refused_for_known(form: Form, error: TypeError) -> str | None:
     """The open finding behind a refused form: the field the error names."""
     for name, s in form.fields.items():
-        if f"field '{name}'" in str(error) and known(s) == "F14":
-            return "F14"
+        if f"field '{name}'" in str(error) and known(s) == "#6692":
+            return "#6692"
     return None
 
 
@@ -392,7 +394,7 @@ def test_every_requested_schema_is_a_spec_form(form):
         config = parse_elicit_response_type(form.response_type)
     except TypeError as e:
         if refused_for_known(form, e):
-            event("known: F14")
+            event("known: #6692")
             return
         raise
     schema = config.schema
@@ -445,7 +447,7 @@ def test_the_server_gets_what_the_user_chose(data, form):
         parse_elicit_response_type(form.response_type)
     except TypeError as e:
         if refused_for_known(form, e):
-            event("known: F14")
+            event("known: #6692")
             return
         raise
     got = LOOP.run_until_complete(_elicit(form, answers))

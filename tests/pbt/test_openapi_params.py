@@ -77,11 +77,11 @@ def parameters(draw) -> tuple[dict[str, Any], Any]:
 
     strings = PLAIN_TEXT if where == "header" else ANY_TEXT
     if where == "cookie":
-        # Separators inside cookie items are the interesting case. While F16
+        # Separators inside cookie items are the interesting case. While #6694
         # is open, an item sent raw (a scalar, or exploded) avoids its shape:
         # skipping whole examples would starve the joined forms.
         strings = st.one_of(SEPARATORS, SEPARATORS, ANY_TEXT)
-        if F16_OPEN and (shape == "scalar" or explode_of(param)):
+        if ISSUE_6694_OPEN and (shape == "scalar" or explode_of(param)):
             # `%` too: sent raw, it reads back as an escape it never was.
             strings = strings.filter(
                 lambda v: ";" not in v and "%" not in v and v.isascii()
@@ -97,8 +97,8 @@ def parameters(draw) -> tuple[dict[str, Any], Any]:
         keys = draw(st.lists(st.sampled_from(KEYS), max_size=3, unique=True))
         value = {k: draw(strings) for k in keys}
         schema = {"type": "object", "properties": {k: item for k in KEYS}}
-    if where == "cookie" and F16_OPEN:
-        # A joined cookie still cannot hold non-ASCII (F16).
+    if where == "cookie" and ISSUE_6694_OPEN:
+        # A joined cookie still cannot hold non-ASCII (#6694).
         items = [*value.values()] if isinstance(value, dict) else value
         assume(
             all(
@@ -157,9 +157,10 @@ def cookie_pairs(header: str | None) -> list[tuple[str, str]]:
     return [(name, value) for name, _, value in pairs]
 
 
-def _f16_probe() -> bool:
-    """F16: a scalar or exploded cookie value holding `;` is sent raw, so the
-    backend reads cookies the call never set."""
+def _issue_6694_probe() -> bool:
+    """A scalar or exploded cookie value holding `;` is sent raw, so the
+    backend reads cookies the call never set.
+    https://github.com/PrefectHQ/fastmcp/issues/6694"""
     spec = _spec(
         [{"name": "c", "in": "cookie", "required": True, "schema": {"type": "string"}}]
     )
@@ -209,7 +210,7 @@ def _send(spec: dict[str, Any], args: dict[str, Any]) -> httpx2.Request:
     return requests[0]
 
 
-F16_OPEN = still_open("F16", _f16_probe)
+ISSUE_6694_OPEN = still_open("#6694", _issue_6694_probe)
 
 
 @pytest.fixture(autouse=True)
