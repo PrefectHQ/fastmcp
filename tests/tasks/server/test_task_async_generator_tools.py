@@ -126,7 +126,7 @@ def _task_server() -> FastMCP:
     # The annotation describes the materialized list this tool returns (it is
     # what the output schema is built from), not the generator object itself.
     @mcp.tool(task=True)
-    async def agen_typed(n: int) -> list[int]:  # ty: ignore[invalid-return-type]
+    async def agen_typed(n: int) -> list[int]:  # ty: ignore[invalid-generator-return-type]
         for i in range(n):
             yield i
 

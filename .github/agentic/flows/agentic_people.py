@@ -8,18 +8,32 @@ on that card instead of failing the assessment.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
+from flows.agentic_github import can_write
+
 Read = Callable[[str], dict]
 REPO = "PrefectHQ/fastmcp"
 MAX_PEOPLE = 7
+MAX_MAINTAINER_CHECKS = 15
 ELSEWHERE_DAYS = 182
 
 
+LOOKUP_ERRORS = (
+    RuntimeError,
+    ValueError,
+    KeyError,
+    OSError,
+    subprocess.SubprocessError,
+)
+
+
 def _count(read: Read, query: str, per_page: int = 1) -> dict:
-    return read("search/issues?" + urlencode({"q": query, "per_page": per_page}))
+    parameters = {"q": query, "per_page": per_page, "sort": "created", "order": "desc"}
+    return read("search/issues?" + urlencode(parameters))
 
 
 def card(login: str, read: Read, now: datetime) -> dict:
@@ -33,7 +47,7 @@ def card(login: str, read: Read, now: datetime) -> dict:
         elsewhere = _count(
             read, f"is:pr author:{login} -repo:{REPO} created:>={since}", 100
         )
-    except (RuntimeError, ValueError, KeyError, OSError) as error:
+    except LOOKUP_ERRORS as error:
         return {"login": login, "unavailable": type(error).__name__}
     repos = {item["repository_url"] for item in elsewhere.get("items", [])}
     return {
@@ -65,7 +79,29 @@ def people(evidence: dict, read: Read, now: datetime) -> dict:
     ]
     logins = [login for login in dict.fromkeys([reporter, *authors]) if login]
     logins = logins[:MAX_PEOPLE]
-    cards = {login: card(login, read, now) for login in logins}
+    commenters = [
+        comment["author"].get("login")
+        for comment in evidence.get("comments", [])
+        if comment.get("author", {}).get("type") != "Bot"
+    ]
+    everyone = [login for login in dict.fromkeys([*logins, *commenters]) if login]
+    maintainers, unchecked = [], []
+    for login in everyone[:MAX_MAINTAINER_CHECKS]:
+        try:
+            if can_write(read, login):
+                maintainers.append(login)
+        except LOOKUP_ERRORS:
+            unchecked.append(login)
+    # Say who each card is: an assessor once credited a commenter asking for
+    # assignment with the reporter's history and first claim (#6692).
+    cards = {
+        login: {
+            **card(login, read, now),
+            "role": "reporter" if login == reporter else "pr_author",
+            "maintainer": login in maintainers,
+        }
+        for login in logins
+    }
     try:
         opened = read(f"repos/{REPO}/issues/{issue['number']}")["created_at"]
         # String keys: this lands in flow run parameters, which round-trip
@@ -77,11 +113,15 @@ def people(evidence: dict, read: Read, now: datetime) -> dict:
             for pr in evidence["prs"]
             if reporter and pr["author"].get("login") == reporter
         }
-    except (RuntimeError, ValueError, KeyError, OSError):
+    except LOOKUP_ERRORS:
         opened, timing = None, {}
     return {
         "issue_author": reporter,
         "issue_opened_at": opened,
         "reporter_prs_opened_hours_after_issue": timing,
         "cards": list(cards.values()),
+        # Write access to the repository, checked directly: a maintainer's issue or
+        # comment is a maintainer's, whatever their PR counts say.
+        "maintainers": maintainers,
+        "maintainer_check_failed": unchecked,
     }

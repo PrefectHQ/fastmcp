@@ -78,10 +78,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Build wheels
         id: build
@@ -155,6 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           path: fastmcp
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -170,7 +172,7 @@ jobs:
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.13"
           enable-cache: true
@@ -188,7 +190,7 @@ jobs:
           echo "UV_RUN=uv run --all-extras --no-extra mcp-tasks --all-packages \
             --exclude-newer-package authlib=false \
             --exclude-newer-package certifi=false \
-            --exclude-newer-package pydocket=2026-10-06T00:00:00Z \
+            --exclude-newer-package pydocket=2026-11-19T00:00:00Z \
             --exclude-newer-package uncalled-for=false \
             $otel_with \
             --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
@@ -204,9 +206,13 @@ jobs:
 
       - name: Run pydantic-ai's MCP tests
         working-directory: pydantic-ai
+        # The deselected test asserts the pre-#5318 prompt hint (a JSON-schema
+        # suffix on plain `str` args in future-import modules). Drop the
+        # deselect once pydantic-ai relaxes that assertion.
         run: >-
           $UV_RUN --quiet pytest -p no:cacheprovider -q
           --junitxml=$GITHUB_WORKSPACE/junit.xml
+          --deselect tests/test_mcp.py::TestMCPToolsetIntegration::test_list_prompts_returns_pai_types
           tests/test_mcp.py tests/models/test_mcp_sampling.py tests/test_conftest.py
 
       - name: Summarize
@@ -221,6 +227,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           path: fastmcp
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -236,7 +243,7 @@ jobs:
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.13"
           enable-cache: true
@@ -280,6 +287,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           path: fastmcp
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -295,7 +303,7 @@ jobs:
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.12"
 
@@ -344,6 +352,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           path: fastmcp
 
       # The same sparse checkout Phoenix's own unit-test job uses.
@@ -369,7 +378,7 @@ jobs:
 
       # Phoenix pins the uv version its lockfile needs.
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version-file: phoenix/pyproject.toml
           python-version: "3.11"
@@ -485,6 +494,8 @@ jobs:
       FASTMCP_EXPECTED_VERSION: ${{ needs.plan.outputs.fastmcp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # The servers every smoke connects to run from this environment.
       - name: Setup uv

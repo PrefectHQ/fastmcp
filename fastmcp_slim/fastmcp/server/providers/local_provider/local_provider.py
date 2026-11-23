@@ -191,7 +191,7 @@ class LocalProvider(
             elif self._on_duplicate == "warn":
                 logger.warning(f"Component already exists: {component.key}")
             elif self._on_duplicate == "ignore":
-                return existing  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
+                return existing  # type: ignore[return-value]  # ty:ignore[invalid-explicit-return]
             # "replace" and "warn" fall through to add
 
         # Check for versioned/unversioned mixing before adding

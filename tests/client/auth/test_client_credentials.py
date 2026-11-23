@@ -10,6 +10,7 @@ endpoint, exactly as httpx would while running the auth flow.
 
 import base64
 import time
+import types
 import warnings
 from collections.abc import Callable
 from contextlib import aclosing
@@ -20,6 +21,7 @@ import jwt
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.client.auth import OAuthFlowError, OAuthTokenError
+from mcp.client.auth import oauth2 as mcp_oauth2
 from mcp.shared.auth import OAuthToken
 
 from fastmcp.client import Client
@@ -444,7 +446,9 @@ class TestPersistentTokenExpiry:
     """A token reloaded from persistent storage honors its stored expiry."""
 
     @pytest.mark.parametrize("expires_in", [-100, 0])
-    async def test_expired_stored_token_is_refetched(self, expires_in):
+    async def test_expired_stored_token_is_refetched(
+        self, expires_in, monkeypatch: pytest.MonkeyPatch
+    ):
         """Recreating a provider against a store holding an already-expired token
         re-fetches instead of trusting the stale token as if it never expires.
 
@@ -452,6 +456,20 @@ class TestPersistentTokenExpiry:
         declares an expiry, so it must not be mistaken for a non-expiring one.
         """
         store = MemoryStore()
+        # The SDK treats a token as valid while `time.time() <= expiry`. With
+        # `expires_in=0` the expiry is the instant the token was stored, and
+        # Windows' ~16ms clock can return that same instant at the validity
+        # check. Read the SDK's clock a second later, as any real reload would;
+        # every other `time` attribute passes through unchanged.
+        later = types.SimpleNamespace(
+            **{
+                name: getattr(time, name)
+                for name in dir(time)
+                if not name.startswith("_")
+            }
+        )
+        later.time = lambda: time.time() + 1
+        monkeypatch.setattr(mcp_oauth2, "time", later)
 
         def make_provider() -> ClientCredentialsOAuthProvider:
             return ClientCredentialsOAuthProvider(

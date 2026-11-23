@@ -172,6 +172,18 @@ Background task traces have two parts:
 
 Span links preserve the causal relationship without forcing worker sampling to inherit the submit trace's sampling decision. Some tracing backends do not display links prominently, so the worker trace may look disconnected even though the link is present.
 
+To keep the whole request in one trace, make the worker span a child of the submission instead:
+
+```python
+from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+
+mcp = FastMCP("My Server")
+mcp.add_extension(TasksExtension(parent_task_spans=True))
+```
+
+Or set `FASTMCP_DOCKET_PARENT_TASK_SPANS=true`. The span link is still recorded. With a `ParentBased` sampler, the execution now follows the submit trace's sampling decision, so a task submitted from an unsampled trace is not recorded.
+
 Frequent status polling can produce more detail than you need. You can drop those client and server spans with a sampler that checks the span name before delegating to `ParentBased`:
 
 ```python
@@ -300,6 +312,59 @@ docker run -d --name jaeger \
 ```
 
 Then view traces at http://localhost:16686
+
+## Usage Metrics
+
+Server spans already record who called which tool, how long it took, and whether it failed. Sampled traces cannot reliably answer how often each user calls a tool. `UsageMiddleware` records request counts, durations, and failures as OpenTelemetry metrics, independently of trace sampling.
+
+Add the middleware and configure a meter provider with an exporter. Like the rest of FastMCP's instrumentation, the middleware records nothing until an SDK is configured.
+
+```python
+from opentelemetry import metrics
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+from fastmcp import FastMCP
+from fastmcp.server.middleware.usage import UsageMiddleware
+
+reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+metrics.set_meter_provider(MeterProvider(metric_readers=[reader]))
+
+mcp = FastMCP("my-server")
+mcp.add_middleware(UsageMiddleware(user_id_salt="a-secret-value"))
+```
+
+<Note>
+The metric and attribute names follow the OpenTelemetry MCP semantic conventions, which are still in development upstream. These names may change in a future release to track the conventions, and the changelog will say when they do. If your dashboards or alerts depend on the exact names, pin your FastMCP version.
+</Note>
+
+Every `tools/call` and `prompts/get` request is recorded on the `mcp.server.operation.duration` histogram, in seconds. The metric follows the [MCP semantic conventions for `mcp.server.operation.duration`](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md#metric-mcpserveroperationduration) for those two methods; other MCP methods, such as `tools/list` or `resources/read`, are not recorded. The histogram's count is the number of calls, and it uses the bucket boundaries the conventions recommend, from 10 ms to 300 s. Each data point carries:
+
+| Attribute | Description |
+|-----------|-------------|
+| `mcp.method.name` | `tools/call` or `prompts/get` |
+| `gen_ai.tool.name` / `gen_ai.prompt.name` | The requested component, omitted for routing and access failures |
+| `gen_ai.operation.name` | `execute_tool`, on tool calls only |
+| `error.type` | Present only on failed calls (see below) |
+| `rpc.status_code` | The JSON-RPC error code, when the response is a JSON-RPC error |
+| `mcp.protocol.version` | The negotiated MCP protocol version |
+| `network.transport` | `tcp` over HTTP, `pipe` over stdio, absent for in-memory clients |
+| `network.protocol.name` / `network.protocol.version` | `http` and the HTTP version, over HTTP |
+| `fastmcp.server.name` | Server name |
+| `enduser.pseudo.id` or `enduser.id` | The authenticated user, when the server has auth |
+
+`error.type` describes the response the client receives, as the conventions define it. A tool call that fails comes back as a result with `isError` set, so it reports `tool_error`; that includes calls to unknown, disabled, or unauthorized tools. A prompt that fails comes back as a JSON-RPC error, so it reports the error code, such as `-32603`, in both `error.type` and `rpc.status_code`. The conventions treat `-32700`, `-32600`, `-32601`, `-32602`, and `-32002` as requests the server could not serve rather than server failures, so those codes, which include an unknown prompt or missing prompt arguments, set `rpc.status_code` without `error.type`. A request that is cancelled or times out reports `cancelled`. An unexpected exception that FastMCP has not mapped to an error code reports its class name.
+
+Unknown, disabled, and unauthorized component requests still count, but omit the component name so arbitrary rejected names do not create a new metric series each time. Known components retain their name on execution failures.
+
+The conventions measure from when the server receives a request until it sends the result. The middleware measures from when the request reaches it until the result comes back to it, so add `UsageMiddleware` first, before error handling and before any middleware that can answer without calling the next middleware. In that position the duration leaves out only the transport and protocol handling around the middleware chain, such as HTTP authentication and response serialization, and `error.type` matches what the client receives. Middleware that answers a request without calling the next middleware must come after `UsageMiddleware` for that request to be counted at all. For background tasks, the duration measures submission and excludes eventual execution failures. Each guard continuation is another request, not another completed tool execution.
+
+Add `UsageMiddleware` to one server in a mounted hierarchy. If a parent and a mounted child both carry it and share a meter provider, a call to a child tool is recorded twice, once under each server's name and tool name.
+
+The user attribute depends on `user_id`. The default, `"hashed"`, reports a keyed SHA-256 digest of the token subject (or client ID) as `enduser.pseudo.id`, which lets you group usage per user without exporting identities such as email addresses. Hashing requires a secret `user_id_salt`, because an unkeyed digest of a known email address can be recomputed and matched, so `UsageMiddleware()` without one raises a `ValueError`. Keep the salt stable across restarts and replicas, or the same user will show up under a new ID. Use `user_id="raw"` to report the identity itself as `enduser.id`, or `user_id="omit"` to report no user at all; neither needs a salt. Servers without authentication have no user to report, so their data points carry no user attribute.
+
+For unauthenticated servers, use `UsageMiddleware(user_id="omit")` to avoid configuring an unused salt. Each distinct user adds metric cardinality; configure your metrics SDK's views and cardinality limits for your deployment.
 
 ## Custom Spans
 

@@ -1576,6 +1576,10 @@ def _make_dev_app(
                 status_code=503,
                 media_type="application/json",
             )
+        except BaseException:
+            # No streaming response took ownership of the client.
+            await client.aclose()
+            raise
 
     async def api_logs(request: Request) -> Response:
         """Return message log entries since a given id."""

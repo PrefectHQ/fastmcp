@@ -1131,11 +1131,11 @@ async def test_transform_fn_blocking_sync_generator_does_not_stall_event_loop():
 async def test_transform_fn_generators_are_materialized():
     """Generator transform_fn bodies are consumed like plain tool bodies (#5668)."""
 
-    def gen_sync(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+    def gen_sync(**kwargs) -> list[str]:  # ty: ignore[invalid-generator-return-type]
         yield "a1"
         yield "a2"
 
-    async def gen_async(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+    async def gen_async(**kwargs) -> list[str]:  # ty: ignore[invalid-generator-return-type]
         yield "a1"
         yield "a2"
 
@@ -1163,12 +1163,12 @@ async def test_transform_fn_generators_are_materialized():
 async def test_transform_fn_empty_generators():
     """Empty generators are materialized to empty lists (#5668)."""
 
-    def gen_empty(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+    def gen_empty(**kwargs) -> list[str]:  # ty: ignore[invalid-generator-return-type]
         # Empty generator - no yields, just return
         if False:  # type: ignore[unreachable]
             yield
 
-    async def gen_empty_async(**kwargs) -> list[str]:  # ty:ignore[invalid-return-type]
+    async def gen_empty_async(**kwargs) -> list[str]:  # ty: ignore[invalid-generator-return-type]
         # Empty async generator - no yields, just return
         if False:  # type: ignore[unreachable]
             yield
@@ -1200,12 +1200,12 @@ async def test_transform_fn_generators_with_context_injection():
     def base(x: int) -> int:
         return x
 
-    def gen_with_ctx(x: int, ctx: Context) -> list[int]:  # ty:ignore[invalid-return-type]
+    def gen_with_ctx(x: int, ctx: Context) -> list[int]:  # ty: ignore[invalid-generator-return-type]
         assert isinstance(ctx, Context)
         yield x * 2
         yield x * 3
 
-    async def gen_async_with_ctx(x: int, ctx: Context) -> list[int]:  # ty:ignore[invalid-return-type]
+    async def gen_async_with_ctx(x: int, ctx: Context) -> list[int]:  # ty: ignore[invalid-generator-return-type]
         assert isinstance(ctx, Context)
         yield x * 2
         yield x * 3
