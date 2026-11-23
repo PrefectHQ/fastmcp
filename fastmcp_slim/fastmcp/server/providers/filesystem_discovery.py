@@ -516,13 +516,16 @@ def _discover_and_import(
         finally:
             # A discovered sibling may be imported as a dependency before its
             # own turn in the scan. Reuse it rather than executing it twice.
-            for name, imported in sys.modules.copy().items():
+            current_modules = sys.modules.copy()
+            for name, imported in current_modules.items():
                 if imported is existing_modules.get(name):
                     continue
                 source = getattr(imported, "__file__", None)
                 if source is not None and Path(source).resolve() in source_paths:
                     _discovered_modules.add(imported)
                     scan_modules.setdefault(Path(source).resolve(), imported)
+            # Only modules imported by this file are new next time around.
+            existing_modules = current_modules
 
         for component in components:
             result.components.append((file_path, component))
