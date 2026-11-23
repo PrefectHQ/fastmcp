@@ -151,6 +151,6 @@ A push stream that is cut off, for example when a load balancer closes the conne
 
 A push subscription can also end with an error that is not retried. When the server terminates it because a check reported `NotFound`, `Forbidden` or `Unsupported`, the `async for` raises that `MCPError`; rediscover the event type with `list_events()` before subscribing again. Any other error response, including one to a reopened stream, is raised as it is, except that a stream refused as `Unsupported` falls back to polling when you did not ask for push. When your loop falls so far behind that the client's buffer of pushed events overflows, it raises `EventBacklogFullError`. Events were lost, but `cursor` still points before them, so subscribing again from it repeats events rather than skipping them. Retrying with push does not get past a single batch larger than the buffer, because the cursor only advances when a batch completes, so a consumer that cannot keep up with a large backlog should use `delivery="poll"` with `max_events`.
 
-To try a server from the terminal, `fastmcp events watch` does the same thing and prints each event; see [the CLI](/cli/client#watching-events).
+To try a server from the terminal, `fastmcp experimental events watch` does the same thing and prints each event; see [the CLI](/cli/client#watching-events).
 
 What happens when an event arrives is up to your application. The extension delivers events to the client; it does not decide whether an event starts an agent turn.

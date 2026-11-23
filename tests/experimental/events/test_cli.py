@@ -200,3 +200,14 @@ async def test_watch_escapes_markup_in_a_server_error(
         await watch_command("fake", "tick", delivery="poll")
 
     assert "[link=https://x.test]denied[/link]" in capsys.readouterr().out
+
+
+def test_events_command_lives_under_experimental():
+    from fastmcp.cli.cli import app
+    from fastmcp.cli.events import list_events_command
+
+    command, _, _ = app.parse_args(
+        ["experimental", "events", "list", "server.py"], exit_on_error=False
+    )
+    assert command is list_events_command
+    assert "events" not in app

@@ -1,4 +1,4 @@
-"""`fastmcp events`: list a server's event types and watch one as it fires.
+"""`fastmcp experimental events`: list a server's event types and watch one as it fires.
 
 Experimental: this command may change in any release without a deprecation period.
 """
@@ -21,7 +21,7 @@ status = Console(stderr=True)
 
 events_app = cyclopts.App(
     name="events",
-    help="(Experimental) Subscribe to a server's events (the MCP Events extension, SEP-3415)",
+    help="Subscribe to a server's events (the MCP Events extension, SEP-3415)",
 )
 
 ServerSpec = Annotated[
@@ -96,8 +96,8 @@ async def list_events_command(
 
     Examples:
         ```
-        fastmcp events list server.py
-        fastmcp events list http://localhost:8000/mcp --json
+        fastmcp experimental events list server.py
+        fastmcp experimental events list http://localhost:8000/mcp --json
         ```
     """
     resolved = client_cli.resolve_server_spec(
@@ -194,16 +194,16 @@ async def watch_command(
 
     Examples:
         ```
-        fastmcp events watch server.py alert.fired
-        fastmcp events watch server.py alert.fired severity=P1 --json
-        fastmcp events watch http://localhost:8000/mcp alert.fired --cursor 42
+        fastmcp experimental events watch server.py alert.fired
+        fastmcp experimental events watch server.py alert.fired severity=P1 --json
+        fastmcp experimental events watch http://localhost:8000/mcp alert.fired --cursor 42
         ```
     """
     if not name:
         _fail(
             "Missing event name.\n\n"
-            "Usage: fastmcp events watch <server> <event> [key=value ...]\n\n"
-            "Use [cyan]fastmcp events list <server>[/cyan] to see event types."
+            "Usage: fastmcp experimental events watch <server> <event> [key=value ...]\n\n"
+            "Use [cyan]fastmcp experimental events list <server>[/cyan] to see event types."
         )
     resolved = client_cli.resolve_server_spec(
         server_spec, command=command, transport=transport

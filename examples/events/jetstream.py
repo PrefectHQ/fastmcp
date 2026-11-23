@@ -10,9 +10,9 @@ Run it, then watch it from another terminal:
 
 ```
 fastmcp run examples/events/jetstream.py --transport http
-fastmcp events list http://127.0.0.1:8000/mcp --auth none
-fastmcp events watch http://127.0.0.1:8000/mcp bsky.mention subject=bsky.app --auth none
-fastmcp events watch http://127.0.0.1:8000/mcp atproto.commit \\
+fastmcp experimental events list http://127.0.0.1:8000/mcp --auth none
+fastmcp experimental events watch http://127.0.0.1:8000/mcp bsky.mention subject=bsky.app --auth none
+fastmcp experimental events watch http://127.0.0.1:8000/mcp atproto.commit \\
     --input-json '{"collections": ["sh.tangled.*"]}' --auth none
 ```
 """

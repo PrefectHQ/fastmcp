@@ -137,18 +137,18 @@ fastmcp call server.py summarize --prompt --input-json '{"topic": "weather"}'
 
 ## Watching Events
 
-`fastmcp events` subscribes to a server's [events](/servers/events) from the terminal. Like the Events support it is built on, the command is experimental and may change. It is the quickest way to see whether an events server works. `fastmcp events list` shows the event types a server offers, with the delivery modes each supports and its subscription arguments:
+`fastmcp experimental events` subscribes to a server's [events](/servers/events) from the terminal. Like the Events support it is built on, the command is experimental and may change. It is the quickest way to see whether an events server works. `fastmcp experimental events list` shows the event types a server offers, with the delivery modes each supports and its subscription arguments:
 
 ```bash
-fastmcp events list server.py
-fastmcp events list http://localhost:8000/mcp --json
+fastmcp experimental events list server.py
+fastmcp experimental events list http://localhost:8000/mcp --json
 ```
 
-`fastmcp events watch` subscribes to one event type and prints each event as it arrives. Subscription arguments use the same `key=value` and `--input-json` forms as tool calls, coerced with the event type's input schema. The watch starts from now; it uses push when the event type offers it and polls otherwise:
+`fastmcp experimental events watch` subscribes to one event type and prints each event as it arrives. Subscription arguments use the same `key=value` and `--input-json` forms as tool calls, coerced with the event type's input schema. The watch starts from now; it uses push when the event type offers it and polls otherwise:
 
 ```bash
-fastmcp events watch server.py alert.fired severity=high
-fastmcp events watch http://localhost:8000/mcp alert.fired --delivery poll --json
+fastmcp experimental events watch server.py alert.fired severity=high
+fastmcp experimental events watch http://localhost:8000/mcp alert.fired --delivery poll --json
 ```
 
 When the watch ends, on Ctrl-C or after `--count` events, it prints the cursor it reached. Pass it back with `--cursor` to pick up where you left off, and add `--max-age` (in seconds) to bound how far back the server replays. With `--json`, each event is one JSON object per line that includes the cursor to resume from, so the output can be piped to another program.
