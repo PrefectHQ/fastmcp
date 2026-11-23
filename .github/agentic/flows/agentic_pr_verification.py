@@ -351,9 +351,21 @@ def verify(
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(source)
     parents = sorted({str(PurePosixPath(p).parent) for p in paths})
-    tracked = git(
-        head, env, "ls-tree", "-r", "--name-only", "HEAD", "--", "tests"
-    ).splitlines()
+    # List only the changed tests' own directories: the whole tests/ tree is
+    # longer than execute() keeps, and git() refuses truncated output.
+    tracked = (
+        git(
+            head,
+            env,
+            "ls-tree",
+            "--name-only",
+            "HEAD",
+            "--",
+            *(f"{p}/" for p in parents),
+        ).splitlines()
+        if parents
+        else []
+    )
     neighbors = [
         path
         for path in tracked

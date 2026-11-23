@@ -128,39 +128,16 @@ class ClientGroup:
         await stack.__aenter__()
 
         # Connect concurrently: entry latency stays one handshake deep instead
-        # of growing linearly with the number of servers. With
-        # return_exceptions=True every connection attempt runs to completion,
-        # so on partial failure the successes are known and can be unwound.
-        clients = list(self._clients.values())
-        results = await gather(
-            (_enter_client_context(client) for client in clients),
-            return_exceptions=True,
-        )
-        errors = [result for result in results if isinstance(result, BaseException)]
-        if errors:
-            for client, result in zip(clients, results, strict=True):
-                if not isinstance(result, BaseException):
-                    with contextlib.suppress(Exception):
-                        await client._exit_context(
-                            result.session_task,
-                            result.task,
-                            None,
-                            None,
-                            None,
-                        )
-            await stack.aclose()
-            raise errors[0]
-
-        for client, result in zip(clients, results, strict=True):
-            assert not isinstance(result, BaseException)
+        # of growing linearly with the number of servers. Each member's exit is
+        # registered the moment its entry succeeds, so a failed or cancelled
+        # entry can unwind exactly the members that connected.
+        async def enter_member(client: Client[Any]) -> None:
+            entered = await _enter_client_context(client)
 
             async def exit_client(
                 exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
-                *,
-                client: Client[Any] = client,
-                entered: _EnteredClient = result,
             ) -> bool | None:
                 return await client._exit_context(
                     entered.session_task,
@@ -171,7 +148,27 @@ class ClientGroup:
                 )
 
             stack.push_async_exit(exit_client)
+
+        try:
+            results = await gather(
+                (enter_member(client) for client in self._clients.values()),
+                return_exceptions=True,
+            )
+        except BaseException:
+            await self._unwind_partial_entry(stack)
+            raise
+
+        errors = [result for result in results if isinstance(result, BaseException)]
+        if errors:
+            await self._unwind_partial_entry(stack)
+            raise errors[0]
         return stack
+
+    @staticmethod
+    async def _unwind_partial_entry(stack: contextlib.AsyncExitStack) -> None:
+        """Disconnect the members a failed or cancelled entry already connected."""
+        with anyio.CancelScope(shield=True), contextlib.suppress(Exception):
+            await stack.aclose()
 
     async def __aexit__(
         self,

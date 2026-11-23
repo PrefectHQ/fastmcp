@@ -214,6 +214,12 @@ return ResourceResult(b"\x00\x01\x02")         # binary content
 <ParamField body="meta" type="dict[str, Any] | None">
   Result-level metadata, included in the MCP response's `_meta` field.
 </ParamField>
+<ParamField body="ttl_ms" type="int | None">
+  Optional per-read cache freshness hint in milliseconds (`ttl_ms`). Overrides any server-wide `cache_ttl` (which is in seconds). Setting `ttl_ms=0` marks the response as immediately stale for clients. This is a client freshness hint only and does not affect server-side `ResponseCachingMiddleware`. Works even if the server has no `cache_ttl` configured.
+</ParamField>
+<ParamField body="cache_scope" type='"public" | "private" | None'>
+  Optional per-read cache scope (`"public"` or `"private"`). Dictates whether a cached response may be shared across authorization contexts (`"public"`) or only within the same context (`"private"`).
+</ParamField>
 </Card>
 
 <Card title="ResourceContent">
@@ -387,22 +393,30 @@ Use these when the content is static or sourced directly from a file/URL, bypass
 
 <VersionBadge version="2.9.1" />
 
-FastMCP automatically sends `notifications/resources/list_changed` notifications to connected clients when resources or templates are added, enabled, or disabled. This allows clients to stay up-to-date with the current resource set without manually polling for changes.
+Adding, removing, enabling, or disabling resources at the server or provider level does not notify connected clients. Clients see the change the next time they list resources.
+
+To tell every client listening for resource changes, including from a background task, call `await mcp.notify_resources_changed()`. It works like [`notify_tools_changed()`](/servers/tools#notifications) and reaches clients on the `2026-07-28` protocol. `notify_resource_updated(uri)` does the same for a single resource, reaching clients that listen to that URI.
+
+For handshake-era clients, the tool handling a request can tell the calling session by sending `notifications/resources/list_changed` itself. The notification reaches only that session.
 
 ```python
-from fastmcp.resources import resource
+from fastmcp import FastMCP
+from fastmcp.server.context import Context
+from mcp_types import ResourceListChangedNotification
 
-@resource("data://example")
-def example_resource() -> str:
-    return "Hello!"
+mcp = FastMCP("Server")
 
-# These operations trigger notifications:
-mcp.add_resource(example_resource)                   # Sends resources/list_changed notification
-mcp.disable(names={"data://example"})  # Sends resources/list_changed notification
-mcp.enable(names={"data://example"})   # Sends resources/list_changed notification
+@mcp.tool
+async def unlock_extras(ctx: Context) -> str:
+    def stats() -> str:
+        return "42"
+
+    mcp.resource("data://stats")(stats)
+    await ctx.send_notification(ResourceListChangedNotification())
+    return "Extras unlocked"
 ```
 
-Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
+Session visibility changes made with `ctx.enable_components()` and `ctx.disable_components()` send these notifications automatically. See [Client Notifications](/servers/visibility#client-notifications).
 
 Clients can handle these notifications using a [message handler](/clients/notifications) to automatically refresh their resource lists or update their interfaces.
 
@@ -501,7 +515,7 @@ With these two templates defined, clients can request a variety of resources:
 ### RFC 6570 URI Templates
 
 
-FastMCP implements [RFC 6570 URI Templates](https://datatracker.ietf.org/doc/html/rfc6570) for resource templates, providing a standardized way to define parameterized URIs. This includes support for simple expansion, wildcard path parameters, and form-style query parameters.
+FastMCP implements [RFC 6570 URI Templates](https://datatracker.ietf.org/doc/html/rfc6570) for resource templates, providing a standardized way to define parameterized URIs. This includes support for simple expansion, wildcard path parameters, and form-style query parameters with continuation.
 
 #### Wildcard Parameters
 
@@ -701,6 +715,8 @@ def read_file(path: str, encoding: str = "utf-8", lines: int = 100) -> str:
 - `files://src/main.py?encoding=ascii&lines=50` → Custom encoding and line limit
 
 FastMCP automatically coerces query parameter string values to the correct types based on your function's type hints (`int`, `float`, `bool`, `str`).
+
+RFC 6570 query continuation, `{&param}`, declares query parameters the same way as `{?param}`. Templates written for other tools often split the query this way, as in `data://items{?page}{&size}`, and FastMCP reads `data://items?page=2&size=5` into `page=2, size=5`. The other RFC 6570 level-3 operators (`{+var}`, `{#var}`, `{.var}`, `{/var}`, `{;var}`) and set expansion (`{a,b}`) are not supported, and a template that uses one raises an error when it is created.
 
 **Repeatable query parameters:**
 

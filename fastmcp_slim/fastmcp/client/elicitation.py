@@ -20,7 +20,7 @@ T = TypeVar("T", default=Any)
 
 
 class ElicitResult(MCPElicitResult, Generic[T]):
-    content: T | None = None  # ty:ignore[invalid-attribute-override]
+    content: T | None = None  # ty:ignore[incompatible-attribute-override]
 
 
 ElicitationHandler: TypeAlias = Callable[
@@ -33,6 +33,21 @@ ElicitationHandler: TypeAlias = Callable[
     ],
     Awaitable[T | dict[str, Any] | ElicitResult[T | dict[str, Any]]],
 ]
+
+
+def _validate_form_content(content: dict[str, Any], schema: dict[str, Any]) -> None:
+    """Check accepted form content against the server's requested schema.
+
+    Validates the JSON value that goes on the wire, as JSON Schema defines it,
+    so `"42"` does not satisfy an integer property and ISO strings satisfy
+    `format: date-time`.
+    """
+    # Imported lazily, as the MCP SDK does for tool output validation.
+    from jsonschema.validators import validator_for
+    from referencing import Registry
+
+    # An empty registry keeps `$ref` resolution inside the schema document.
+    validator_for(schema)(schema, registry=Registry()).validate(content)
 
 
 def create_elicitation_callback(
@@ -80,6 +95,23 @@ def create_elicitation_callback(
                         "Elicitation responses must be serializable as a JSON object (dict). Received: "
                         f"{result.content!r}"
                     )
+            if isinstance(content, dict) and isinstance(
+                params, ElicitRequestFormParams
+            ):
+                # Elicitation properties have no null type: an optional field
+                # without a value is omitted rather than sent as null.
+                required = set(params.requested_schema.get("required", []))
+                content = {
+                    key: value
+                    for key, value in content.items()
+                    if value is not None or key in required
+                }
+            if (
+                result.action == "accept"
+                and content is not None
+                and isinstance(params, ElicitRequestFormParams)
+            ):
+                _validate_form_content(content, params.requested_schema)
             return MCPElicitResult(
                 _meta=result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 action=result.action,

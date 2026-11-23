@@ -11,6 +11,7 @@ from types import EllipsisType, UnionType
 from typing import (
     Annotated,
     Any,
+    Literal,
     Protocol,
     TypeAlias,
     Union,
@@ -27,9 +28,10 @@ from typing_extensions import TypeVar
 
 T = TypeVar("T", default=Any)
 
-# TODO(sdkv2): the SDK's `mcp.types.AnyFunction` alias was removed with the
-# mcp.types module. FastMCP owns it now; keep the same `Callable[..., Any]`
-# meaning used by tool/prompt/resource decorators.
+CacheScope = Literal["public", "private"]
+"""Whether a cached result may be shared across authorization contexts ("public") or reused only within the one that produced it ("private")."""
+
+# MCP SDK v2 dropped the `AnyFunction` alias; FastMCP owns it now with the same `Callable[..., Any]` meaning.
 AnyFunction: TypeAlias = Callable[..., Any]
 
 # sentinel values for optional arguments
@@ -38,7 +40,7 @@ NotSetT: TypeAlias = EllipsisType
 
 
 def get_fn_name(fn: Callable[..., Any]) -> str:
-    return fn.__name__  # ty: ignore[unresolved-attribute]
+    return fn.__name__  # ty: ignore[missing-attribute]
 
 
 class FastMCPBaseModel(BaseModel):
@@ -95,12 +97,12 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
                 # Handle both functions and methods
                 if inspect.ismethod(cls):
                     actual_func = cls.__func__
-                    code = actual_func.__code__  # ty: ignore[unresolved-attribute]
-                    globals_dict = actual_func.__globals__  # ty: ignore[unresolved-attribute]
-                    name = actual_func.__name__  # ty: ignore[unresolved-attribute]
-                    defaults = actual_func.__defaults__  # ty: ignore[unresolved-attribute]
-                    kwdefaults = actual_func.__kwdefaults__  # ty: ignore[unresolved-attribute]
-                    closure = actual_func.__closure__  # ty: ignore[unresolved-attribute]
+                    code = actual_func.__code__  # ty: ignore[missing-attribute]
+                    globals_dict = actual_func.__globals__  # ty: ignore[missing-attribute]
+                    name = actual_func.__name__  # ty: ignore[missing-attribute]
+                    defaults = actual_func.__defaults__  # ty: ignore[missing-attribute]
+                    kwdefaults = actual_func.__kwdefaults__  # ty: ignore[missing-attribute]
+                    closure = actual_func.__closure__  # ty: ignore[missing-attribute]
                 else:
                     code = cls.__code__
                     globals_dict = cls.__globals__
@@ -202,17 +204,17 @@ def create_function_without_params(
 
     if inspect.ismethod(fn):
         actual_func = fn.__func__
-        code = actual_func.__code__  # ty: ignore[unresolved-attribute]
-        globals_dict = actual_func.__globals__  # ty: ignore[unresolved-attribute]
-        name = actual_func.__name__  # ty: ignore[unresolved-attribute]
-        defaults = actual_func.__defaults__  # ty: ignore[unresolved-attribute]
-        closure = actual_func.__closure__  # ty: ignore[unresolved-attribute]
+        code = actual_func.__code__  # ty: ignore[missing-attribute]
+        globals_dict = actual_func.__globals__  # ty: ignore[missing-attribute]
+        name = actual_func.__name__  # ty: ignore[missing-attribute]
+        defaults = actual_func.__defaults__  # ty: ignore[missing-attribute]
+        closure = actual_func.__closure__  # ty: ignore[missing-attribute]
     else:
-        code = fn.__code__  # ty: ignore[unresolved-attribute]
-        globals_dict = fn.__globals__  # ty: ignore[unresolved-attribute]
-        name = fn.__name__  # ty: ignore[unresolved-attribute]
-        defaults = fn.__defaults__  # ty: ignore[unresolved-attribute]
-        closure = fn.__closure__  # ty: ignore[unresolved-attribute]
+        code = fn.__code__  # ty: ignore[missing-attribute]
+        globals_dict = fn.__globals__  # ty: ignore[missing-attribute]
+        name = fn.__name__  # ty: ignore[missing-attribute]
+        defaults = fn.__defaults__  # ty: ignore[missing-attribute]
+        closure = fn.__closure__  # ty: ignore[missing-attribute]
 
     # Create a copy of annotations without the excluded parameters
     original_annotations = getattr(fn, "__annotations__", {})
@@ -236,9 +238,9 @@ def create_function_without_params(
     )
     new_func.__dict__.update(fn.__dict__)
     new_func.__module__ = fn.__module__
-    new_func.__qualname__ = getattr(fn, "__qualname__", fn.__name__)  # ty: ignore[unresolved-attribute]
+    new_func.__qualname__ = getattr(fn, "__qualname__", fn.__name__)  # ty: ignore[missing-attribute]
     new_func.__annotations__ = new_annotations
-    new_func.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    new_func.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
 
     if inspect.ismethod(fn):
         return types.MethodType(new_func, fn.__self__)

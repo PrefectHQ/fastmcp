@@ -531,6 +531,40 @@ async def test_failed_entry_leaves_group_reenterable():
         assert result.data == "good: recovered"
 
 
+async def test_cancelled_entry_disconnects_connected_members():
+    """Cancelling group entry while one member is still connecting must
+    disconnect the members that already connected."""
+    a = Client(make_server("a"))
+    b = Client(make_server("b"))
+    group = ClientGroup({"a": a, "b": b})
+    b_entering = anyio.Event()
+
+    async def held_entry() -> Client[Any]:
+        b_entering.set()
+        await anyio.sleep_forever()
+        raise AssertionError("unreachable")
+
+    with patch.object(b, "__aenter__", held_entry):
+        entry = asyncio.create_task(group.__aenter__())
+        with anyio.fail_after(3):
+            await b_entering.wait()
+            while not a.is_connected():
+                await anyio.sleep(0.01)
+        entry.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await entry
+
+    assert not a.is_connected()
+    assert group._exit_stack is None
+    assert group._nesting_counter == 0
+
+    async with group:
+        result = await group.call_tool("b_echo", {"value": "recovered"})
+        assert result.data == "b: recovered"
+    assert not a.is_connected()
+    assert not b.is_connected()
+
+
 async def test_exit_under_cancelled_scope_disconnects_members():
     """A group exited by a cancelled scope must release its hold and disconnect
     its members, as Client does."""

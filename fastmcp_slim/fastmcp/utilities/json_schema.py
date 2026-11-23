@@ -102,6 +102,32 @@ def _resolve_local_ref(
     return node
 
 
+def ref_target_name(
+    ref: str, roots: Sequence[Sequence[str]] = (("$defs",),)
+) -> str | None:
+    """Return the definition name a local JSON Pointer ``$ref`` addresses.
+
+    The name is the first pointer segment after one of *roots* (``$defs`` by
+    default, ``components/schemas`` for raw OpenAPI documents), decoded the
+    way `_resolve_local_ref` decodes pointers: the fragment is percent-decoded
+    before it is split, and ``~1``/``~0`` are unescaped per RFC 6901. A
+    pointer may continue past the name into the definition's own contents, so
+    ``#/$defs/Container/properties/value`` still names ``Container``.
+
+    Returns ``None`` when the pointer does not name a definition under one of
+    *roots*. Reference collectors must use this instead of reading the raw
+    pointer text: a definition called ``a/b`` is referenced as ``a~1b``, one
+    called ``Alias One`` as ``Alias%20One``, and neither decoded name appears
+    in the raw text.
+    """
+    parts = unquote(ref[1:].lstrip("/")).split("/")
+    for root in roots:
+        depth = len(root)
+        if parts[:depth] == list(root) and len(parts) > depth and parts[depth]:
+            return parts[depth].replace("~1", "/").replace("~0", "~")
+    return None
+
+
 def _within_inline_limits(root: dict[str, Any], *, follow_refs: bool) -> bool:
     """Check the node count and depth of *root* once fully expanded.
 
@@ -758,13 +784,17 @@ def _single_pass_optimize(
             if prune_defs:
                 ref = node.get("$ref")
                 if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                    referenced_def = ref.split("/")[-1]
-                    if current_def_name:
-                        # We're inside a $def, so this is a def->def reference
-                        def_dependencies[referenced_def].append(current_def_name)
-                    else:
-                        # We're in the main schema, so this is a root reference
-                        root_refs.add(referenced_def)
+                    # Decode the pointer: escaped, percent-encoded, and
+                    # sub-pointer references resolve to a definition whose
+                    # name is not the raw text of the segment.
+                    referenced_def = ref_target_name(ref)
+                    if referenced_def is not None:
+                        if current_def_name:
+                            # We're inside a $def, so this is a def->def reference
+                            def_dependencies[referenced_def].append(current_def_name)
+                        else:
+                            # We're in the main schema, so this is a root reference
+                            root_refs.add(referenced_def)
 
             # Cleanups only run when we know this node is a schema, never on
             # user extension payloads (`json_schema_extra={"x-ui": {...}}`).
@@ -958,3 +988,57 @@ def compress_schema(
     )
 
     return schema
+
+
+def is_object_schema(
+    schema: dict[str, Any],
+    *,
+    _root_schema: dict[str, Any] | None = None,
+    _seen_refs: set[str] | None = None,
+) -> bool:
+    """Check if a JSON schema represents an object type."""
+    root_schema = _root_schema or schema
+    seen_refs = _seen_refs or set()
+
+    # An explicit type takes precedence over properties, which only constrain
+    # objects and do not exclude other allowed types. A null alternative maps
+    # to absent structured content, so ["object", "null"] still describes an
+    # object result.
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        return [t for t in schema_type if t != "null"] == ["object"]
+    if "type" in schema:
+        return schema_type == "object"
+
+    # Schema with properties but no explicit type is treated as object
+    if "properties" in schema:
+        return True
+
+    # Resolve local $ref definitions and recurse into the target schema.
+    ref = schema.get("$ref")
+    if not isinstance(ref, str) or not ref.startswith("#/"):
+        return False
+
+    if ref in seen_refs:
+        return False
+
+    # Walk the JSON Pointer path from the root schema, unescaping each
+    # token per RFC 6901 (~1 → /, ~0 → ~).
+    pointer = ref.removeprefix("#/")
+    segments = pointer.split("/")
+    target: Any = root_schema
+    for segment in segments:
+        unescaped = segment.replace("~1", "/").replace("~0", "~")
+        if not isinstance(target, dict) or unescaped not in target:
+            return False
+        target = target[unescaped]
+
+    target_schema = target
+    if not isinstance(target_schema, dict):
+        return False
+
+    return is_object_schema(
+        target_schema,
+        _root_schema=root_schema,
+        _seen_refs=seen_refs | {ref},
+    )

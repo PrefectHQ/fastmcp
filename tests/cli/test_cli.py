@@ -5,7 +5,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fastmcp.cli.cli import _parse_env_var, app
+from fastmcp.cli.cli import app
+from fastmcp.cli.install.shared import parse_env_var
 
 
 class TestMainCLI:
@@ -21,18 +22,18 @@ class TestMainCLI:
 
     def test_parse_env_var_valid(self):
         """Test parsing valid environment variables."""
-        key, value = _parse_env_var("KEY=value")
+        key, value = parse_env_var("KEY=value")
         assert key == "KEY"
         assert value == "value"
 
-        key, value = _parse_env_var("COMPLEX_KEY=complex=value=with=equals")
+        key, value = parse_env_var("COMPLEX_KEY=complex=value=with=equals")
         assert key == "COMPLEX_KEY"
         assert value == "complex=value=with=equals"
 
     def test_parse_env_var_invalid(self):
         """Test parsing invalid environment variables exits."""
         with pytest.raises(SystemExit) as exc_info:
-            _parse_env_var("INVALID_FORMAT")
+            parse_env_var("INVALID_FORMAT")
         assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
 
@@ -40,7 +41,7 @@ class TestMainCLI:
     def test_horizon_account_commands_are_top_level(self, name: str):
         command, bound, _ = app.parse_args([name, "--json"])
 
-        assert command.__name__ == name  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert command.__name__ == name  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         assert bound.arguments == {"json_output": True}
 
     def test_login_accepts_a_horizon_host(self):
@@ -65,7 +66,7 @@ class TestVersionCommand:
         """Test that the version command parses arguments correctly."""
         command, bound, _ = app.parse_args(["version"])
         assert callable(command)
-        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         # Default arguments aren't included in bound.arguments
         assert bound.arguments == {}
 
@@ -73,7 +74,7 @@ class TestVersionCommand:
         """Test that the version command parses --copy flag correctly."""
         command, bound, _ = app.parse_args(["version", "--copy"])
         assert callable(command)
-        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert command.__name__ == "version"  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         assert bound.arguments == {"copy": True}
 
     @patch("fastmcp.cli.cli.pyperclip.copy")

@@ -138,7 +138,7 @@ class _TransformingMCPServerMixin(BaseModel):
                 )
             ) from exc
 
-        transport = cast("ClientTransport", super().to_transport())  # ty: ignore[unresolved-attribute]
+        transport = cast("ClientTransport", super().to_transport())  # ty: ignore[missing-attribute]
         # The proxy that wraps this client forwards the initialize handshake and
         # server-initiated features, which require the legacy era.
         config = cast("MCPServerTypes", self)

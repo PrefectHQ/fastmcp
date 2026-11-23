@@ -16,7 +16,6 @@ SERVER_URL = "http://localhost:8000/mcp"
 async def main():
     try:
         async with Client(SERVER_URL, auth="oauth") as client:
-            assert await client.ping()
             print("✅ Successfully authenticated!")
 
             tools = await client.list_tools()

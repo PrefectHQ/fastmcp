@@ -8,6 +8,7 @@ served via httpx_mock, so no real network calls are made.
 import subprocess
 import sys
 import time
+from unittest.mock import patch
 
 import httpx2
 import pytest
@@ -291,6 +292,29 @@ class TestTokenEndpoint:
         # SEP-990: no refresh token is issued.
         assert body.get("refresh_token") is None
         assert body["expires_in"] == config.access_token_expiry_seconds
+
+    async def test_exchange_renews_client_registration_ttl(
+        self,
+        idp_key: RSAKeyPair,
+        config: IdentityAssertion,
+        httpx_mock: HTTPXMock,
+    ):
+        httpx_mock.add_response(url=JWKS_URI, json=_idp_jwks(idp_key))
+        proxy = _make_proxy(config)
+        proxy._client_registration_ttl_seconds = 3600
+        await _register_client(proxy)
+
+        with patch.object(
+            proxy._client_store, "put", wraps=proxy._client_store.put
+        ) as put:
+            resp = await _post_token(
+                proxy, _mint_id_jag(idp_key, scope="read"), register=False
+            )
+
+        assert resp.status_code == 200
+        assert put.call_count == 1
+        assert put.call_args.kwargs["key"] == "mcp-client"
+        assert put.call_args.kwargs["ttl"] == 3600
 
     async def test_issued_token_carries_subject(
         self,

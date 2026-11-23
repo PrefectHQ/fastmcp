@@ -1100,6 +1100,11 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _local_http_client() -> httpx2.AsyncClient:
+    """Client for the local MCP server, which is never reached through a proxy."""
+    return httpx2.AsyncClient(timeout=httpx2.Timeout(30.0, read=300.0), trust_env=False)
+
+
 async def _list_tools(mcp_url: str) -> list[dict[str, Any]]:
     """Return raw tool dicts from the MCP server at mcp_url."""
     try:
@@ -1109,11 +1114,14 @@ async def _list_tools(mcp_url: str) -> list[dict[str, Any]]:
         return []
 
     try:
-        async with streamable_http_client(mcp_url) as (read, write):  # noqa: SIM117
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.list_tools()
-                return [t.model_dump(by_alias=True) for t in result.tools]
+        async with (
+            _local_http_client() as http_client,
+            streamable_http_client(mcp_url, http_client=http_client) as (read, write),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+            result = await session.list_tools()
+            return [t.model_dump(by_alias=True) for t in result.tools]
     except Exception as exc:
         logger.debug(f"Could not list tools from {mcp_url}: {exc}")
         return []
@@ -1128,14 +1136,17 @@ async def _read_mcp_resource(mcp_url: str, uri: str) -> str | None:
         return None
 
     try:
-        async with streamable_http_client(mcp_url) as (read, write):  # noqa: SIM117
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.read_resource(uri)
-                for content in result.contents:
-                    text = getattr(content, "text", None)
-                    if text:
-                        return text
+        async with (
+            _local_http_client() as http_client,
+            streamable_http_client(mcp_url, http_client=http_client) as (read, write),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+            result = await session.read_resource(uri)
+            for content in result.contents:
+                text = getattr(content, "text", None)
+                if text:
+                    return text
         return None
     except Exception as exc:
         logger.debug(f"Could not read resource {uri} from {mcp_url}: {exc}")
@@ -1145,6 +1156,22 @@ async def _read_mcp_resource(mcp_url: str, uri: str) -> str | None:
 # ---------------------------------------------------------------------------
 # app-bridge.js download, patch, and Zod import-map generation
 # ---------------------------------------------------------------------------
+
+_DEFAULT_NPM_REGISTRY = "https://registry.npmjs.org"
+
+
+def _npm_tarball_url(version: str) -> str:
+    """Return the ext-apps tarball URL, honoring ``npm_config_registry``."""
+    # npm itself sets and reads the lowercase name, so honor both spellings.
+    registry = (
+        os.environ.get("npm_config_registry")  # noqa: SIM112
+        or os.environ.get("NPM_CONFIG_REGISTRY")
+        or _DEFAULT_NPM_REGISTRY
+    )
+    return (
+        f"{registry.rstrip('/')}/@modelcontextprotocol/ext-apps/-/"
+        f"ext-apps-{version}.tgz"
+    )
 
 
 def _fetch_app_bridge_bundle_sync(
@@ -1235,7 +1262,8 @@ def _fetch_app_bridge_bundle_sync(
         app_bridge_js = app_bridge_cache.read_text(encoding="utf-8")
         return app_bridge_js, import_map_json
 
-    npm_url = f"https://registry.npmjs.org/@modelcontextprotocol/ext-apps/-/ext-apps-{version}.tgz"
+    npm_url = _npm_tarball_url(version)
+
     with httpx2.Client(timeout=30.0) as client:
         resp = client.get(npm_url, follow_redirects=True)
         resp.raise_for_status()
@@ -1773,7 +1801,7 @@ async def run_dev_apps(
         server = uvicorn.Server(config)
         # Suppress uvicorn's own signal handlers — they use signal.signal() which
         # conflicts with asyncio and causes hangs.  We cancel the task instead.
-        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]  # ty:ignore[unresolved-attribute]
+        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]  # ty:ignore[missing-attribute]
 
         async def _open_browser() -> None:
             await asyncio.sleep(0.8)

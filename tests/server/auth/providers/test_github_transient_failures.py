@@ -235,6 +235,28 @@ async def test_scope_server_failure_does_not_grant_required_user_scope_and_recov
     assert client.get.call_count == 4
 
 
+@pytest.mark.parametrize("status_code", [500, 503])
+async def test_unverified_scopes_are_not_cached_without_required_scopes(status_code):
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(status_code),
+        _github_user_response(),
+        _response(200, headers={"x-oauth-scopes": "repo, user"}),
+    ]
+    verifier = GitHubTokenVerifier(cache_ttl_seconds=300, http_client=client)
+
+    degraded = await verifier.verify_token("still-valid-token")
+    assert degraded is not None
+    assert degraded.scopes == []
+    assert len(verifier._cache._entries) == 0
+
+    recovered = await verifier.verify_token("still-valid-token")
+    assert recovered is not None
+    assert recovered.scopes == ["repo", "user"]
+    assert client.get.call_count == 4
+
+
 async def test_scope_transport_failure_does_not_grant_user_scope_and_recovers():
     client = AsyncMock()
     client.get.side_effect = [

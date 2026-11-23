@@ -23,6 +23,7 @@ from fastmcp.cli import run as run_module
 from fastmcp.cli.auth import auth_app
 from fastmcp.cli.client import call_command, discover_command, list_command
 from fastmcp.cli.deploy.command import login, logout, whoami
+from fastmcp.cli.events import events_app
 from fastmcp.cli.generate import generate_cli_command
 from fastmcp.cli.install import install_app
 from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
@@ -59,18 +60,6 @@ def _get_npx_command():
                 continue
         return None
     return "npx"  # On Unix-like systems, just use npx
-
-
-def _parse_env_var(env_var: str) -> tuple[str, str]:
-    """Parse environment variable string in format KEY=VALUE."""
-    if "=" not in env_var:
-        logger.error("Invalid environment variable format. Must be KEY=VALUE")
-        sys.exit(1)
-    key, value = env_var.split("=", 1)
-    if not key.strip():
-        logger.error("Invalid environment variable format. KEY cannot be empty")
-        sys.exit(1)
-    return key.strip(), value.strip()
 
 
 @contextmanager
@@ -1135,6 +1124,14 @@ app.command(list_command, name="list")
 app.command(call_command, name="call")
 app.command(discover_command, name="discover")
 app.command(generate_cli_command, name="generate-cli")
+
+# Experimental commands may change in any release without a deprecation period
+experimental_app = cyclopts.App(
+    name="experimental",
+    help="Experimental commands that may change in any release",
+)
+experimental_app.command(events_app)
+app.command(experimental_app)
 
 # Add auth subcommand group (includes CIMD commands)
 app.command(auth_app)

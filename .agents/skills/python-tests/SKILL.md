@@ -18,6 +18,8 @@ For a bug fix, run the regression against unchanged code and confirm it fails fo
 - Use existing `inline_snapshot` conventions for complex schema assertions. Inspect generated snapshots rather than accepting them blindly.
 - The default timeout is five seconds. Use the repository's integration conventions for tests that legitimately need more time.
 
+When a change touches a module with properties in `tests/pbt/` (URI templates, JSON Schema handling, components and mounting, tool transforms, OpenAPI requests, the OAuth proxy), run `uv run pytest tests/pbt -k <area>` as well. If the change adds behavior the property's model does not know about (a new config branch, a new rejection), extend the model or strategy in the same PR; a state machine that cannot express the change cannot catch its regression. For new parsing, serialization, or matching code with a large input space, prefer one property with a planted-bug check from `tests/pbt/mutants.py` over a list of examples. Do not add properties to light changes.
+
 Run relevant tests and applicable static checks before committing. Broaden local
 testing when a concrete dependency or failure warrants it; leave routine full-suite
 and platform-matrix runs to CI. Do not repeat the full suite for each layer in a

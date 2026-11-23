@@ -1,17 +1,24 @@
 from dataclasses import dataclass
 from typing import Any, cast
 
+import anyio
 import pytest
 from anyio import create_task_group
 from mcp import CreateMessageResult
+from mcp.shared.subscriptions import ToolsListChanged
 from mcp_types import (
     ElicitRequestFormParams,
+    ElicitRequestURLParams,
     ImageContent,
     LoggingLevel,
     ModelHint,
     ModelPreferences,
     Root,
+    SamplingCapability,
+    SamplingToolsCapability,
     TextContent,
+    Tool,
+    ToolChoice,
 )
 from pydantic import BaseModel, Field
 
@@ -22,7 +29,11 @@ from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingPar
 from fastmcp.exceptions import ToolError
 from fastmcp.server import create_proxy
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp.server.providers.proxy import ProxyClient, _create_client_factory
+from fastmcp.server.providers.proxy import (
+    ProxyClient,
+    _create_client_factory,
+    default_proxy_elicitation_handler,
+)
 
 
 class TestProxyClientEraDefault:
@@ -92,6 +103,25 @@ async def _backend_sample(context: Context) -> str:
     return result.content.text if isinstance(result.content, TextContent) else ""
 
 
+SAMPLING_WITH_TOOLS = SamplingCapability(tools=SamplingToolsCapability())
+
+
+async def _backend_sample_with_tools(context: Context) -> str:
+    """Issue a handshake-era `sampling/createMessage` that offers the model a tool."""
+    await context.session.create_message(  # ty: ignore[deprecated]
+        messages=[
+            SamplingMessage(
+                role="user", content=TextContent(type="text", text="Weather in Boston?")
+            )
+        ],
+        max_tokens=100,
+        tools=[Tool(name="get_weather", input_schema={"type": "object"})],
+        tool_choice=ToolChoice(mode="required"),
+        related_request_id=context.origin_request_id,
+    )
+    return "sampled"
+
+
 async def _backend_sample_result(context: Context) -> dict[str, Any]:
     """Issue a handshake-era `sampling/createMessage` and return the whole result."""
     result = await context.session.create_message(  # ty: ignore[deprecated]
@@ -123,6 +153,10 @@ def fastmcp_server():
         return await _backend_sample(context)
 
     @mcp.tool
+    async def sampling_with_tools(context: Context) -> str:
+        return await _backend_sample_with_tools(context)
+
+    @mcp.tool
     async def sampling_result(context: Context) -> dict[str, Any]:
         return await _backend_sample_result(context)
 
@@ -143,6 +177,17 @@ def fastmcp_server():
             return f"Hello, {result.data.name}!"
         else:
             return "No name provided."
+
+    @mcp.tool
+    async def elicit_url(context: Context) -> str:
+        # Handshake-era URL-mode elicitation, sent through the SDK session.
+        result = await context.session.elicit_url(
+            message="Sign in to continue",
+            url="https://example.com/oauth/start",
+            elicitation_id="elicit-1",
+            related_request_id=context.origin_request_id,
+        )
+        return result.action
 
     @mcp.tool
     async def log(
@@ -170,6 +215,10 @@ def fastmcp_server():
                 message=f"{(i + 1) / 3 * 100:.2f}% complete",
             )
         return 100
+
+    @mcp.tool
+    async def hide_echo(context: Context) -> None:
+        await context.disable_components(names={"echo"})
 
     return mcp
 
@@ -282,6 +331,52 @@ class TestProxyClient:
             result = await client.call_tool("sampling", {})
             assert result.data == "I love FastMCP"
 
+    async def test_forward_sampling_request_with_tools(self, fastmcp_server: FastMCP):
+        """
+        Test that a proxy opted into sampling tools forwards the backend's tools.
+        """
+        received: list[SamplingParams] = []
+
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> str:
+            received.append(params)
+            return ""
+
+        proxy = create_proxy(
+            ProxyClient(fastmcp_server, sampling_capabilities=SAMPLING_WITH_TOOLS)
+        )
+        async with Client(
+            proxy,
+            mode="legacy",
+            sampling_handler=sampling_handler,
+            sampling_capabilities=SAMPLING_WITH_TOOLS,
+        ) as client:
+            result = await client.call_tool("sampling_with_tools", {})
+            assert result.data == "sampled"
+
+        assert len(received) == 1
+        assert [tool.name for tool in received[0].tools or []] == ["get_weather"]
+        assert received[0].tool_choice == ToolChoice(mode="required")
+
+    async def test_forward_sampling_tools_to_client_without_support(
+        self, fastmcp_server: FastMCP
+    ):
+        """
+        Test that forwarded sampling tools fail as they would directly when the
+        client does not support them.
+        """
+        proxy = create_proxy(
+            ProxyClient(fastmcp_server, sampling_capabilities=SAMPLING_WITH_TOOLS)
+        )
+        async with Client(
+            proxy, mode="legacy", sampling_handler=lambda *args: ""
+        ) as client:
+            with pytest.raises(ToolError, match="sampling tools capability"):
+                await client.call_tool("sampling_with_tools", {})
+
     @pytest.mark.parametrize(
         "content",
         [
@@ -339,6 +434,45 @@ class TestProxyClient:
             await client.call_tool("elicit", {})
 
         assert elicitation_handler_called
+
+    async def test_elicit_url_request(self, proxy_server: FastMCP):
+        """
+        Test that the proxy client forwards a URL-mode `elicit` request as URL mode.
+        """
+        received: list[ElicitRequestParams] = []
+
+        async def elicitation_handler(
+            message, response_type, params: ElicitRequestParams, ctx
+        ):
+            received.append(params)
+            return ElicitResult(action="accept")
+
+        async with Client(
+            proxy_server, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
+            result = await client.call_tool("elicit_url", {})
+            assert result.data == "accept"
+
+        assert len(received) == 1
+        assert isinstance(received[0], ElicitRequestURLParams)
+        assert received[0].message == "Sign in to continue"
+        assert received[0].url == "https://example.com/oauth/start"
+        assert received[0].elicitation_id == "elicit-1"
+
+    async def test_elicit_url_request_without_elicitation_id(self):
+        """
+        Test that the proxy rejects a URL-mode request that has no elicitation ID.
+        """
+        params = ElicitRequestURLParams(
+            mode="url", message="Sign in", url="https://example.com/oauth/start"
+        )
+        with pytest.raises(ValueError, match="no elicitationId"):
+            await default_proxy_elicitation_handler(
+                "Sign in",
+                dict,
+                params,
+                None,  # ty: ignore[invalid-argument-type]
+            )
 
     async def test_elicit_accept_response(self, proxy_server: FastMCP):
         """
@@ -450,6 +584,53 @@ class TestProxyClient:
             await client.call_tool("report_progress", {})
 
         assert PROGRESS_MESSAGES == EXPECTED_PROGRESS_MESSAGES
+
+    async def test_forward_list_changed_notifications(self, proxy_server: FastMCP):
+        received: list[str] = []
+
+        async def message_handler(message: Any) -> None:
+            if not isinstance(message, Exception):
+                received.append(message.method)
+
+        async with Client(
+            proxy_server, mode="legacy", message_handler=message_handler
+        ) as client:
+            await client.call_tool("hide_echo", {})
+
+        assert received == [
+            "notifications/tools/list_changed",
+            "notifications/resources/list_changed",
+            "notifications/prompts/list_changed",
+        ]
+
+    async def test_forward_list_changed_to_modern_listen_stream(
+        self, proxy_server: FastMCP
+    ):
+        """A 2026-07-28 client has no push channel; the proxy relays an
+        upstream list change onto its listen stream instead."""
+        async with Client(proxy_server) as client:
+            assert client.protocol_version == "2026-07-28"
+            async with client.listen(tools_list_changed=True) as subscription:
+                await client.call_tool("hide_echo", {})
+                with anyio.fail_after(2):
+                    event = await anext(aiter(subscription))
+
+        assert event == ToolsListChanged()
+
+    async def test_proxy_added_as_provider_relays_to_parent_listen_stream(
+        self, proxy_server: FastMCP
+    ):
+        """An upstream list change relayed by a proxy also reaches clients
+        listening on a server the proxy is attached to with `add_provider`."""
+        parent = FastMCP("parent")
+        parent.add_provider(proxy_server, namespace="up")
+        async with Client(parent) as client:
+            async with client.listen(tools_list_changed=True) as subscription:
+                await client.call_tool("up_hide_echo", {})
+                with anyio.fail_after(2):
+                    event = await anext(aiter(subscription))
+
+        assert event == ToolsListChanged()
 
     async def test_concurrent_log_requests_no_mixing(self, proxy_server: FastMCP):
         """Test that concurrent log requests don't mix handlers (fixes #1068)."""

@@ -202,6 +202,13 @@ mcp = FastMCP(name="My Server", auth=auth)
   - Empty list `[]`: No redirect URIs allowed
   - Custom list: Only matching patterns allowed
 
+  Query matching: a pattern that carries a query, or that has no wildcard
+  at all, only matches a redirect URI with exactly the same query
+  (compared byte-for-byte); a wildcard pattern with no query of its own
+  accepts any query. The same rule applies to CIMD clients, whose
+  redirect URIs are matched with the same patterns. A redirect URI that
+  carries a fragment (`#...`) is always rejected.
+
   These patterns apply to MCP client loopback redirects. Configure the upstream
   OAuth app redirect URI separately with `redirect_path`.
 </ParamField>
@@ -314,7 +321,7 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
   Users see the consent screen on every authorization. Strongest protection against AS-in-the-middle attacks where a malicious MCP server redirects the victim's browser into a legitimate proxy and relies on a previously-remembered approval to silently complete the flow.
 
   **`"remember"` — silent consent on return:**
-  Users see the consent screen on first authorization; subsequent flows from the same browser for the same `(client_id, redirect_uri)` are silently approved via a signed cookie. Cross-site navigations (detected via `Sec-Fetch-Site`) fall back to the prompt. `Sec-Fetch-Site` is a browser-level heuristic rather than a protocol guarantee: an attacker who finds a way to initiate a non-cross-site navigation (XSS on a sibling origin, a same-site redirect chain, etc.) can reach the silent-consent path. `True` does not depend on this signal. See [Confused Deputy Attacks](#confused-deputy-attacks) for the underlying attack class.
+  Users see the consent screen on first authorization; subsequent flows from the same browser for the same client, redirect URI, and requested scopes are silently approved via a signed cookie. Cross-site navigations (detected via `Sec-Fetch-Site`) fall back to the prompt. `Sec-Fetch-Site` is a browser-level heuristic rather than a protocol guarantee: an attacker who finds a way to initiate a non-cross-site navigation (XSS on a sibling origin, a same-site redirect chain, etc.) can reach the silent-consent path. `True` does not depend on this signal. See [Confused Deputy Attacks](#confused-deputy-attacks) for the underlying attack class.
 
   **`"external"` — externally managed:**
   Follows the same authorization path as `False`: FastMCP skips its consent page and associated browser-binding protections, then redirects directly to the upstream provider. The difference is logging. `False` emits a security warning, while `"external"` suppresses that warning as an explicit acknowledgment that the operator is enforcing equivalent consent and transaction-binding protections elsewhere. FastMCP does not provide or verify those external protections.
@@ -365,6 +372,10 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
 <ParamField body="token_expiry_threshold_seconds" type="int" default="0">
   Treat upstream tokens as expired this many seconds before their actual expiry,
   so a token that is about to expire is refreshed before use.
+</ParamField>
+
+<ParamField body="client_registration_ttl_seconds" type="int | None" default="None">
+  How long a dynamically registered client stays in `client_storage` without getting tokens. Each successful token exchange or refresh renews it, so active clients keep their registration and abandoned ones expire. Registration is unauthenticated, so with a persistent store and no lifetime, every registration is kept forever. Set this when `client_storage` is Redis or another shared store.
 </ParamField>
 
 <ParamField body="consent_csp_policy" type="str | None" default="None">
@@ -863,7 +874,7 @@ The OAuth proxy works by bridging DCR clients to traditional auth providers, whi
 
 FastMCP's OAuth proxy defends against confused deputy attacks with two layers of protection:
 
-**Consent screen.** Before any authorization happens, you see a consent page showing the client's details, redirect URI, and requested scopes. This gives you the opportunity to review and deny suspicious requests. By default (`require_authorization_consent=True`), the page is shown on every flow, which is the strongest protection. Setting `require_authorization_consent="remember"` approves previously-approved `(client_id, redirect_uri)` pairs silently on return visits, trading some protection for UX (see below). The consent mechanism is implemented with CSRF tokens and cryptographically signed cookies to prevent tampering.
+**Consent screen.** Before any authorization happens, you see a consent page showing the client's details, redirect URI, and requested scopes. This gives you the opportunity to review and deny suspicious requests. By default (`require_authorization_consent=True`), the page is shown on every flow, which is the strongest protection. Setting `require_authorization_consent="remember"` approves a previously-approved client, redirect URI, and scope set silently on return visits, trading some protection for UX (see below). The consent mechanism is implemented with CSRF tokens and cryptographically signed cookies to prevent tampering.
 
 ![Consent page listing the client name, redirect URI, and requested scopes with approve and deny buttons](/assets/images/oauth-proxy-consent-screen.png)
 
