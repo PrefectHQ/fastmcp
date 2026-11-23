@@ -468,7 +468,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs. When True, clients can authenticate using HTTPS URLs as client
                 IDs, with metadata fetched from the URL. Supports private_key_jwt auth.
-            identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
+            identity_assertion: Beta. Optional SEP-990 identity assertion (ID-JAG) configuration.
                 When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
                 carrying an ID-JAG issued by one of the configured trusted issuers, and
                 mints a short-lived access token (no refresh token) for the asserted

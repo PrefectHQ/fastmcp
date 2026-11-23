@@ -60,6 +60,8 @@ SUPPORTED_ASSERTION_ALGORITHMS = frozenset(
 class IdentityAssertion(BaseModel):
     """Configuration for server-side identity assertion (ID-JAG) support.
 
+    Beta: this API may change in a future release.
+
     When attached to an :class:`~fastmcp.server.auth.oauth_proxy.OAuthProxy` via the
     ``identity_assertion`` parameter, the proxy's token endpoint accepts the RFC 7523
     ``jwt-bearer`` grant carrying an ID-JAG issued by one of the ``trusted_issuers``,
