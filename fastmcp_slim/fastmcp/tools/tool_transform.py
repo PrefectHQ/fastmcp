@@ -773,6 +773,7 @@ class TransformedTool(Tool):
             task_config=tool.task_config,
             execution=tool.execution,
         )
+        transformed_tool._result_transforms = tool._result_transforms
 
         return transformed_tool
 
