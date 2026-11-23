@@ -62,6 +62,7 @@ def contributor_vouch(
 ) -> dict:
     config = vouch_config(Variable.get(CONFIG_VARIABLE, default={}))
     store = SpaceStore(config, lambda: secret_sync(PASSWORD_BLOCK))
+    store.ensure_space()
     github = GitHub(secret_sync("fastmcp-triage-gh-token"))
     record = maintainer_vouch(
         store,

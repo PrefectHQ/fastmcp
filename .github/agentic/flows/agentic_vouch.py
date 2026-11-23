@@ -89,21 +89,23 @@ def vouch_record(
     now: datetime,
     reason: str = "",
     evidence: Iterable[int] = (),
-    evidence_count: int | None = None,
+    merged: Iterable[int] | None = None,
 ) -> dict:
     numbers = sorted(set(evidence))
     record = {
         "$type": VOUCH,
         "subject": subject(user),
         "kind": kind,
-        "by": by,
+        "by": by.lower(),
         "evidence": numbers[-MAX_EVIDENCE:],
         "createdAt": stamp(now),
     }
     if reason:
         record["reason"] = reason[:MAX_REASON]
-    if evidence_count is not None:
-        record["evidenceCount"] = evidence_count
+    if merged is not None:
+        # Every merged PR counted so far, so a late or out-of-order merge is
+        # still told apart from one already counted. Private; dropped on export.
+        record["merged"] = sorted(set(merged))
     return record
 
 
@@ -147,12 +149,25 @@ class Graph:
                 int(who["id"]), Person(int(who["id"]), who.get("login", ""))
             )
             person.login = who.get("login") or person.login
-            self._logins[person.login.lower()] = person.id
             if record.get("$type") == VOUCH:
-                person.edges[record["by"]] = record
+                person.edges[str(record["by"]).lower()] = record
                 person.history.append(record)
             elif record.get("$type") == AFFILIATION:
                 person.affiliations[(record["org"], record["source"])] = record
+
+        # Only each person's newest login resolves, and the newest holder of
+        # a login wins, so a rename never lends one account's edges to another.
+        newest: dict[str, tuple[str, int]] = {}
+        for person in self.people.values():
+            seen = max(
+                [r["createdAt"] for r in person.history]
+                + [r["observedAt"] for r in person.affiliations.values()],
+                default="",
+            )
+            key = person.login.lower()
+            if key not in newest or seen > newest[key][0]:
+                newest[key] = (seen, person.id)
+        self._logins = {key: person_id for key, (_, person_id) in newest.items()}
 
     def find(self, login: str) -> Person | None:
         key = self._logins.get(login.lower())
@@ -201,7 +216,7 @@ class Graph:
             "standing": standing,
             "vouched_by": sorted(vouched),
             "denounced_by": sorted(denounced),
-            "merged_prs": merged.get("evidenceCount", len(merged.get("evidence", [])))
+            "merged_prs": len(merged.get("merged", merged.get("evidence", [])))
             if merged.get("kind") == "vouch"
             else 0,
             "evidence": sorted(
@@ -218,10 +233,10 @@ def _reversals(history: list[dict]) -> int:
     last: dict[str, str] = {}
     count = 0
     for record in history:
-        before = last.get(record["by"])
-        if before is not None and before != record["kind"]:
+        by = str(record["by"]).lower()
+        if last.get(by) is not None and last[by] != record["kind"]:
             count += 1
-        last[record["by"]] = record["kind"]
+        last[by] = record["kind"]
     return count
 
 
@@ -253,25 +268,19 @@ def merged_pr_vouches(graph: Graph, items: Iterable[dict], now: datetime) -> lis
     records = []
     for person_id, (user, numbers) in sorted(merged.items()):
         edge = graph.triage_edge(person_id) or {}
-        known = set(edge.get("evidence", []))
-        count = int(edge.get("evidenceCount", len(known)))
-        new = numbers - known
-        # The count can't tell old merges apart once evidence is capped, so
-        # only numbers above the newest known one are counted as new.
-        if known and len(known) >= MAX_EVIDENCE:
-            new = {n for n in new if n > max(known)}
-        if not new and edge.get("kind") == "vouch":
+        known = set(edge.get("merged", edge.get("evidence", [])))
+        if numbers <= known and edge.get("kind") == "vouch":
             continue
-        total = count + len(new)
+        total = known | numbers
         records.append(
             vouch_record(
                 user,
                 "vouch",
                 TRIAGE,
                 now,
-                reason=f"{total} merged PR{'s' if total != 1 else ''}",
-                evidence=known | new,
-                evidence_count=total,
+                reason=f"{len(total)} merged PR{'s' if len(total) != 1 else ''}",
+                evidence=total,
+                merged=total,
             )
         )
     return records

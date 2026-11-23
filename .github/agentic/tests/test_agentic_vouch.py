@@ -63,7 +63,7 @@ def test_merges_become_one_triage_vouch_per_author():
     records = merged_pr_vouches(Graph([]), items, NOW)
     by_login = {r["subject"]["login"]: r for r in records}
     assert by_login["alice"]["evidence"] == [10, 11]
-    assert by_login["alice"]["evidenceCount"] == 2
+    assert by_login["alice"]["merged"] == [10, 11]
     assert by_login["alice"]["by"] == "triage"
     assert by_login["bob"]["reason"] == "1 merged PR"
 
@@ -77,44 +77,64 @@ def test_seen_merges_add_nothing_and_new_ones_extend_the_edge():
     store = store_with(
         (
             VOUCH,
-            vouch_record(
-                ALICE, "vouch", "triage", NOW, evidence=[10], evidence_count=1
-            ),
+            vouch_record(ALICE, "vouch", "triage", NOW, evidence=[10], merged=[10]),
         )
     )
     graph = Graph(store.records())
     assert merged_pr_vouches(graph, [merged(10, ALICE)], NOW) == []
     [record] = merged_pr_vouches(graph, [merged(10, ALICE), merged(20, ALICE)], NOW)
     assert record["evidence"] == [10, 20]
-    assert record["evidenceCount"] == 2
+    assert record["reason"] == "2 merged PRs"
 
 
-def test_evidence_is_capped_but_the_count_keeps_going():
-    numbers = list(range(1, MAX_EVIDENCE + 1))
+def test_out_of_order_merges_count_once_past_the_evidence_cap():
+    counted = list(range(100, 140))
     store = store_with(
         (
             VOUCH,
             vouch_record(
-                ALICE, "vouch", "triage", NOW, evidence=numbers, evidence_count=40
+                ALICE, "vouch", "triage", NOW, evidence=counted, merged=counted
             ),
         )
     )
     graph = Graph(store.records())
-    # An old merge the cap dropped isn't counted again on a backfill.
-    assert merged_pr_vouches(graph, [merged(0, ALICE)], NOW) == []
-    [record] = merged_pr_vouches(graph, [merged(99, ALICE)], NOW)
+    # A backfill replays merges already counted.
+    assert merged_pr_vouches(graph, [merged(100, ALICE)], NOW) == []
+    # An old PR merged today counts, though its number is below the newest.
+    [record] = merged_pr_vouches(graph, [merged(5, ALICE)], NOW)
     assert len(record["evidence"]) == MAX_EVIDENCE
-    assert record["evidence"][-1] == 99
-    assert record["evidenceCount"] == 41
+    assert len(record["merged"]) == 41
+    store.append(VOUCH, record)
+    assert Graph(store.records()).standing("alice")["merged_prs"] == 41
+
+
+def test_maintainer_logins_are_one_edge_whatever_the_case():
+    store = store_with(
+        (VOUCH, vouch_record(ALICE, "denounce", "Nate", NOW)),
+        (VOUCH, vouch_record(ALICE, "retract", "nate", NOW)),
+    )
+    assert Graph(store.records()).standing("alice")["standing"] == "unknown"
+
+
+def test_an_old_login_does_not_resolve_after_someone_else_takes_it():
+    renamed = {"id": 1, "login": "alice2"}
+    squatter = {"id": 9, "login": "alice"}
+    later = NOW + timedelta(days=1)
+    store = store_with(
+        (VOUCH, vouch_record(ALICE, "vouch", "nate", NOW)),
+        (VOUCH, vouch_record(renamed, "vouch", "nate", later)),
+        (AFFILIATION, affiliation_changes(Graph([]), squatter, set(), later)[0]),
+    )
+    graph = Graph(store.records())
+    assert graph.standing("alice2")["standing"] == "vouched"
+    assert graph.standing("alice")["standing"] == "unknown"
 
 
 def test_a_maintainer_denounce_outweighs_a_triage_vouch_and_counts_as_a_reversal():
     store = store_with(
         (
             VOUCH,
-            vouch_record(
-                ALICE, "vouch", "triage", NOW, evidence=[10], evidence_count=1
-            ),
+            vouch_record(ALICE, "vouch", "triage", NOW, evidence=[10], merged=[10]),
         ),
         (VOUCH, vouch_record(ALICE, "vouch", "nate", NOW)),
         (VOUCH, vouch_record(ALICE, "denounce", "nate", NOW, reason="slop")),
@@ -147,7 +167,7 @@ def test_standing_ranks_orgs_by_tier():
     store = store_with(
         (
             VOUCH,
-            vouch_record(ALICE, "vouch", "triage", NOW, evidence=[1], evidence_count=1),
+            vouch_record(ALICE, "vouch", "triage", NOW, evidence=[1], merged=[1]),
         ),
     )
     graph = Graph(store.records())
@@ -178,11 +198,11 @@ def test_refresh_picks_vouched_people_never_looked_up_or_stale():
     store = store_with(
         (
             VOUCH,
-            vouch_record(ALICE, "vouch", "triage", NOW, evidence=[1], evidence_count=1),
+            vouch_record(ALICE, "vouch", "triage", NOW, evidence=[1], merged=[1]),
         ),
         (
             VOUCH,
-            vouch_record(BOB, "vouch", "triage", NOW, evidence=[2], evidence_count=1),
+            vouch_record(BOB, "vouch", "triage", NOW, evidence=[2], merged=[1]),
         ),
         (AFFILIATION, affiliation_changes(Graph([]), BOB, set(), NOW)[0]),
     )
@@ -236,7 +256,7 @@ def test_people_cards_carry_graph_standing():
     store = store_with(
         (
             VOUCH,
-            vouch_record(ALICE, "vouch", "triage", NOW, evidence=[1], evidence_count=1),
+            vouch_record(ALICE, "vouch", "triage", NOW, evidence=[1], merged=[1]),
         )
     )
     graph = Graph(store.records())
