@@ -1,11 +1,11 @@
 # FastMCP maintenance status
 
-As of 2026-11-23T18:42:26Z. Generated twice a day by [maintenance-status](https://github.com/PrefectHQ/fastmcp/actions/workflows/maintenance-status.yml); machine-readable as [status.json](status.json). How the project is run: [Development guide](https://github.com/PrefectHQ/fastmcp/blob/main/docs/development/contributing.mdx#maintenance-and-automation).
+As of 2026-11-23T21:03:01Z. Generated twice a day by [maintenance-status](https://github.com/PrefectHQ/fastmcp/actions/workflows/maintenance-status.yml); machine-readable as [status.json](status.json). How the project is run: [Development guide](https://github.com/PrefectHQ/fastmcp/blob/main/docs/development/contributing.mdx#maintenance-and-automation).
 
 | automation | state | last ok | runs on | cadence |
 |---|---|---|---|---|
 | [issue-link gate](https://github.com/PrefectHQ/fastmcp/actions/workflows/require-issue-link.yml) | ok | 2026-11-23 | github-actions | on each external PR change and each issue assignment |
-| [labeling](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-label-triage.yml) | off | 2026-11-18 | github-actions | on each new issue or PR |
+| [labeling](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-label-triage.yml) | degraded | — | github-actions | on each new issue or PR |
 | [PR type labels](https://github.com/PrefectHQ/fastmcp/actions/workflows/label-pr-type.yml) | ok | 2026-11-23 | github-actions | on each new or edited PR |
 | [issue type labels](https://github.com/PrefectHQ/fastmcp/actions/workflows/label-issue-type.yml) | ok | 2026-11-23 | github-actions | on each new issue |
 | [duplicate detection](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-dedupe-issues.yml) | off | 2026-11-18 | github-actions | on each new issue |
@@ -17,7 +17,7 @@ As of 2026-11-23T18:42:26Z. Generated twice a day by [maintenance-status](https:
 | [docs deploy](https://github.com/PrefectHQ/fastmcp/actions/workflows/deploy-docs.yml) | ok | 2026-11-23 | github-actions | on each docs publication |
 | [contributor queue](https://github.com/PrefectHQ/fastmcp/pulls?q=is%3Apr+is%3Aopen+label%3Amissing-issue-link) | ok | 2026-11-23 | github-actions | twice daily |
 
-**Contributor queue:** 7 PRs waiting on assignment; the oldest has waited 48 days, and 7 have waited more than a week.
+**Contributor queue:** 5 PRs waiting on assignment; the oldest has waited 48 days, and 5 have waited more than a week.
 
 **Needs a maintainer's judgment:**
 
