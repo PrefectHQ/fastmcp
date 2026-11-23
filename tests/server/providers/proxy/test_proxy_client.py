@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from typing import Any, cast
 
+import anyio
 import pytest
 from anyio import create_task_group
 from mcp import CreateMessageResult
+from mcp.shared.subscriptions import ToolsListChanged
 from mcp_types import (
     ElicitRequestFormParams,
     ElicitRequestURLParams,
@@ -600,6 +602,35 @@ class TestProxyClient:
             "notifications/resources/list_changed",
             "notifications/prompts/list_changed",
         ]
+
+    async def test_forward_list_changed_to_modern_listen_stream(
+        self, proxy_server: FastMCP
+    ):
+        """A 2026-07-28 client has no push channel; the proxy relays an
+        upstream list change onto its listen stream instead."""
+        async with Client(proxy_server) as client:
+            assert client.protocol_version == "2026-07-28"
+            async with client.listen(tools_list_changed=True) as subscription:
+                await client.call_tool("hide_echo", {})
+                with anyio.fail_after(2):
+                    event = await anext(aiter(subscription))
+
+        assert event == ToolsListChanged()
+
+    async def test_proxy_added_as_provider_relays_to_parent_listen_stream(
+        self, proxy_server: FastMCP
+    ):
+        """An upstream list change relayed by a proxy also reaches clients
+        listening on a server the proxy is attached to with `add_provider`."""
+        parent = FastMCP("parent")
+        parent.add_provider(proxy_server, namespace="up")
+        async with Client(parent) as client:
+            async with client.listen(tools_list_changed=True) as subscription:
+                await client.call_tool("up_hide_echo", {})
+                with anyio.fail_after(2):
+                    event = await anext(aiter(subscription))
+
+        assert event == ToolsListChanged()
 
     async def test_concurrent_log_requests_no_mixing(self, proxy_server: FastMCP):
         """Test that concurrent log requests don't mix handlers (fixes #1068)."""
