@@ -147,19 +147,19 @@ def clocks(pages: Callable[[str], list[dict]]) -> list[dict]:
     return sorted(found.values(), key=lambda item: item["number"])
 
 
-def subject(request: Request, number: int) -> dict:
-    """What the auditor needs to judge an item: the issue and its recent human talk."""
+def subject(request: Request, pages: Callable[[str], list[dict]], number: int) -> dict:
+    """What the auditor needs to judge an item: the issue and its latest human talk."""
     issue = request(f"repos/{REPOSITORY}/issues/{number}")
     if not isinstance(issue, dict):
         return {"number": number, "unavailable": True}
-    comments = request(f"repos/{REPOSITORY}/issues/{number}/comments?per_page=100")
+    comments = pages(f"repos/{REPOSITORY}/issues/{number}/comments")
     human = [
         {
             "author": (comment.get("user") or {}).get("login"),
             "association": comment.get("author_association"),
             "body": (comment.get("body") or "")[:600],
         }
-        for comment in (comments if isinstance(comments, list) else [])
+        for comment in comments
         if not automated(comment.get("user"))
     ]
     return {
@@ -196,7 +196,9 @@ def gather(read: GitHub, now: datetime, hours: int) -> dict:
         "writes": writes,
         "reversals": undone,
         "clocks": running,
-        "items": [subject(read.request, number) for number in numbers[:MAX_ITEMS]],
+        "items": [
+            subject(read.request, read.pages, number) for number in numbers[:MAX_ITEMS]
+        ],
         "items_left_out": max(0, len(numbers) - MAX_ITEMS),
     }
 

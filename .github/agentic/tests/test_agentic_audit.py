@@ -101,13 +101,8 @@ def test_clocks_list_open_issues_by_label():
     ]
 
 
-def test_subject_keeps_human_comments_only():
+def test_subject_keeps_the_latest_human_comments():
     def request(path):
-        if path.endswith("/comments?per_page=100"):
-            return [
-                {"user": BOT, "body": "Thanks for the report."},
-                {"user": NATE, "author_association": "MEMBER", "body": "real bug"},
-            ]
         return {
             "title": "t",
             "state": "open",
@@ -116,10 +111,21 @@ def test_subject_keeps_human_comments_only():
             "body": "b",
         }
 
-    item = audit.subject(request, 5)
-    assert item["comments"] == [
-        {"author": "zzstoatzz", "association": "MEMBER", "body": "real bug"}
-    ]
+    def pages(path):
+        assert path.endswith("/comments")
+        older = [{"user": NATE, "body": f"old {n}"} for n in range(120)]
+        return older + [
+            {"user": BOT, "body": "Thanks for the report."},
+            {"user": NATE, "author_association": "MEMBER", "body": "real bug"},
+        ]
+
+    item = audit.subject(request, pages, 5)
+    assert len(item["comments"]) == 5
+    assert item["comments"][-1] == {
+        "author": "zzstoatzz",
+        "association": "MEMBER",
+        "body": "real bug",
+    }
     assert item["labels"] == ["bug"]
 
 
