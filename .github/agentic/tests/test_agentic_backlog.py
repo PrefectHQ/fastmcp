@@ -523,7 +523,7 @@ def test_different_manual_pr_request_does_not_resume_previous_pr(github_server):
         )
 
 
-def test_only_unrequeued_operational_work_raises_an_alert():
+def test_only_exhausted_unrequeued_operational_work_raises_an_alert():
     review = {
         "bins": {
             "operational": [
@@ -542,8 +542,13 @@ def test_only_unrequeued_operational_work_raises_an_alert():
             ]
         }
     }
-    assert attention(review) == [
+    assert attention(review, {1, 2, 3, 4}) == [
         "#3: 7 PRs link this issue; review handles at most 6",
         "#4: Review delivery failed: Independent review record is not readable yet",
     ]
-    assert attention({"bins": {"operational": review["bins"]["operational"][:2]}}) == []
+    # An issue with retries left stays quiet.
+    assert attention(review, {3}) == [
+        "#3: 7 PRs link this issue; review handles at most 6"
+    ]
+    operational = review["bins"]["operational"][:2]
+    assert attention({"bins": {"operational": operational}}, {1, 2}) == []
