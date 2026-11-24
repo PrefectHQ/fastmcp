@@ -78,7 +78,7 @@ one gets a follow-up patch, never a re-tag.
    honor opt-outs, and deduplicate entries. Save the completed generated notes to
    `/tmp/generated-notes.md`.
 
-2. **Classify and smoke before proposing anything.** For every user-facing entry in the preview, take the compatibility line from its review verdict (or write one per [review-pr](../review-pr/SKILL.md) step 4) and sort the release into: fixes only, tightening, loosening, new defaults, new capabilities, dependency floor changes. List public symbols added or removed since the last tag on the target line. For each tightening, loosening, or new default, `search` the triage memory for past reports and reverts in that area, so the notes can name the setups that broke last time. Recommend patch or minor against the versioning policy in [releases](../../../docs/development/releases.mdx) and prior releases; the maintainer decides. Every tightening, loosening, and new default gets a sentence in the handwritten notes with its opt-out or workaround.
+2. **Classify and smoke before proposing anything.** For every user-facing entry in the preview, take the compatibility line from its review verdict (or write one per [review-pr](../review-pr/SKILL.md) step 4) and sort the release into: fixes only, tightening, loosening, new defaults, new capabilities, dependency floor changes. Run `uv run .agents/skills/release/scripts/compat_diff.py v<prev> origin/<branch>` for what changed about the installed surface: third-party requirements each install target no longer pulls in, newly pulls in, or re-pins, and names dropped from public `__all__`s. Labels and verdicts miss these: a dependency FastMCP stops installing breaks users who imported it without declaring it, even when no FastMCP API changed. Every line gets a sentence in the handwritten notes with what to do, or a stated reason it reaches no user. For each tightening, loosening, or new default, `search` the triage memory for past reports and reverts in that area, so the notes can name the setups that broke last time. Recommend patch or minor against the versioning policy in [releases](../../../docs/development/releases.mdx) and prior releases; the maintainer decides. Every tightening, loosening, and new default gets a sentence in the handwritten notes with its opt-out or workaround.
 
    Then build the wheels (`uv build --all-packages`), install them into a fresh venv outside the repository, and run a smoke script against them, kept at `scripts/smoke.py` in this skill's directory so each release extends the last one instead of rewriting it: a server and client over stdio and HTTP in both protocol eras, a proxy, the OAuth proxy flow, and the CLI. Add one probe per tightening or new default and run it against both the previous release from PyPI and the new wheels, so the notes describe observed behavior. A smoke failure stops the release; a smoke pass does not settle compatibility.
 
@@ -194,6 +194,8 @@ one gets a follow-up patch, never a re-tag.
    Verify through the markdown endpoints, which bypass the HTML edge cache:
    `curl -fsS https://gofastmcp.com/docs/changelog.md | grep -c "<pun>"`, and the same
    for `updates.md` and any page the release touched.
+
+9. **Check new reports against it first.** For two weeks after a release, a report that touches a dependency, symbol, or behavior named in that release's compatibility sentences (step 2) is checked against that change before anything else. A confirmed regression gets a patch, and the next release's notes say what changed back.
 
 ## Publishing docs by hand
 
