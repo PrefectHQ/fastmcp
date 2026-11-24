@@ -9,9 +9,10 @@ import inspect
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar, cast
 
 import anyio
 import anyio.lowlevel
@@ -29,6 +30,7 @@ from mcp.shared.inbound import (
 from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
 from mcp_types import HEADER_MISMATCH, INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
+from pydantic import BaseModel
 
 from fastmcp.experimental.events._constants import (
     EVENTS_EXTENSION_ID,
@@ -56,6 +58,10 @@ from fastmcp.utilities.async_utils import (
     is_coroutine_function,
 )
 from fastmcp.utilities.logging import get_logger
+
+if TYPE_CHECKING:
+    from fastmcp.experimental.events.log import EventLog
+    from fastmcp.experimental.events.typed import TypedEvent
 
 logger = get_logger(__name__)
 
@@ -111,6 +117,7 @@ class EventPoll:
 
 
 EventCheck: TypeAlias = Callable[[EventPoll], EventBatch | Awaitable[EventBatch]]
+EventSource = TypeVar("EventSource", bound=EventCheck | type[BaseModel])
 
 
 @dataclass(frozen=True)
@@ -118,6 +125,7 @@ class _Registration:
     descriptor: EventType
     check: EventCheck
     validator: Validator | None
+    typed: TypedEvent | None = None
 
 
 class EventsExtension(ServerExtension):
@@ -155,57 +163,140 @@ class EventsExtension(ServerExtension):
 
     identifier = EVENTS_EXTENSION_ID
 
-    def __init__(self, *, poll_interval_ms: int = 30_000, push: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        poll_interval_ms: int = 30_000,
+        push: bool = True,
+        emit_buffer: int = 1_000,
+        log: EventLog | None = None,
+    ) -> None:
+        """
+        Args:
+            poll_interval_ms: How long clients wait between polls, and how
+                often a push stream re-runs a check function.
+            push: Whether to offer `events/stream`.
+            emit_buffer: How many emitted events per type the default
+                in-memory log keeps. Ignored when `log` is given.
+            log: Where emitted events are kept. Defaults to an
+                `InMemoryEventLog`.
+        """
+        from fastmcp.experimental.events.log import InMemoryEventLog
+
         if poll_interval_ms < 0:
             raise ValueError("poll_interval_ms must not be negative")
         self._poll_interval_ms = poll_interval_ms
         self._push = push
+        self._log = log if log is not None else InMemoryEventLog(emit_buffer)
         self._registrations: dict[str, _Registration] = {}
+        self._models: dict[type[BaseModel], str] = {}
 
     def event(
         self,
-        *,
         name: str,
+        *,
         description: str | None = None,
         input_schema: dict[str, Any] | None = None,
         payload_schema: dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
-    ) -> Callable[[EventCheck], EventCheck]:
-        """Register a check function as an event type.
+    ) -> Callable[[EventSource], EventSource]:
+        """Register an event type, from a payload model or a check function.
+
+        Decorating a Pydantic model declares an event type you `emit()`: the
+        model's fields are the payload schema, its docstring the description,
+        and the keyword parameters of its optional `for_subscription` method
+        the subscription arguments. FastMCP logs what you emit and serves poll
+        and push from that log.
+
+        Decorating a check function serves an upstream you can read from a
+        cursor: it receives an `EventPoll` and returns an `EventBatch`.
 
         Args:
             name: Event type name clients subscribe to.
-            description: What the event means and when it fires.
+            description: What the event means and when it fires. Defaults to
+                a model's docstring.
             input_schema: JSON Schema for subscription arguments. Polls whose
                 arguments do not match are rejected before the check runs.
-            payload_schema: JSON Schema for each event's `data`.
+                Derived from `for_subscription` for a model.
+            payload_schema: JSON Schema for each event's `data`. Derived from
+                the fields for a model.
             meta: Optional `_meta` for the listing.
         """
         if name in self._registrations:
             raise ValueError(f"An event named {name!r} is already registered.")
-        validator = None
         if input_schema is not None:
-            Draft202012Validator.check_schema(input_schema)
-            validator = Draft202012Validator(input_schema)
-            reason = find_invalid_x_mcp_header(input_schema)
-            if reason is not None:
-                raise ValueError(
-                    f"Event {name!r} has an invalid x-mcp-header: {reason}"
-                )
-        descriptor = EventType(
-            name=name,
-            description=description,
-            delivery=["poll", "push"] if self._push else ["poll"],
-            input_schema=input_schema,
-            payload_schema=payload_schema,
-            meta=meta,
-        )
+            # Fail at the decorator line, before there is anything to register.
+            _schema_validator(name, input_schema)
 
-        def register(check: EventCheck) -> EventCheck:
-            self._registrations[name] = _Registration(descriptor, check, validator)
-            return check
+        def register(source: EventSource) -> EventSource:
+            if name in self._registrations:
+                raise ValueError(f"An event named {name!r} is already registered.")
+            typed = None
+            schema, payload, summary = input_schema, payload_schema, description
+            if isinstance(source, type) and issubclass(source, BaseModel):
+                from fastmcp.experimental.events.typed import TypedEvent
+
+                if source in self._models:
+                    raise ValueError(
+                        f"{source.__name__} is already the event {self._models[source]!r}."
+                    )
+                typed = TypedEvent(name, source, self._log)
+                schema = schema if schema is not None else typed.input_schema
+                payload = payload if payload is not None else typed.payload_schema
+                summary = summary or inspect.getdoc(source)
+                check: EventCheck = typed.check
+            elif callable(source):
+                check = cast(EventCheck, source)
+            else:
+                raise TypeError(
+                    "events.event() decorates a check function or a Pydantic model"
+                )
+            validator = None if schema is None else _schema_validator(name, schema)
+            descriptor = EventType(
+                name=name,
+                description=summary,
+                delivery=["poll", "push"] if self._push else ["poll"],
+                input_schema=schema,
+                payload_schema=payload,
+                meta=meta,
+            )
+            self._registrations[name] = _Registration(
+                descriptor, check, validator, typed
+            )
+            if typed is not None:
+                self._models[typed.model] = name
+            return source
 
         return register
+
+    async def emit(
+        self,
+        payload: BaseModel,
+        *,
+        event_id: str | None = None,
+        timestamp: datetime | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        """Record that an event happened, for every subscription that wants it.
+
+        `payload` is an instance of a model registered with `event()`. Pass the
+        upstream's stable identifier as `event_id` when there is one, so a
+        client that sees the same occurrence twice can drop the repeat.
+        Open push streams for the event type wake at once; polls see it on
+        their next request.
+        """
+        name = self._models.get(type(payload))
+        if name is None:
+            raise ValueError(
+                f"{type(payload).__name__} is not a registered event model; "
+                "decorate it with events.event()."
+            )
+        typed = self._registrations[name].typed
+        assert typed is not None
+        await typed.emit(payload, event_id=event_id, timestamp=timestamp, meta=meta)
+
+    def lifespan(self) -> AbstractAsyncContextManager[None]:
+        return self._log.lifespan()
 
     def methods(self) -> Sequence[MethodBinding]:
         return (
@@ -380,6 +471,7 @@ class EventsExtension(ServerExtension):
             )
             last_sent = time.monotonic()
 
+        typed = registration.typed
         batch = await self._check(
             registration,
             EventPoll(
@@ -426,7 +518,10 @@ class EventsExtension(ServerExtension):
                     if until_heartbeat <= 0:
                         await send("heartbeat", cursor=cursor)
                         continue
-                    await anyio.sleep(min(remaining, until_heartbeat))
+                    if typed is None:
+                        await anyio.sleep(min(remaining, until_heartbeat))
+                    elif await typed.wait(cursor, min(remaining, until_heartbeat)):
+                        break
             try:
                 batch = await self._check(
                     registration, EventPoll(arguments=arguments, cursor=cursor)
@@ -454,3 +549,12 @@ class EventsExtension(ServerExtension):
                     truncated=True,
                     heartbeat_ms=heartbeat_ms,
                 )
+
+
+def _schema_validator(name: str, schema: dict[str, Any]) -> Validator:
+    """A validator for an event type's input schema, refusing invalid headers."""
+    Draft202012Validator.check_schema(schema)
+    reason = find_invalid_x_mcp_header(schema)
+    if reason is not None:
+        raise ValueError(f"Event {name!r} has an invalid x-mcp-header: {reason}")
+    return Draft202012Validator(schema)
