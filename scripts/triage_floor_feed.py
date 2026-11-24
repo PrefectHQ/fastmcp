@@ -67,12 +67,19 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
     if name in {"issues", "pull_request", "pull_request_target"}:
         if action == "closed":
             kind = "merged" if thing.get("merged") else "closed"
+            base["reason"] = thing.get("state_reason")
         elif action in {"opened", "reopened"}:
             kind = "opened"
+            base["association"] = thing.get("author_association")
         elif action == "labeled":
             label = (payload.get("label") or {}).get("name", "")
             kind = "gated" if label == GATE_LABEL else "labeled"
             base["label"] = label
+        elif action == "unlabeled":
+            label = (payload.get("label") or {}).get("name", "")
+            if label == GATE_LABEL:
+                kind = "ungated"
+                base["label"] = label
         elif action == "ready_for_review":
             kind = "updated"
         elif action == "synchronize":
@@ -237,6 +244,7 @@ def slim(item: dict) -> dict:
         "draft": bool(item.get("draft")),
         "bot": is_bot(item.get("user")),
         "a": (item.get("user") or {}).get("login", ""),
+        "as": item.get("author_association", ""),
         "labels": labels[:8],
         "created": item["created_at"],
         "updated": item["updated_at"],

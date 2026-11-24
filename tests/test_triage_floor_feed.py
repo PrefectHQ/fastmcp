@@ -54,6 +54,38 @@ def test_bot_comment_and_release():
     assert "number" not in event
 
 
+def test_opened_carries_the_authors_association():
+    payload = {
+        "action": "opened",
+        "issue": {"number": 9, "title": "x", "author_association": "FIRST_TIMER"},
+        "sender": {"login": "new", "type": "User"},
+    }
+    assert feed.to_event("issues", payload, NOW)["association"] == "FIRST_TIMER"
+
+
+def test_closed_issue_carries_its_reason():
+    payload = {
+        "action": "closed",
+        "issue": {"number": 9, "title": "x", "state_reason": "not_planned"},
+        "sender": {"login": "nate", "type": "User"},
+    }
+    event = feed.to_event("issues", payload, NOW)
+    assert event["kind"] == "closed"
+    assert event["reason"] == "not_planned"
+
+
+def test_gate_release_is_ungated_and_other_unlabels_are_skipped():
+    gate = {
+        "action": "unlabeled",
+        "label": {"name": feed.GATE_LABEL},
+        "pull_request": {"number": 8, "title": "x"},
+        "sender": {"login": "marvin[bot]", "type": "Bot"},
+    }
+    assert feed.to_event("pull_request_target", gate, NOW)["kind"] == "ungated"
+    other = {**gate, "label": {"name": "bug"}}
+    assert feed.to_event("pull_request_target", other, NOW) is None
+
+
 def test_uninteresting_actions_are_skipped():
     assert (
         feed.to_event("issues", {"action": "edited", "issue": {"number": 1}}, NOW)
