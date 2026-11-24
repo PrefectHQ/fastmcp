@@ -905,7 +905,7 @@ dev = [
 name = "fastmcp-events"
 source = { editable = "fastmcp_events" }
 dependencies = [
-    { name = "fastmcp-slim", extra = ["server"] },
+    { name = "fastmcp-slim", extra = ["mcp"] },
 ]
 
 [package.optional-dependencies]
@@ -916,7 +916,7 @@ docket = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp-slim", extras = ["server"], editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["mcp"], editable = "fastmcp_slim" },
     { name = "pydocket", marker = "extra == 'docket'", specifier = ">=0.29.1" },
     { name = "redis", marker = "extra == 'docket'", specifier = "!=8.1.0" },
 ]

@@ -30,8 +30,8 @@ from pydantic import BaseModel
 
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.extensions import MethodBinding, ServerExtension
-from fastmcp.server.mixins.mcp_operations import _apply_pagination
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.pagination import paginate_request
 from fastmcp_events._constants import (
     EVENTS_EXTENSION_ID,
     FORBIDDEN,
@@ -327,7 +327,7 @@ class EventsExtension(ServerExtension):
             (r.descriptor(push=self._push) for r in self._registrations.values()),
             key=lambda descriptor: descriptor.name,
         )
-        page, next_cursor = _apply_pagination(
+        page, next_cursor = paginate_request(
             descriptors, params.cursor, self.server._list_page_size
         )
         return ListEventsResult(events=page, next_cursor=next_cursor)

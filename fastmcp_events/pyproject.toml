@@ -52,7 +52,9 @@ bump = true
 fallback-version = "0.0.0"
 
 [tool.hatch.metadata.hooks.uv-dynamic-versioning]
-dependencies = ["fastmcp-slim[server]=={{ version }}"]
+# The client and server parts load lazily, so either side installs only what it
+# uses: `fastmcp-slim[client]` to subscribe, `fastmcp-slim[server]` to serve.
+dependencies = ["fastmcp-slim[mcp]=={{ version }}"]
 
 [tool.hatch.metadata.hooks.uv-dynamic-versioning.optional-dependencies]
 # DocketEventLog keeps emitted events in Redis streams through Docket.
