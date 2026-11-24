@@ -98,6 +98,8 @@ def installed(packages: Graph, name: str, extra: str) -> dict[str, str]:
                 todo.extend((req.name, e) for e in ["", *sorted(req.extras)])
             else:
                 spec = str(req.specifier) or "any"
+                if req.extras:
+                    spec = f"[{','.join(sorted(req.extras))}] {spec}"
                 if req.marker is not None:
                     spec += f"; {req.marker}"
                 found.setdefault(req.name.lower(), set()).add(spec)
