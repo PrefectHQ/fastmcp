@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 import flows.agentic_triage as triage
 from flows.agentic_backlog import Intake
-from flows.agentic_outcome import outcome_lines, subjects
+from flows.agentic_outcome import next_steps, outcome_lines, subjects
 from flows.agentic_triage import announce, maintainer
 
 URL = "https://github.com/PrefectHQ/fastmcp/issues/"
@@ -85,7 +85,7 @@ def test_outcome_lists_only_items_waiting_on_a_maintainer():
         f"<{URL}6316|#6316> fastmcp-tasks: let TasksExtension run a custom do… · @rob-archivium → Should FastMCP add and maintain a supported TasksExtension…",
         f"<{URL}6295|#6295> Redirect &lt;URI&gt; &amp; helpers · @alpaylan → Security-labeled report requires restricted review",
         f"<{URL}6344|#6344> Add CrakSEO MCP connect skills → close? The request is promotional rather than a FastMCP defect.",
-        f"<{URL}6400|#6400> → needs repro info",
+        f"<{URL}6400|#6400> → needs repro info: Needs a concrete reproduction",
     ]
 
 
@@ -136,7 +136,7 @@ def test_subjects_come_from_evidence_with_inventory_fallback(evidence):
 
 
 @pytest.mark.parametrize(
-    "review,emitted",
+    "review,recorded",
     [
         (REVIEW, True),
         ({"bins": {"unchanged": REVIEW["bins"]["unchanged"]}}, False),
@@ -144,21 +144,23 @@ def test_subjects_come_from_evidence_with_inventory_fallback(evidence):
         (None, False),
     ],
 )
-def test_announce_emits_only_when_a_maintainer_is_needed(monkeypatch, review, emitted):
+def test_announce_records_next_steps_without_posting(monkeypatch, review, recorded):
     calls = []
-    monkeypatch.setattr(triage, "emit_event", lambda **event: calls.append(event))
+    posted = []
+    monkeypatch.setattr(triage, "record_next_step", lambda *args: calls.append(args))
+    monkeypatch.setattr(triage, "emit_event", lambda **event: posted.append(event))
+    monkeypatch.setattr(triage, "live_item", lambda number: None)
     owner = uuid4()
     announce(owner, {"review": review, "issues": ISSUES})
-    if not emitted:
+    assert posted == []
+    if not recorded:
         assert calls == []
         return
     assert calls == [
-        {
-            "event": "fastmcp.triage.outcome",
-            "resource": {"prefect.resource.id": f"fastmcp.triage.intake.{owner}"},
-            "payload": {"text": "\n".join(outcome_lines(REVIEW, ISSUES))},
-        }
+        (owner, number, line)
+        for number, line in next_steps(REVIEW, ISSUES, lambda number: None).items()
     ]
+    assert len(calls) == len(outcome_lines(REVIEW, ISSUES))
 
 
 @pytest.mark.parametrize(
@@ -204,3 +206,76 @@ def test_intake_sender_is_a_github_login():
     for invalid in ("", "-leading", "has space", "bot[bot]"):
         with pytest.raises(ValidationError):
             Intake(sender=invalid)
+
+
+def test_evidence_says_what_the_reproduction_found():
+    def line(item):
+        return outcome_lines({"bins": {"evidence": [item]}}, [])[0]
+
+    assert line(
+        {
+            "issue_number": 1,
+            "decision": "reproduced",
+            "observed": "Missing path param raises ValueError. More detail.",
+            "next_step": "Fix OpenAPITool.run to raise ValidationError for user_id.",
+        }
+    ).endswith(
+        "→ reproduced: Fix OpenAPITool.run to raise ValidationError for user_id."
+    )
+    assert line(
+        {"issue_number": 1, "decision": "not_reproduced", "observed": "Works on main."}
+    ).endswith("→ could not reproduce: Works on main.")
+    assert line({"issue_number": 1, "decision": "evidence_needed"}).endswith(
+        "→ needs repro info"
+    )
+
+
+def test_decision_without_question_or_reason_is_never_blank():
+    assert outcome_lines({"bins": {"decisions": [{"issue_number": 1}]}}, [])[
+        0
+    ].endswith("→ needs a maintainer decision")
+    assert outcome_lines(
+        {"bins": {"decisions": [{"issue_number": 1, "next_step": "Pick A or B."}]}},
+        [],
+    )[0].endswith("→ Pick A or B.")
+
+
+def live_from(items):
+    return lambda number: items.get(number)
+
+
+def gated(author):
+    return {
+        "state": "closed",
+        "user": {"login": author},
+        "labels": [{"name": "missing-issue-link"}],
+        "pull_request": {"merged_at": None},
+    }
+
+
+def test_live_state_rewrites_stale_pull_request_advice():
+    item = {"issue_number": 9, "verification": [{"pr_number": 5}]}
+    review = {"bins": {"existing_review": [item]}}
+    open_issue = {"state": "open"}
+
+    # Closed by the issue-link gate before the outcome went out.
+    live = live_from({9: open_issue, 5: gated("xDipzz")})
+    assert outcome_lines(review, [], live)[0].endswith(
+        "→ PR #5 is gate-closed: assign @xDipzz to reopen it, or decline"
+    )
+    # Merged since intake.
+    merged = {"state": "closed", "pull_request": {"merged_at": "2026-11-18T00:00:00Z"}}
+    live = live_from({9: open_issue, 5: merged})
+    assert outcome_lines(review, [], live)[0].endswith(
+        "→ PR #5 merged: close the issue"
+    )
+    # Still open.
+    live = live_from({9: open_issue, 5: {"state": "open", "pull_request": {}}})
+    assert outcome_lines(review, [], live)[0].endswith("→ review PR #5")
+    # Unreadable state falls back to what intake saw.
+    assert outcome_lines(review, [], live_from({}))[0].endswith("→ review PR #5")
+
+
+def test_live_state_drops_issues_closed_since_intake():
+    review = {"bins": {"evidence": [{"issue_number": 9}]}}
+    assert outcome_lines(review, [], live_from({9: {"state": "closed"}})) == []

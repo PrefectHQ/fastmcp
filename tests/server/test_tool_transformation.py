@@ -306,6 +306,64 @@ async def test_tool_transform_without_version_keeps_requested_version():
             await client.call_tool("calc", {"x": 3}, version="3.0")
 
 
+async def test_tool_transform_config_that_cannot_apply_hides_only_its_tool():
+    mcp = FastMCP("Test Server")
+
+    @mcp.tool
+    def needs_a(a: int) -> int:
+        return a
+
+    @mcp.tool
+    def other() -> str:
+        return "ok"
+
+    # Hiding a required argument with no default cannot apply to `needs_a`.
+    mcp.add_transform(
+        ToolTransform(
+            {
+                "needs_a": ToolTransformConfig(
+                    arguments={"a": ArgTransformConfig(hide=True)}
+                )
+            }
+        )
+    )
+
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+        assert [t.name for t in tools] == ["other"]
+        result = await client.call_tool("other", {})
+        assert result.data == "ok"
+        with pytest.raises(ToolError):
+            await client.call_tool("needs_a", {})
+
+
+async def test_tool_transform_that_cannot_apply_frees_its_new_name():
+    mcp = FastMCP("Test Server")
+
+    @mcp.tool
+    def x(a: int) -> int:
+        return a
+
+    @mcp.tool
+    def y() -> str:
+        return "own y"
+
+    mcp.add_transform(
+        ToolTransform(
+            {
+                "x": ToolTransformConfig(
+                    name="y", arguments={"a": ArgTransformConfig(hide=True)}
+                )
+            }
+        )
+    )
+
+    async with Client(mcp) as client:
+        assert [t.name for t in await client.list_tools()] == ["y"]
+        result = await client.call_tool("y", {})
+        assert result.data == "own y"
+
+
 async def test_openapi_path_params_not_duplicated_in_description():
     """Path parameter details should live in inputSchema, not the description.
 

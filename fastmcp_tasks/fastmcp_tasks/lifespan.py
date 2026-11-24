@@ -88,6 +88,7 @@ async def docket_lifespan(
                 "redelivery_timeout": settings.redelivery_timeout,
                 "reconnection_delay": settings.reconnection_delay,
                 "minimum_check_interval": settings.minimum_check_interval,
+                "parent_task_spans": settings.parent_task_spans,
             }
             if settings.worker_name:
                 worker_kwargs["name"] = settings.worker_name

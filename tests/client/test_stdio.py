@@ -442,6 +442,31 @@ class TestKeepAlive:
             async with Client(transport) as client:
                 assert (await client.call_tool("pid")).data
 
+    async def test_keep_alive_false_subprocess_outlives_all_but_last_client(
+        self, stdio_script
+    ):
+        transport = PythonStdioTransport(stdio_script, keep_alive=False)
+
+        async with Client(transport) as first:
+            async with Client(transport) as second:
+                pid = (await second.call_tool("pid")).data
+            assert (await first.call_tool("pid")).data == pid
+
+        await wait_for_process_exit(pid)
+
+    async def test_cancelled_scope_stops_shared_subprocess(self, stdio_script):
+        transport = PythonStdioTransport(stdio_script, keep_alive=False)
+        pid: int | None = None
+
+        with anyio.CancelScope() as scope:
+            async with Client(transport) as first, Client(transport) as second:
+                pid = (await first.call_tool("pid")).data
+                assert (await second.call_tool("pid")).data == pid
+                scope.cancel()
+                await anyio.sleep(10)
+
+        await wait_for_process_exit(pid)
+
     async def test_cancelled_scope_still_stops_unshared_subprocess(self, stdio_script):
         transport = PythonStdioTransport(stdio_script, keep_alive=False)
         pid: int | None = None
@@ -449,7 +474,7 @@ class TestKeepAlive:
         with anyio.CancelScope() as scope:
             async with transport.connect_session() as session:
                 result = await session.call_tool("pid", {})
-                pid = int(result.content[0].text)  # ty: ignore[unresolved-attribute]
+                pid = int(result.content[0].text)  # ty: ignore[missing-union-attribute]
                 scope.cancel()
 
         await wait_for_process_exit(pid)
@@ -740,7 +765,7 @@ class TestSubprocessCrashRecovery:
 
         # First call works
         result1 = await proxy.call_tool("pid")
-        pid1 = int(result1.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        pid1 = int(result1.content[0].text)  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
         # Kill the backend subprocess
         psutil.Process(pid1).kill()
@@ -763,7 +788,7 @@ class TestSubprocessCrashRecovery:
 
         # First call to get the PID
         result = await proxy.call_tool("pid")
-        pid1 = int(result.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        pid1 = int(result.content[0].text)  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
         # Kill the subprocess
         psutil.Process(pid1).kill()
@@ -779,14 +804,14 @@ class TestSubprocessCrashRecovery:
 
         for r in results:
             if not isinstance(r, Exception):
-                served_by = int(r.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+                served_by = int(r.content[0].text)  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
                 assert served_by != pid1, (
                     "call reported success from the killed subprocess"
                 )
 
         # Recovery: a subsequent request must succeed on a fresh subprocess
         result = await proxy.call_tool("pid")
-        pid2 = int(result.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        pid2 = int(result.content[0].text)  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert pid1 != pid2
 
     async def test_clean_exit_recovers(self):

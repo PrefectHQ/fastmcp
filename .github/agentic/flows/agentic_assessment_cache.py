@@ -19,6 +19,8 @@ def assessment_fingerprint(parameters: dict) -> str | None:
         return None
     value = deepcopy(parameters)
     value["context"].pop("retained_intake_sha256", None)
+    # Follower and PR counts drift between events; an unchanged issue keeps its assessment.
+    value["context"].pop("people", None)
     return digest(value)
 
 

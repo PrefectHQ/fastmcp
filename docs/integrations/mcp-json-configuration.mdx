@@ -35,7 +35,7 @@ The standard uses a `mcpServers` object where each key represents a server name 
 
 ### Server Configuration Fields
 
-#### `command` (required)
+#### `command` (required for local servers)
 The executable command to run the MCP server. This should be an absolute path or a command available in the system PATH.
 
 ```json
@@ -65,6 +65,26 @@ An object containing environment variables to set when launching the server. All
   }
 }
 ```
+
+### Remote Servers
+
+A server that is already running over HTTP is configured with a `url` instead of `command`. Not every client accepts remote entries in this file; FastMCP's `Client` does, along with any client that supports remote servers:
+
+```json
+{
+  "mcpServers": {
+    "weather": {
+      "url": "https://weather.example.com/mcp",
+      "transport": "http",
+      "headers": {
+        "X-Api-Key": "your-key"
+      }
+    }
+  }
+}
+```
+
+`transport` is optional; FastMCP infers it from the URL. A URL ending in `/sse` uses SSE, and anything else uses Streamable HTTP. `headers` is sent with every request. See [client transports](/clients/transports) for the full set of options, including `auth` and per-server timeouts.
 
 ### Client Adoption
 

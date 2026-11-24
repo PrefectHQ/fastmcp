@@ -18,7 +18,7 @@ class Intake(BaseModel):
     pull_requests: list[PositiveInt] = Field(default_factory=list, max_length=10)
     queue: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,32}$")
     retry_failed: bool = False
-    # GitHub login whose event started this intake; maintainers' own events are skipped.
+    # GitHub login whose event started this intake; maintainers' own PR events are skipped.
     sender: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$")
 
     def scoped(self) -> bool:
@@ -55,6 +55,10 @@ def inventory(read: Callable[[str], object], config: Intake, page: int) -> dict:
             pull = read(f"{root}/pulls/{number}")
             if not isinstance(pull, dict):
                 raise ValueError("Invalid pull request metadata")
+            # The issue-link gate closes most outside PRs seconds after they open;
+            # by the time intake runs there's no contribution left to verify.
+            if pull.get("state") == "closed":
+                continue
             numbers.update(referenced_issues(pull.get("body") or ""))
         rows = [read(f"{root}/issues/{number}") for number in sorted(numbers)]
         pages = {"scoped": len(rows), "pull_requests": len(set(config.pull_requests))}

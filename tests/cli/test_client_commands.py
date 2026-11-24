@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
 from fastmcp.cli import client as client_module
+from fastmcp.cli.cli import app
 from fastmcp.cli.client import (
     Client,
     _build_client,
@@ -610,7 +611,7 @@ class TestBuildClient:
             assert isinstance(other, OAuth)
             assert await other.token_storage_adapter.get_tokens() is None
 
-        assert not emitted
+        assert not _ignoring_gc_noise(emitted)
         files = [path for path in tmp_path.rglob("*") if path.is_file()]
         assert files
         for path in files:
@@ -640,7 +641,7 @@ class TestBuildClient:
                 warnings.simplefilter("always")
                 first = _build_client("https://example.com/mcp").transport.auth
                 second = _build_client("https://example.com/mcp").transport.auth
-            assert not emitted
+            assert not _ignoring_gc_noise(emitted)
             assert isinstance(first, OAuth) and isinstance(second, OAuth)
             await first.token_storage_adapter.set_tokens(
                 OAuthToken(access_token="ephemeral-token", token_type="Bearer")
@@ -733,6 +734,18 @@ async def test_invalid_oauth_key_is_a_cli_error(
     assert "Traceback" not in output.out + output.err
 
 
+def _ignoring_gc_noise(
+    emitted: list[warnings.WarningMessage],
+) -> list[warnings.WarningMessage]:
+    """Drop ResourceWarnings from sockets other tests leaked.
+
+    Garbage collection can finalize them at any allocation inside a
+    `catch_warnings` block, including while filters are being installed, so
+    they have to be removed after recording rather than filtered out.
+    """
+    return [w for w in emitted if not issubclass(w.category, ResourceWarning)]
+
+
 def test_named_oauth_server_is_quiet(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -750,7 +763,7 @@ def test_named_oauth_server_is_quiet(
         with warnings.catch_warnings(record=True) as emitted:
             warnings.simplefilter("always")
             _build_client(resolve_server_spec("weather"))
-    assert not emitted
+    assert not _ignoring_gc_noise(emitted)
 
 
 # ---------------------------------------------------------------------------
@@ -979,6 +992,125 @@ class TestCallCommandCLI:
         data = json.loads(capsys.readouterr().out)
         assert data["is_error"] is False
         assert data["structured_content"] == {"result": "Dog"}
+
+
+@pytest.fixture()
+def _resolved_targets():
+    """Serve the in-process test server and record what each CLI invocation
+    resolved its server to, so argument parsing and ``resolve_server_spec`` are
+    exercised for real."""
+    server = _build_test_server()
+    resolved: list[Any] = []
+
+    def fake_build_client(target: Any, **kwargs: Any) -> Client:
+        resolved.append(target)
+        return Client(server)
+
+    with patch.object(client_module, "_build_client", side_effect=fake_build_client):
+        yield resolved
+
+
+async def _run_call(*argv: str) -> None:
+    await app.run_async(
+        ["call", *argv], exit_on_error=False, result_action="return_value"
+    )
+
+
+@pytest.mark.usefixtures("_resolved_targets")
+class TestCallCommandParsing:
+    """`fastmcp call` driven through the real argument parser."""
+
+    STDIO_COMMAND = "npx -y @mcp/server"
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["--command", STDIO_COMMAND, "greet", "name=World"],
+            ["greet", "name=World", "--command", STDIO_COMMAND],
+        ],
+    )
+    async def test_command_replaces_server_spec(
+        self,
+        argv: list[str],
+        _resolved_targets: list[Any],
+        capsys: pytest.CaptureFixture[str],
+    ):
+        await _run_call(*argv)
+
+        assert "Hello, World!" in capsys.readouterr().out
+        [transport] = _resolved_targets
+        assert isinstance(transport, StdioTransport)
+        assert transport.command == "npx"
+        assert transport.args == ["-y", "@mcp/server"]
+
+    @pytest.mark.parametrize(
+        ("target_and_arguments", "expected"),
+        [
+            (["total"], {"result": 0}),
+            (["add", "a=1", "b=2"], {"result": 3}),
+            (["add", '{"a": 1, "b": 2}'], {"result": 3}),
+        ],
+    )
+    async def test_command_tool_arguments(
+        self,
+        target_and_arguments: list[str],
+        expected: dict[str, int],
+        capsys: pytest.CaptureFixture[str],
+    ):
+        await _run_call(
+            "--command", self.STDIO_COMMAND, *target_and_arguments, "--json"
+        )
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == expected
+
+    @pytest.mark.parametrize(
+        ("target_and_arguments", "expected"),
+        [
+            (["test://greeting"], "Hello from resource!"),
+            (["ask", "--prompt", "topic=Python"], "Tell me about Python"),
+        ],
+    )
+    async def test_command_resource_and_prompt(
+        self,
+        target_and_arguments: list[str],
+        expected: str,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        await _run_call("--command", self.STDIO_COMMAND, *target_and_arguments)
+
+        assert expected in capsys.readouterr().out
+
+    async def test_server_spec_is_unchanged_without_command(
+        self,
+        _resolved_targets: list[Any],
+        capsys: pytest.CaptureFixture[str],
+    ):
+        url = "http://localhost:9/mcp"
+
+        await _run_call(url, "greet", "name=World")
+
+        assert "Hello, World!" in capsys.readouterr().out
+        assert _resolved_targets == [url]
+
+    async def test_server_spec_and_command_together_is_an_error(
+        self,
+        _resolved_targets: list[Any],
+        capsys: pytest.CaptureFixture[str],
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            await _run_call(
+                "--command",
+                self.STDIO_COMMAND,
+                "http://localhost:9/mcp",
+                "greet",
+                "name=World",
+            )
+
+        assert exc_info.value.code == 1
+        assert "Cannot use both a server spec and --command" in capsys.readouterr().out
+        assert _resolved_targets == []
 
 
 # ---------------------------------------------------------------------------

@@ -1217,6 +1217,144 @@ class TestFastMCPAccessTokenExpiry:
             one_day, abs=5
         )
 
+    async def test_refresh_exchange_claims_apply_to_all_tokens_of_session(self):
+        """Claims follow the upstream session through both refresh paths.
+
+        After a transparent refresh and then a refresh grant, the newly issued
+        access token and the still-valid earlier one both report the claims of
+        the latest refresh.
+        """
+        one_day = 60 * 60 * 24
+
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read", "write"]
+
+        async def verify(token: str) -> AccessToken | None:
+            if token.startswith("refreshed-"):
+                return AccessToken(
+                    token=token,
+                    client_id="test-client",
+                    scopes=["read", "write"],
+                    expires_at=int(time.time() + 3600),
+                )
+            return None
+
+        verifier.verify_token = AsyncMock(side_effect=verify)
+        proxy = self._make_proxy(verifier, fastmcp_access_token_expiry_seconds=one_day)
+        extract = AsyncMock(
+            side_effect=[
+                {"roles": ["admin"]},  # authorization code exchange
+                {"roles": ["reader"]},  # transparent refresh
+                {"roles": ["auditor"]},  # refresh grant
+            ]
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            side_effect=[
+                {
+                    "access_token": f"refreshed-upstream-access-{n}",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "refresh_token": "upstream-refresh",
+                    "scope": "read write",
+                }
+                for n in (1, 2)
+            ]
+        )
+
+        with (
+            patch.object(
+                proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+            ),
+            patch.object(proxy, "_extract_upstream_claims", extract),
+        ):
+            client, result = await self._exchange(proxy)
+            assert result.refresh_token is not None
+
+            # Force the stored upstream access token to be expired.
+            access_jti = proxy.jwt_issuer.verify_token(result.access_token)["jti"]
+            jti_mapping = await proxy._jti_mapping_store.get(key=access_jti)
+            assert jti_mapping is not None
+            stored = await proxy._upstream_token_store.get(
+                key=jti_mapping.upstream_token_id
+            )
+            assert stored is not None
+            stored.expires_at = time.time() - 60
+            await proxy._upstream_token_store.put(
+                key=jti_mapping.upstream_token_id, value=stored, ttl=one_day
+            )
+
+            loaded = await proxy.load_access_token(result.access_token)
+            assert loaded is not None
+            assert loaded.claims["upstream_claims"] == {"roles": ["reader"]}
+
+            refreshed = await proxy.exchange_refresh_token(
+                client=client,
+                refresh_token=RefreshToken(
+                    token=result.refresh_token,
+                    client_id="test-client",
+                    scopes=["read", "write"],
+                ),
+                scopes=["read", "write"],
+            )
+            new_token = await proxy.load_access_token(refreshed.access_token)
+            old_token = await proxy.load_access_token(result.access_token)
+
+        assert extract.await_count == 3
+        assert new_token is not None
+        assert new_token.claims["upstream_claims"] == {"roles": ["auditor"]}
+        assert old_token is not None
+        assert old_token.claims["upstream_claims"] == {"roles": ["auditor"]}
+
+    async def test_refresh_exchange_persists_rotated_tokens_when_extraction_raises(
+        self, jwt_verifier
+    ):
+        """A failing claims hook must not lose a rotated upstream refresh token."""
+        proxy = self._make_proxy(jwt_verifier)
+        client, result = await self._exchange(proxy)
+        assert result.refresh_token is not None
+
+        access_jti = proxy.jwt_issuer.verify_token(result.access_token)["jti"]
+        jti_mapping = await proxy._jti_mapping_store.get(key=access_jti)
+        assert jti_mapping is not None
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "refreshed-upstream-access",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "rotated-upstream-refresh",
+                "scope": "read write",
+            }
+        )
+        extract = AsyncMock(side_effect=RuntimeError("claims hook failed"))
+
+        with (
+            patch.object(
+                proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+            ),
+            patch.object(proxy, "_extract_upstream_claims", extract),
+            pytest.raises(RuntimeError, match="claims hook failed"),
+        ):
+            await proxy.exchange_refresh_token(
+                client=client,
+                refresh_token=RefreshToken(
+                    token=result.refresh_token,
+                    client_id="test-client",
+                    scopes=["read", "write"],
+                ),
+                scopes=["read", "write"],
+            )
+
+        stored = await proxy._upstream_token_store.get(
+            key=jti_mapping.upstream_token_id
+        )
+        assert stored is not None
+        assert stored.refresh_token == "rotated-upstream-refresh"
+        assert stored.access_token == "refreshed-upstream-access"
+
 
 class TestUpstreamTokenStorageTTL:
     """Tests for upstream token storage TTL calculation (issue #2670).
@@ -1512,6 +1650,7 @@ class TestTransparentUpstreamRefresh:
         proxy: OAuthProxy,
         *,
         upstream_refresh_token: str | None = "upstream-refresh-tok",
+        upstream_claims: dict | None = None,
     ) -> str:
         """Set up a proxy JWT pointing at an expired upstream token.
 
@@ -1555,6 +1694,7 @@ class TestTransparentUpstreamRefresh:
             scopes=["read"],
             jti=access_jti,
             expires_in=3600,
+            upstream_claims=upstream_claims,
         )
         return fastmcp_jwt
 
@@ -1847,6 +1987,75 @@ class TestTransparentUpstreamRefresh:
             returned = await mock_verifier.verify_token(call.args[0])
             if returned:
                 assert "upstream_claims" not in returned.claims
+
+    async def test_transparent_refresh_re_extracts_upstream_claims(self, proxy):
+        """A transparent refresh re-extracts upstream_claims, like the refresh grant.
+
+        The FastMCP JWT still embeds the claims from issuance; after the upstream
+        session is refreshed, load_access_token must report the claims of the
+        refreshed session, on that request and on later ones.
+        """
+        fastmcp_jwt = await self._setup_expired_session(
+            proxy, upstream_claims={"sub": "user-123", "roles": ["admin"]}
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "refreshed-upstream-access",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "upstream-refresh-tok",
+                "scope": "read",
+            }
+        )
+        extract = AsyncMock(return_value={"sub": "user-123", "roles": ["reader"]})
+
+        with (
+            patch.object(
+                proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+            ),
+            patch.object(proxy, "_extract_upstream_claims", extract),
+        ):
+            result = await proxy.load_access_token(fastmcp_jwt)
+            later = await proxy.load_access_token(fastmcp_jwt)
+
+        mock_oauth_client.refresh_token.assert_called_once()
+        assert result is not None
+        assert result.token == "refreshed-upstream-access"
+        assert result.claims["upstream_claims"] == {
+            "sub": "user-123",
+            "roles": ["reader"],
+        }
+        # The second request is served from storage without another refresh.
+        assert later is not None
+        assert later.claims["upstream_claims"]["roles"] == ["reader"]
+
+    async def test_transparent_refresh_drops_claims_when_none_extracted(self, proxy):
+        """If the refreshed response yields no claims, the stale copy is not served."""
+        fastmcp_jwt = await self._setup_expired_session(
+            proxy, upstream_claims={"sub": "user-123", "roles": ["admin"]}
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "refreshed-upstream-access",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "upstream-refresh-tok",
+                "scope": "read",
+            }
+        )
+
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            result = await proxy.load_access_token(fastmcp_jwt)
+
+        assert result is not None
+        assert result.token == "refreshed-upstream-access"
+        assert "upstream_claims" not in result.claims
 
     async def test_transparent_refresh_triggered_by_threshold(self, mock_verifier):
         """Token within expiry threshold is treated as expired and refreshed."""

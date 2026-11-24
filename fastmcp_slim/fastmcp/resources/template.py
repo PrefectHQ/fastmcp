@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import logging
 import re
 from collections.abc import Callable, Collection
 from types import UnionType
@@ -21,6 +22,7 @@ from pydantic import (
 )
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import ValidationError
 from fastmcp.resources.base import (
     Resource,
     ResourceResult,
@@ -216,7 +218,7 @@ def build_regex(template: str) -> re.Pattern[str] | None:
         if part.startswith("{") and part.endswith("}"):
             name = part[1:-1]
             if in_query:
-                group = name.removesuffix("*").replace("-", "_")
+                group = template_param_key(name.removesuffix("*"))
                 pattern += f"(?P<{group}>[^&]*)"
             elif name.endswith("*"):
                 name = name[:-1]
@@ -633,6 +635,10 @@ class FunctionResourceTemplate(ResourceTemplate):
 
     fn: SkipJsonSchema[Callable[..., Any]]
 
+    # Resolved parameter hints, so string annotations from
+    # `from __future__ import annotations` coerce like real ones in read().
+    _param_hints: dict[str, Any] = PrivateAttr(default_factory=dict)
+
     async def _read(self, uri: str, params: dict[str, Any]) -> ResourceResult:
         """Optimized server entry point that skips ephemeral resource creation.
 
@@ -673,28 +679,31 @@ class FunctionResourceTemplate(ResourceTemplate):
         for param_name, param_value in list(kwargs.items()):
             if param_name in sig.parameters and isinstance(param_value, str):
                 param = sig.parameters[param_name]
-                annotation = param.annotation
+                annotation = self._param_hints.get(param_name, param.annotation)
 
                 if annotation is inspect.Parameter.empty or annotation is str:
                     continue
 
-                try:
-                    if annotation is int:
-                        kwargs[param_name] = int(param_value)
-                    elif annotation is float:
-                        kwargs[param_name] = float(param_value)
-                    elif annotation is bool:
-                        lower = param_value.lower()
-                        if lower in ("true", "1", "yes"):
-                            kwargs[param_name] = True
-                        elif lower in ("false", "0", "no"):
-                            kwargs[param_name] = False
-                        else:
-                            raise ValueError(
-                                f"Invalid boolean value for {param_name}: {param_value!r}"
-                            )
-                except (ValueError, AttributeError):
-                    raise
+                # An unconvertible parameter is a client error, not a server fault
+                if annotation is int or annotation is float:
+                    try:
+                        kwargs[param_name] = annotation(param_value)
+                    except ValueError:
+                        raise ValidationError(
+                            f"Invalid {annotation.__name__} value for {param_name}: {param_value!r}",
+                            log_level=logging.WARNING,
+                        ) from None
+                elif annotation is bool:
+                    lower = param_value.lower()
+                    if lower in ("true", "1", "yes"):
+                        kwargs[param_name] = True
+                    elif lower in ("false", "0", "no"):
+                        kwargs[param_name] = False
+                    else:
+                        raise ValidationError(
+                            f"Invalid boolean value for {param_name}: {param_value!r}",
+                            log_level=logging.WARNING,
+                        )
 
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally
@@ -825,6 +834,27 @@ class FunctionResourceTemplate(ResourceTemplate):
         # Validate RFC 6570 query parameters
         # Query params must be optional (have defaults)
         list_query_params: set[str] = set()
+        # Resolve the hints rather than reading the raw signature: under
+        # `from __future__ import annotations` every annotation is a string,
+        # and `Annotated[...]` wrappers hide the underlying type.
+        from fastmcp.tools.function_tool import _resolve_param_hints
+
+        # A callable instance is invoked through its `__call__`, so resolve the
+        # hints there; the instance itself carries no parameter annotations.
+        hint_target = fn
+        if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
+            hint_target = fn.__call__
+        if isinstance(hint_target, staticmethod):
+            hint_target = hint_target.__func__
+
+        try:
+            hints = _resolve_param_hints(hint_target)
+        except NameError:
+            # Pydantic resolves annotations against namespaces this doesn't
+            # see, so a name we can't resolve may still be valid. Fall back
+            # to the raw form rather than failing a working registration.
+            hints = {}
+
         if query_params:
             invalid_query_params = query_params - optional_params
             if invalid_query_params:
@@ -834,20 +864,6 @@ class FunctionResourceTemplate(ResourceTemplate):
 
             # A list-typed query parameter reads `{?tags*}` as repeated keys and
             # `{?tags}` as one comma-joined value (RFC 6570 section 3.2.8).
-            #
-            # Resolve the hints rather than reading the raw signature: under
-            # `from __future__ import annotations` every annotation is a string,
-            # and `Annotated[...]` wrappers hide the underlying type.
-            from fastmcp.tools.function_tool import _resolve_param_hints
-
-            try:
-                hints = _resolve_param_hints(fn)
-            except NameError:
-                # Pydantic resolves annotations against namespaces this doesn't
-                # see, so a name we can't resolve may still be valid. Fall back
-                # to the raw form rather than failing a working registration.
-                hints = {}
-
             exploded = {
                 p.replace("-", "_") for p in extract_exploded_query_params(uri_template)
             }
@@ -935,4 +951,5 @@ class FunctionResourceTemplate(ResourceTemplate):
             security=security,
         )
         template._list_query_params = frozenset(list_query_params)
+        template._param_hints = hints
         return template

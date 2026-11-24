@@ -252,7 +252,7 @@ class TestCatalogAuth:
 
 def _extract_result(result: object) -> list[str]:
     """Extract the list of names from a call_tool ToolResult."""
-    for c in result.content:  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+    for c in result.content:  # type: ignore[union-attr]  # ty:ignore[missing-attribute]
         if isinstance(c, TextContent):
             return ast.literal_eval(c.text)
     raise AssertionError("No text content found")

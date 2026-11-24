@@ -1576,6 +1576,10 @@ def _make_dev_app(
                 status_code=503,
                 media_type="application/json",
             )
+        except BaseException:
+            # No streaming response took ownership of the client.
+            await client.aclose()
+            raise
 
     async def api_logs(request: Request) -> Response:
         """Return message log entries since a given id."""
@@ -1801,7 +1805,7 @@ async def run_dev_apps(
         server = uvicorn.Server(config)
         # Suppress uvicorn's own signal handlers — they use signal.signal() which
         # conflicts with asyncio and causes hangs.  We cancel the task instead.
-        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]  # ty:ignore[unresolved-attribute]
+        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]  # ty:ignore[missing-attribute]
 
         async def _open_browser() -> None:
             await asyncio.sleep(0.8)

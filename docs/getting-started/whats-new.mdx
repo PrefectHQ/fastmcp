@@ -12,8 +12,66 @@ The protocol changed completely underneath those APIs. Your application usually 
 That is the theme of version 4: stateless transport without stateless application code. The release also makes protocol extensions a first-class surface, adds enterprise identity for agents acting on behalf of users, and strengthens production defaults across caching, routing, and security.
 
 <Note>
-Install with `pip install fastmcp -U`. Upgrading from FastMCP 3? Start with [the upgrade guide](/getting-started/upgrading/from-fastmcp-3). The release announcement, [FastMCP 4 is GA](https://blog.gofastmcp.com/3mufbh2vcv22o), is on the [FastMCP blog](https://blog.gofastmcp.com), and every release since is in the [changelog](/changelog).
+Install with `pip install fastmcp -U`. Upgrading from FastMCP 3? Start with [the upgrade guide](/getting-started/upgrading/from-fastmcp-3). Coming from 4.1, see [Upgrading from FastMCP 4.1](/getting-started/upgrading/from-fastmcp-4-1). The release announcement, [FastMCP 4 is GA](https://blog.gofastmcp.com/3mufbh2vcv22o), is on the [FastMCP blog](https://blog.gofastmcp.com), and every release since is in the [changelog](/changelog).
 </Note>
+
+## New in 4.2: skills over MCP
+
+A skill is a `SKILL.md` of instructions plus the files it points to. Most agents load skills from a local folder, so every machine carries its own copy and they drift apart. FastMCP 4.2 puts skills on the server: one copy that every agent reads, updated when you deploy.
+
+A `Skill` is a plain value with a name, a description, instructions, and files, validated once when you build it. Build one in Python, load one with `Skill.from_directory()` or `Skill.from_package()`, and serve it with a provider:
+
+```python
+from fastmcp import FastMCP, Skill
+from fastmcp.skills.provider import SkillCatalogProvider
+
+release_notes = Skill(
+    name="release-notes",
+    description="Write release notes from merged pull requests.",
+    instructions="# Release notes\n\nGroup changes by theme. Follow template.md.\n",
+    files={"template.md": "## Highlights\n\n## Fixes\n"},
+)
+
+mcp = FastMCP("Team Skills")
+mcp.add_provider(SkillCatalogProvider([release_notes]))
+```
+
+Every client can read `skill://release-notes/SKILL.md` and `template.md` as ordinary resources. Clients that speak the [Skills extension](https://modelcontextprotocol.io/seps/2640-skills-extension) can also call `skills/list` and get each skill's description and a hashed manifest of its files. `SkillsDirectoryProvider` serves a folder of skills, such as a coding agent's own skills folder, and `SkillManifestProvider` serves skills kept in object storage or a database, reading a file only when a client asks for it.
+
+Client support for the extension is still uneven, so FastMCP's client covers the gap. `client.read_skill()` downloads a skill and checks every file's size and SHA-256 digest against its manifest, and `skill.to_directory()` installs it into any agent's skills folder. Skills also follow the rest of FastMCP's composition: they namespace under mounts, pass through proxies with `skills=True`, list across servers with `ClientGroup.list_skills()`, and drop out of discovery when [`AuthMiddleware`](/servers/authorization) hides any of their files. Run `fastmcp list server.py --skills` to see what a server publishes. See [Skills over MCP](/servers/skills).
+
+### Annotated dependencies
+
+A dependency can now live in the type annotation, so a parameter keeps its real type for type checkers and one alias declares the dependency for every tool, resource, and prompt that uses it:
+
+```python
+from typing import Annotated
+
+from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+
+mcp = FastMCP("Demo")
+
+
+def get_config() -> dict:
+    return {"api_url": "https://api.example.com"}
+
+
+Config = Annotated[dict, Depends(get_config)]
+
+
+@mcp.tool
+async def fetch(query: str, config: Config) -> str:
+    return f"Fetching '{query}' from {config['api_url']}"
+```
+
+A dependency can also own the tool argument it reads through `CallArgument`. See [Annotated dependencies](/servers/dependency-injection#annotated-dependencies) and [Call arguments](/servers/dependency-injection#call-arguments).
+
+### Upgrading to 4.2
+
+FastMCP 4.2 requires Python 3.11 or newer; a project that has to stay on Python 3.10 keeps resolving to 4.1.x. The 4.1 skills API in `fastmcp.server.providers.skills` and `fastmcp.utilities.skills` keeps working with deprecation warnings that name each replacement, and it is removed in 4.3. `Skill` is now the authoring class, and the wire model that used that name is `MCPSkill`. [Upgrading from FastMCP 4.1](/getting-started/upgrading/from-fastmcp-4-1) maps each call to its replacement, and the [4.2.0 changelog](/changelog) lists everything else in the release.
+
+The rest of this page covers what FastMCP 4.0 changed.
 
 ## Protocol compatibility
 

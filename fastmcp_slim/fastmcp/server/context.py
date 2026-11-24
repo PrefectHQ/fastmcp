@@ -510,7 +510,9 @@ class Context:
             # Update progress in Redis using Docket's progress API.
             # Docket only exposes increment() (relative), so we compute
             # the delta from the last reported value stored on this execution.
-            if total is not None:
+            # Docket rejects a total below 1, e.g. an empty batch reporting
+            # total=0, so leave the default total in place in that case.
+            if total is not None and int(total) >= 1:
                 await execution.progress.set_total(int(total))
 
             current = int(progress)
@@ -518,7 +520,7 @@ class Context:
             delta = current - last
             if delta > 0:
                 await execution.progress.increment(delta)
-            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            execution._fastmcp_last_progress = current  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
 
             if message is not None:
                 await execution.progress.set_message(message)
@@ -800,7 +802,7 @@ class Context:
         if connection is not None:
             connection.state["_fastmcp_state_prefix"] = session_id
         else:
-            session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[missing-attribute]
         return session_id
 
     def _session_scope_key(self) -> str | None:

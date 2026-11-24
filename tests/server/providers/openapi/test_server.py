@@ -444,3 +444,54 @@ class TestOpenAPIProviderComponentNames:
             resources = await client.list_resources()
 
         assert len({str(resource.uri) for resource in resources}) == 3
+
+
+class TestOpenAPIProviderDefaultClientLifespan:
+    async def test_server_can_be_connected_more_than_once(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/users": {
+                    "get": {
+                        "operationId": "list_users",
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/users/{id}": {
+                    "get": {
+                        "operationId": "get_user",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+            },
+        }
+        provider = OpenAPIProvider(
+            openapi_spec=spec,
+            route_maps=[
+                RouteMap(
+                    pattern=r"^/users/\{id\}$",
+                    mcp_type=MCPType.RESOURCE_TEMPLATE,
+                )
+            ],
+        )
+        mcp = FastMCP("Test")
+        mcp.add_provider(provider)
+
+        for _ in range(2):
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+                assert [t.name for t in tools] == ["list_users"]
+                assert not provider._client.is_closed
+                assert provider._tools["list_users"]._client is provider._client
+                template = next(iter(provider._templates.values()))
+                assert template._client is provider._client

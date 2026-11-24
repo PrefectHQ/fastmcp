@@ -454,7 +454,9 @@ For full documentation on the Context object and all its capabilities, see the [
 
 Adding, removing, enabling, or disabling prompts at the server or provider level does not notify connected clients. Clients see the change the next time they list prompts.
 
-When a request changes the prompt set, the tool handling it can tell the calling session by sending `notifications/prompts/list_changed` itself. The notification reaches only that session.
+To tell every client listening for prompt changes, including from a background task, call `await mcp.notify_prompts_changed()`. It works like [`notify_tools_changed()`](/servers/tools#notifications) and reaches clients on the `2026-07-28` protocol.
+
+For handshake-era clients, the tool handling a request can tell the calling session by sending `notifications/prompts/list_changed` itself. The notification reaches only that session.
 
 ```python
 from fastmcp import FastMCP

@@ -16,7 +16,6 @@ from typing import Annotated, Literal
 import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, TypeAdapter, UrlConstraints
-from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import AccessToken, RemoteAuthProvider, TokenVerifier
@@ -243,7 +242,7 @@ class WorkOSProvider(OAuthProxy):
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs (default True). Set to False to disable.
-            identity_assertion: Optional SEP-990 ID-JAG configuration for
+            identity_assertion: Beta. Optional SEP-990 ID-JAG configuration for
                 identity-bound token exchange. Disabled by default.
         """
         # Apply defaults and ensure authkit_domain is a full URL
@@ -421,6 +420,7 @@ class AuthKitProvider(RemoteAuthProvider):
             scopes_supported=scopes_supported,
             resource_name=resource_name,
             resource_documentation=resource_documentation,
+            required_scopes=parsed_scopes,
         )
 
     def set_mcp_path(self, mcp_path: str | None) -> None:
@@ -462,23 +462,11 @@ class AuthKitProvider(RemoteAuthProvider):
         routes = super().get_routes(mcp_path)
 
         async def oauth_authorization_server_metadata(request):
-            """Forward AuthKit OAuth authorization server metadata with FastMCP customizations."""
-            try:
-                async with httpx2.AsyncClient() as client:
-                    response = await client.get(
-                        f"{self.authkit_domain}/.well-known/oauth-authorization-server"
-                    )
-                    response.raise_for_status()
-                    metadata = response.json()
-                    return JSONResponse(metadata)
-            except Exception as e:
-                return JSONResponse(
-                    {
-                        "error": "server_error",
-                        "error_description": f"Failed to fetch AuthKit metadata: {e}",
-                    },
-                    status_code=500,
-                )
+            """Forward AuthKit OAuth authorization server metadata (cached)."""
+            return await self._forward_authorization_server_metadata(
+                [f"{self.authkit_domain}/.well-known/oauth-authorization-server"],
+                "AuthKit",
+            )
 
         # Add AuthKit authorization server metadata forwarding
         routes.append(

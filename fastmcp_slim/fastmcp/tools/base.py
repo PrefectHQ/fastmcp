@@ -214,9 +214,14 @@ class ToolResult(BaseModel):
     @classmethod
     def from_mcp_result(cls, result: CallToolResult) -> ToolResult:
         """Wrap a protocol result while preserving its exact wire representation."""
+        # Dump nested models with the options the SDK uses to serialize a
+        # result, so aliases and omitted None fields match the wire.
+        structured_content = result.model_dump(
+            by_alias=True, exclude_none=True, include={"structured_content"}
+        ).get("structuredContent")
         tool_result = cls(
             content=result.content,
-            structured_content=result.structured_content,
+            structured_content=structured_content,
             meta=result.meta,
             is_error=result.is_error,
         )
@@ -229,7 +234,17 @@ class ToolResult(BaseModel):
         list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
     ):
         if self._raw_mcp_result is not None:
-            return self._raw_mcp_result
+            # Keep the protocol object's other fields, but take the public ones
+            # from self so response middleware edits reach the wire, including
+            # when it uses model_copy().
+            return self._raw_mcp_result.model_copy(
+                update={
+                    "content": self.content,
+                    "structured_content": self.structured_content,
+                    "meta": self.meta,
+                    "is_error": self.is_error,
+                }
+            )
 
         # An error result must round-trip through CallToolResult so isError
         # reaches the client; the plain content/tuple returns can't carry it.
@@ -321,6 +336,9 @@ class Tool(FastMCPComponent):
     """Internal tool registration info."""
 
     KEY_PREFIX: ClassVar[str] = "tool"
+    _result_transforms: tuple[Callable[[ToolResult], ToolResult], ...] = PrivateAttr(
+        default=()
+    )
 
     return_type: Annotated[SkipJsonSchema[Any], Field(exclude=True)] = None
     parameters: Annotated[
@@ -563,6 +581,20 @@ class Tool(FastMCPComponent):
             meta=result.meta,
             is_error=result.is_error,
         )
+
+    def _with_result_transform(
+        self, transform: Callable[[ToolResult], ToolResult]
+    ) -> Tool:
+        """Copy this tool and append a result transform."""
+        tool = self.model_copy()
+        tool._result_transforms = (*self._result_transforms, transform)
+        return tool
+
+    def _apply_result_transforms(self, result: ToolResult) -> ToolResult:
+        """Apply result transforms in the same order as component transforms."""
+        for transform in self._result_transforms:
+            result = transform(result)
+        return result
 
     @classmethod
     def from_tool(

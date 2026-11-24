@@ -7,9 +7,7 @@ authentication for seamless MCP client authentication.
 
 from __future__ import annotations
 
-import httpx2
 from pydantic import AnyHttpUrl
-from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
@@ -158,6 +156,7 @@ class ScalekitProvider(RemoteAuthProvider):
             scopes_supported=scopes_supported,
             resource_name=resource_name,
             resource_documentation=resource_documentation,
+            required_scopes=parsed_scopes if required_scopes is not None else None,
         )
 
     def get_routes(
@@ -182,30 +181,11 @@ class ScalekitProvider(RemoteAuthProvider):
         )
 
         async def oauth_authorization_server_metadata(request):
-            """Forward Scalekit OAuth authorization server metadata with FastMCP customizations."""
-            try:
-                metadata_url = f"{self.environment_url}/.well-known/oauth-authorization-server/resources/{self.resource_id}"
-                logger.debug(
-                    "Fetching Scalekit OAuth metadata: metadata_url=%s", metadata_url
-                )
-                async with httpx2.AsyncClient() as client:
-                    response = await client.get(metadata_url)
-                    response.raise_for_status()
-                    metadata = response.json()
-                    logger.debug(
-                        "Scalekit metadata fetched successfully: metadata_keys=%s",
-                        list(metadata.keys()),
-                    )
-                    return JSONResponse(metadata)
-            except Exception as e:
-                logger.error(f"Failed to fetch Scalekit metadata: {e}")
-                return JSONResponse(
-                    {
-                        "error": "server_error",
-                        "error_description": f"Failed to fetch Scalekit metadata: {e}",
-                    },
-                    status_code=500,
-                )
+            """Forward Scalekit OAuth authorization server metadata (cached)."""
+            metadata_url = f"{self.environment_url}/.well-known/oauth-authorization-server/resources/{self.resource_id}"
+            return await self._forward_authorization_server_metadata(
+                [metadata_url], "Scalekit"
+            )
 
         # Add Scalekit authorization server metadata forwarding
         routes.append(

@@ -65,7 +65,7 @@ class ElicitationJsonSchema(GenerateJsonSchema):
             return self.enum_schema(enum_definition)
         return super().definition_ref_schema(schema)
 
-    def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:  # type: ignore[override]  # ty:ignore[invalid-method-override]
+    def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:  # type: ignore[override]  # ty:ignore[incompatible-method-override]
         """Override to prevent ref generation for enums and handle list schemas."""
         # For enum schemas, bypass the ref mechanism entirely
         if schema["type"] == "enum":
@@ -114,6 +114,23 @@ class ElicitationJsonSchema(GenerateJsonSchema):
 
         # Default behavior for non-enum arrays
         return super().list_schema(schema)
+
+    def default_schema(self, schema: core_schema.WithDefaultSchema) -> JsonSchemaValue:
+        """Offer an optional `T | None` field as a plain `T` property.
+
+        MCP elicitation properties have no null type. A field with a default is
+        left out of `required`, so the client can express "no value" by omitting
+        it. A required `T | None` field keeps its null type and is rejected by
+        schema validation, since narrowing it to `T` would change its contract.
+        """
+        inner = schema["schema"]
+        if inner["type"] == "nullable":
+            schema = {**schema, "schema": inner["schema"]}
+        json_schema = super().default_schema(schema)
+        # A `None` default has no meaning once the null type is gone
+        if json_schema.get("default") is None:
+            json_schema.pop("default", None)
+        return json_schema
 
     def enum_schema(self, schema: core_schema.EnumSchema) -> JsonSchemaValue:
         """Generate inline enum schema.

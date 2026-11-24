@@ -12,11 +12,22 @@ This script runs on a schedule to automatically close issues that have been
 marked as duplicates and haven't received any preventing activity.
 """
 
+import json
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
+
+MARVIN_BOT_ID = 225465937
+# github-actions[bot] closes now; Marvin's older closures stay recognized.
+ACTIONS_BOT_ID = 41898282
+CLOSER_IDS = {MARVIN_BOT_ID, ACTIONS_BOT_ID}
+CLOSURE_NOTICE = (
+    "Closing this issue as a duplicate based on the automated analysis above."
+)
+ESTABLISHED_ASSOCIATIONS = {"CONTRIBUTOR", "COLLABORATOR", "MEMBER", "OWNER"}
 
 
 @dataclass
@@ -112,67 +123,61 @@ class GitHubClient:
 
         return issues
 
-    def get_issue_comments(self, issue_number: int) -> list[Comment]:
-        """Fetch all comments for an issue."""
-        url = f"{self.base_url}/issues/{issue_number}/comments"
-        comments = []
-
+    def _read_all(self, path: str) -> list[dict]:
+        records = []
         with httpx.Client() as client:
-            page = 1
-            while True:
+            for page in range(1, 11):
                 response = client.get(
-                    url, headers=self.headers, params={"page": page, "per_page": 100}
+                    f"{self.base_url}/{path}",
+                    headers=self.headers,
+                    params={"page": page, "per_page": 100},
                 )
+                response.raise_for_status()
+                batch = response.json()
+                if not isinstance(batch, list):
+                    raise ValueError("Expected a GitHub collection")
+                records.extend(batch)
+                if "next" not in response.links:
+                    return records
+        raise ValueError("GitHub collection exceeded the ten-page limit")
 
-                if response.status_code != 200:
-                    break
+    def get_issue_comments(self, issue_number: int) -> list[Comment]:
+        return [
+            Comment(
+                id=comment["id"],
+                body=comment["body"],
+                created_at=comment["created_at"],
+                user_id=comment["user"]["id"],
+                user_login=comment["user"]["login"],
+                user_type=comment["user"]["type"],
+            )
+            for comment in self._read_all(f"issues/{issue_number}/comments")
+        ]
 
-                data = response.json()
-                if not data:
-                    break
+    def get_comment_reactions(self, comment_id: int) -> list[Reaction]:
+        return [
+            Reaction(
+                user_id=reaction["user"]["id"],
+                user_login=reaction["user"]["login"],
+                content=reaction["content"],
+            )
+            for reaction in self._read_all(f"issues/comments/{comment_id}/reactions")
+        ]
 
-                for comment_data in data:
-                    comments.append(
-                        Comment(
-                            id=comment_data["id"],
-                            body=comment_data["body"],
-                            created_at=comment_data["created_at"],
-                            user_id=comment_data["user"]["id"],
-                            user_login=comment_data["user"]["login"],
-                            user_type=comment_data["user"]["type"],
-                        )
-                    )
+    def get_issue_timeline(self, issue_number: int) -> list[dict]:
+        return self._read_all(f"issues/{issue_number}/timeline")
 
-                page += 1
-                if page > 10:  # Safety limit
-                    break
-
-        return comments
-
-    def get_comment_reactions(
-        self, issue_number: int, comment_id: int
-    ) -> list[Reaction]:
-        """Fetch reactions for a specific comment."""
-        url = f"{self.base_url}/issues/{issue_number}/comments/{comment_id}/reactions"
-        reactions = []
-
+    def reopen_duplicate(self, issue_number: int, closed_at: str) -> bool:
+        url = f"{self.base_url}/issues/{issue_number}"
         with httpx.Client() as client:
             response = client.get(url, headers=self.headers)
-
-            if response.status_code != 200:
-                return reactions
-
-            data = response.json()
-            for reaction_data in data:
-                reactions.append(
-                    Reaction(
-                        user_id=reaction_data["user"]["id"],
-                        user_login=reaction_data["user"]["login"],
-                        content=reaction_data["content"],
-                    )
-                )
-
-        return reactions
+            response.raise_for_status()
+            issue = response.json()
+            if not is_closed_duplicate(issue) or issue["closed_at"] != closed_at:
+                return False
+            response = client.patch(url, headers=self.headers, json={"state": "open"})
+            response.raise_for_status()
+            return response.json()["state"] == "open"
 
     def remove_label(self, issue_number: int, label: str) -> bool:
         """Remove a label from an issue."""
@@ -283,6 +288,60 @@ def has_human_activity(
     return False
 
 
+def is_closed_duplicate(issue: dict) -> bool:
+    return (
+        issue["state"] == "closed"
+        and "pull_request" not in issue
+        and any(label["name"] == "duplicate" for label in issue["labels"])
+    )
+
+
+def reconsider_duplicate(client: GitHubClient, event: dict) -> None:
+    issue = event["issue"]
+    comment = event["comment"]
+    author = comment["user"]
+    if not is_closed_duplicate(issue) or author["type"] != "User":
+        return
+    if (
+        author["id"] != issue["user"]["id"]
+        and comment["author_association"] not in ESTABLISHED_ASSOCIATIONS
+    ):
+        return
+
+    closed_at = issue["closed_at"]
+    if not closed_at or comment["created_at"] < closed_at:
+        return
+    number = issue["number"]
+    closed_time = datetime.fromisoformat(closed_at)
+    found_close = False
+    for entry in reversed(client.get_issue_timeline(number)):
+        kind, created_at = entry["event"], entry.get("created_at")
+        if kind in {"closed", "reopened"}:
+            if (
+                found_close
+                or kind != "closed"
+                or created_at != closed_at
+                or (entry.get("actor") or {}).get("id") not in CLOSER_IDS
+            ):
+                return
+            found_close = True
+        elif (
+            found_close
+            and kind == "commented"
+            and (entry.get("user") or {}).get("id") in CLOSER_IDS
+            and (entry.get("body") or "").startswith(CLOSURE_NOTICE)
+            and created_at
+            and timedelta(0)
+            <= closed_time - datetime.fromisoformat(created_at)
+            <= timedelta(minutes=5)
+        ):
+            if client.reopen_duplicate(number, closed_at):
+                print(
+                    f"Reopened #{number} for maintainer review after comment {comment['id']}"
+                )
+            return
+
+
 def main():
     """Main entry point for auto-closing duplicate issues."""
     print("[DEBUG] Starting auto-close duplicates script")
@@ -299,6 +358,10 @@ def main():
 
     # Initialize client
     client = GitHubClient(token, owner, repo)
+    if os.environ.get("GITHUB_EVENT_NAME") == "issue_comment":
+        event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+        reconsider_duplicate(client, event)
+        return
 
     # Only fetch issues with the potential-duplicate label
     all_issues = client.get_potential_duplicate_issues()
@@ -307,10 +370,15 @@ def main():
 
     closed_count = 0
     cleared_count = 0
+    failed_reads = 0
 
     for issue in all_issues:
-        # Get comments for this issue
-        comments = client.get_issue_comments(issue.number)
+        try:
+            comments = client.get_issue_comments(issue.number)
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as error:
+            print(f"Unable to read comments for #{issue.number}: {error}")
+            failed_reads += 1
+            continue
 
         # Look for duplicate marking comment
         duplicate_comment = find_duplicate_comment(comments)
@@ -337,8 +405,12 @@ def main():
             print(f"[DEBUG] Issue #{issue.number} still in 3-day cooldown period")
             continue
 
-        # Get reactions on the duplicate comment
-        reactions = client.get_comment_reactions(issue.number, duplicate_comment.id)
+        try:
+            reactions = client.get_comment_reactions(duplicate_comment.id)
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as error:
+            print(f"Unable to read reactions for #{issue.number}: {error}")
+            failed_reads += 1
+            continue
 
         # Check for human activity that prevents closure
         if has_human_activity(issue, duplicate_comment, comments, reactions):
@@ -349,7 +421,7 @@ def main():
 
         # No human activity after cooldown - close as duplicate
         close_message = (
-            "Closing this issue as a duplicate based on the automated analysis above.\n\n"
+            f"{CLOSURE_NOTICE}\n\n"
             "The duplicate issues identified contain existing discussions and potential solutions. "
             "Please add your 👍 to those issues if they match your use case.\n\n"
             "If this was closed in error, please leave a comment explaining why this is not "
@@ -364,8 +436,10 @@ def main():
 
     print(
         f"[DEBUG] Processing complete. Closed {closed_count} duplicates, "
-        f"cleared {cleared_count} from review"
+        f"cleared {cleared_count} from review, {failed_reads} evidence reads failed"
     )
+    if failed_reads:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

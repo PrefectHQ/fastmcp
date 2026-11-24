@@ -85,6 +85,7 @@ class MCPConfigTransport(ClientTransport):
         self.config = config
         self.name_as_prefix = name_as_prefix
         self._transports: list[ClientTransport] = []
+        self._active_sessions = 0
         self._request_state_security: RequestStateSecurity | None = None
         self._resolved_legacy_only = False
 
@@ -113,7 +114,7 @@ class MCPConfigTransport(ClientTransport):
             self._request_state_security = _RequestStateSecurity.ephemeral()
 
     @property
-    def legacy_only(self) -> bool:  # ty:ignore[invalid-property-type-override]
+    def legacy_only(self) -> bool:  # ty:ignore[incompatible-property-override]
         """Whether the connected composite resolved to the legacy protocol era.
 
         A single-server config delegates directly to the underlying transport
@@ -125,6 +126,12 @@ class MCPConfigTransport(ClientTransport):
         if len(self.config.mcpServers) == 1:
             return self.transport.legacy_only
         return self._resolved_legacy_only
+
+    def get_session_id(self) -> str | None:
+        """Return the single server's session ID; a composite has none."""
+        if len(self.config.mcpServers) == 1:
+            return self.transport.get_session_id()
+        return None
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -165,6 +172,7 @@ class MCPConfigTransport(ClientTransport):
 
         stack = contextlib.AsyncExitStack()
         await stack.__aenter__()
+        self._active_sessions += 1
         try:
             prepared_transports = self._prepare_transports()
             composite, backend_versions = await self._build_composite(
@@ -210,6 +218,7 @@ class MCPConfigTransport(ClientTransport):
             ) as session:
                 yield session
         finally:
+            self._active_sessions -= 1
             await stack.aclose()
             self._resolved_legacy_only = False
 
@@ -361,6 +370,7 @@ class MCPConfigTransport(ClientTransport):
             client_kwargs["forward_incoming_headers"] = (
                 transport_options.forward_incoming_headers
             )
+            client_kwargs["init_timeout"] = transport_options.backend_init_timeout
         if config.timeout is not None:
             timeout = config.timeout / 1000
         client = StatefulProxyClient(
@@ -402,6 +412,11 @@ class MCPConfigTransport(ClientTransport):
         return transport, client, proxy
 
     async def close(self):
+        # Each multi-server session closes its own backends when it exits, and
+        # `_transports` holds only the latest session's, which can belong to
+        # another client sharing this transport through `Client.new()`.
+        if self._active_sessions:
+            return
         for transport in self._transports:
             await transport.close()
 

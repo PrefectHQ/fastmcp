@@ -32,15 +32,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      issues: write
-      pull-requests: write
+      issues: read
+      pull-requests: read
 
-    # Pinned Claude Code. The repository instructions are AGENTS.md, which
-    # Claude Code reads natively from 2.1.281 on. Releases 2.1.216 through
-    # 2.1.226 broke every Bash call under the action's sandbox (`bwrap: Can't
-    # create file at /home/.mcp.json`), which let triage apply zero labels
-    # while reporting success; the sandbox check below fails the run instead.
-    # https://github.com/anthropics/claude-code/issues/79997
     env:
       PINNED_CLAUDE_CODE_VERSION: "2.1.282"
 
@@ -48,23 +42,19 @@ jobs:
       - name: Checkout base repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           repository: ${{ github.repository }}
           ref: ${{ github.event.repository.default_branch }}
 
-      - name: Generate Marvin App token
+      - name: Generate Marvin read token
         id: marvin-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
-          # No `owner:` — with it set and `repositories:` empty the token is
-          # scoped to every repo in the PrefectHQ installation. Triage only
-          # ever touches this one. The permissions below match the job's
-          # `permissions:` block; unscoped the token would also carry
-          # contents: write and actions: write from the App installation.
           permission-contents: read
-          permission-issues: write
-          permission-pull-requests: write
+          permission-issues: read
+          permission-pull-requests: read
 
       - name: Read repository labels
         id: repository-labels
@@ -82,18 +72,9 @@ jobs:
         run: |
           cat >> $GITHUB_OUTPUT << 'EOF'
           PROMPT<<PROMPT_END
-          You're an issue triage assistant for FastMCP, a Python framework for building Model Context Protocol servers and clients. Your task is to analyze issues/PRs and apply appropriate labels.
-
-          IMPORTANT: Your primary action should be to apply labels using the locked-down helper `.github/scripts/triage-label.sh`. DO NOT post comments. When you apply too-long, the workflow posts the comment for you (see below).
-
-          CRITICAL — LABEL MECHANICS:
-          - Apply labels ONLY through the helper, which adds or removes repository labels on THIS issue/PR. It already knows the target repo and number (from the workflow environment) — you never pass them:
-            add:    `bash .github/scripts/triage-label.sh add "label1" "label2"`
-            remove: `bash .github/scripts/triage-label.sh remove "label1"`
-          - The helper uses the additive REST labels endpoint, so it works for both issues and PRs and never clobbers labels applied by other workflows — notably the Require Issue Link workflow's `missing-issue-link` control label, which must survive or an auto-closed PR won't reopen when its author is assigned.
-          - The helper is your ONLY GitHub write access. Do NOT use raw `gh api`, `gh issue edit`, `gh pr edit`, or any other mutation — they are not available to you.
-          - Only apply labels from the complete repository label list below. Never invent labels.
-          - Use `remove` only to correct a label you believe is wrong, and never remove the control labels `missing-issue-link`, `bypass-issue-check`, or `trusted-contributor`.
+          Classify this FastMCP issue or PR. Return the label names to add in the structured labels array.
+          Use only labels described below that already exist in the repository.
+          Return an empty array if you cannot retrieve the item or cannot classify it.
 
           Issue/PR Information:
           - REPO: ${{ github.repository }}
@@ -110,7 +91,7 @@ jobs:
              - mcp__github__get_issue_comments: Read any discussion
              - If the issue/PR mentions other issues (e.g., "fixes #123", "related to #456"), use mcp__github__get_issue to read those linked issues for additional context
 
-          3. Analyze and apply labels based on these guidelines:
+          3. Choose labels based on these guidelines:
 
           CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive, including when applying too-long):
           - bug: Reports of broken functionality OR PRs that fix bugs
@@ -143,7 +124,7 @@ jobs:
           - invalid: Spam, completely off-topic, or nonsensical (often LLM-generated)
           - too-long: Apply when an issue or PR doesn't conform to CONTRIBUTING.md. Issues should be a short problem description, an MRE, and expected vs. actual behavior — not a design document. PRs should have a focused description of the change — not a report. We don't need proposed solutions or design alternatives (the issue should describe the problem and let maintainers architect the fix), summaries of what tests cover, explanations of code we can read ourselves, or speculative root-cause analysis. Common LLM failure modes to watch for: verbose "diagnostic" writeups, large proposed patches in issue bodies, multi-section reports restating what's visible in the diff, numbered lists of possible approaches or solutions, "suggested" schemas/shapes/APIs, generic analysis that doesn't reference specific code, and "Notes" sections. But these are heuristics, not rules — a complex PR may legitimately need more context, and a brief submission can still be low-quality. Judge by whether the content helps a reviewer or just adds noise. When applying too-long, still apply the core category and area labels — too-long is a format signal, not a replacement for categorization. Issues still need to be findable by category.
 
-          WHEN APPLYING too-long: A later workflow step posts the contributing-guidelines comment. Do not post it yourself.
+          Returning too-long also asks the workflow to post its contributing-guidelines comment.
 
           AREA LABELS (apply ONLY when thematically central to the issue):
           - cli: Issues primarily about FastMCP CLI commands (run, dev, install)
@@ -166,9 +147,6 @@ jobs:
           - dependencies: Only for dependabot PRs or issues specifically about package updates
           - DON'T MERGE: Only if PR author explicitly states it's not ready
 
-          4. Apply selected labels:
-             Add them with `bash .github/scripts/triage-label.sh add "label1" "label2"`.
-             DO NOT post any comments
           PROMPT_END
           EOF
 
@@ -190,7 +168,7 @@ jobs:
 
       - name: Run Marvin for Issue Triage
         id: marvin
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f # v1.0.284
         with:
           path_to_claude_code_executable: ${{ steps.pin-claude.outputs.path }}
           github_token: ${{ steps.marvin-token.outputs.token }}
@@ -200,22 +178,58 @@ jobs:
           allowed_non_write_users: "*"
           allowed_bots: "marvin-context-protocol"
           claude_args: |
-            --allowedTools "Bash(bash .github/scripts/triage-label.sh:*)",mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__get_pull_request,mcp__github__get_pull_request_files
+            --allowedTools mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__get_pull_request,mcp__github__get_pull_request_files
+            --json-schema '{"type":"object","properties":{"labels":{"type":"array","items":{"type":"string"},"maxItems":5}},"required":["labels"],"additionalProperties":false}'
           settings: |
-            {
-              "model": "claude-sonnet-5",
-              "env": {
-                "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}",
-                "TRIAGE_REPO": "${{ github.repository }}",
-                "TRIAGE_NUMBER": "${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}"
-              }
-            }
+            { "model": "claude-sonnet-5" }
 
-      # Marvin has no comment tool. When it applies too-long, this step posts
-      # the contributing-guidelines comment on this issue or PR, once.
+      - name: Generate Marvin write token
+        id: marvin-write-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with:
+          app-id: ${{ secrets.MARVIN_APP_ID }}
+          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Apply triage labels
+        env:
+          GH_TOKEN: ${{ steps.marvin-write-token.outputs.token }}
+          TRIAGE_REPO: ${{ github.repository }}
+          TRIAGE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+          REPOSITORY_LABELS: ${{ steps.repository-labels.outputs.labels }}
+          RESULT: ${{ steps.marvin.outputs.structured_output }}
+        run: |
+          labels=$(jq -er --argjson known "$REPOSITORY_LABELS" '
+            ($known | map(.name)) as $existing
+            | ["bug", "enhancement", "feature", "documentation"] as $core
+            | ($core + [
+                "breaking change", "high-priority", "low-priority", "needs more info",
+                "invalid", "too-long", "cli", "client", "server", "auth", "openapi",
+                "http", "contrib", "tests", "security", "dependencies", "DON\u0027T MERGE"
+              ]) as $allowed
+            | .labels
+            | if type != "array" then error("Expected a labels array") else unique end
+            | if length > 5 or any(.[]; . as $label |
+                ($allowed | index($label)) == null or ($existing | index($label)) == null)
+              then error("Invalid triage label selection") else . end
+            | if length > 0 and ([.[] | select(. as $label | $core | index($label))] | length) != 1
+              then error("Expected exactly one category") else . end
+            | join("\n")
+          ' <<< "$RESULT")
+          if [[ -z "$labels" ]]; then
+            echo "Marvin returned no labels."
+            exit 0
+          fi
+          selected=()
+          while IFS= read -r label; do
+            selected+=("$label")
+          done <<< "$labels"
+          bash .github/scripts/triage-label.sh add "${selected[@]}"
+
       - name: Post too-long comment
         env:
-          GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+          GH_TOKEN: ${{ steps.marvin-write-token.outputs.token }}
           REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
         run: |
@@ -240,95 +254,6 @@ jobs:
           message="Thanks for the report. This issue goes beyond what our contributor guidelines ask for — we just need a short problem description and an MRE. Please see our [contributing guidelines](https://github.com/PrefectHQ/fastmcp/blob/main/CONTRIBUTING.md) and condense this issue. We'll triage it once it's trimmed down."
           gh api "repos/$REPO/issues/$NUMBER/comments" -f body="$message" > /dev/null
           echo "Posted the too-long comment on #$NUMBER."
-
-      # Triage is fire-and-forget: nobody watches a green run, so a broken
-      # allowlist has to fail the job or it goes unnoticed indefinitely — a
-      # mangled pattern silently produced zero labels across a dozen PRs
-      # because the run still reported success.
-      #
-      # Only denials of commands we MEANT to grant indicate that breakage. An
-      # agent reaching for something never on the allowlist (falling back to
-      # `gh issue view` when the API is down, say) is behaving normally, and
-      # failing on that would cry wolf during every GitHub incident.
-      - name: Fail if Marvin could not run its tools
-        if: always() && steps.marvin.conclusion != 'skipped'
-        env:
-          EXECUTION_FILE: ${{ steps.marvin.outputs.execution_file }}
-        run: |
-          file="${EXECUTION_FILE:-}"
-          if [[ -z "$file" || ! -s "$file" ]]; then
-            file="${RUNNER_TEMP}/claude-execution-output.json"
-          fi
-          # A missing or empty log means we cannot tell a clean run from a
-          # blocked one, which is the exact failure this step exists to catch.
-          if [[ ! -s "$file" ]]; then
-            echo "::error::No Marvin execution log found; cannot verify tool permissions."
-            exit 1
-          fi
-
-          # The persisted log carries a `permission_denials` array on each
-          # `type: result` entry; the `permission_denials_count` scalar only
-          # appears in the action's condensed stdout summary, never on disk.
-          # Anchor to result entries rather than recursing with `..`, which
-          # descends into each denial's `tool_input` and double-counts any
-          # denied command that happens to mention the field name.
-          if ! summary=$(jq -sr '
-                [ .[] | if type == "array" then .[] else . end ]
-                | map(select(type == "object" and .type == "result"))
-                | map(.permission_denials // []) | flatten
-                | map(.tool_input.command // "")
-                | { total: length,
-                    granted: map(select(
-                      startswith("bash .github/scripts/triage-label.sh")
-                    ))
-                  }
-                | "\(.total)\t\(.granted | length)\t\(.granted | join(" | "))"
-              ' "$file"); then
-            echo "::error::Could not parse Marvin execution log ($file)."
-            exit 1
-          fi
-          IFS=$'\t' read -r total granted commands <<<"$summary"
-          echo "Denied tool calls: $total (of which allowlisted: $granted)"
-
-          if [[ "$granted" -gt 0 ]]; then
-            echo "::error::Marvin was denied $granted call(s) to tools this workflow grants, so it could not apply labels: ${commands}. The --allowedTools value is not reaching the permission matcher intact — claude_args is lexed with shell-quote, so any Bash(...) pattern containing a space must be quoted or it is split into fragments."
-            exit 1
-          fi
-          if [[ "$total" -gt 0 ]]; then
-            echo "::notice::Marvin was denied $total call(s), none of them to tools this workflow grants. That is expected when it probes for a tool we deliberately withhold; the allowlist is intact."
-          fi
-
-          # A granted tool can also fail *after* the permission check, which the
-          # denial count above cannot see. Claude Code 2.1.216 did exactly that:
-          # the sandbox refused to build and every Bash call — including the
-          # labeling helper — exited 1 with `bwrap: ...`, while the run stayed
-          # green. Correlate results back to their Bash tool_use rather than
-          # grepping the whole log, so an issue body quoting a sandbox error
-          # cannot fail an otherwise healthy run.
-          if ! sandbox=$(jq -sr '
-                [ .[] | if type == "array" then .[] else . end ]
-                | map(select(type == "object" and (.type == "assistant" or .type == "user")))
-                | map(.message.content // []) | flatten
-                | map(select(type == "object"))
-                | . as $blocks
-                | ( $blocks
-                    | map(select(.type == "tool_use" and .name == "Bash"))
-                    | map(.id) ) as $bash
-                | $blocks
-                | map(select(.type == "tool_result" and (.tool_use_id as $i | $bash | index($i))))
-                | map(.content | tostring)
-                | map(select(test("bwrap:|Failed to (start|create) sandbox")))
-                | "\(length)\t\(.[0] // "" | gsub("[\t\n]"; " ") | .[0:200])"
-              ' "$file"); then
-            echo "::error::Could not scan Marvin execution log for sandbox failures ($file)."
-            exit 1
-          fi
-          IFS=$'\t' read -r sandbox_failures sandbox_sample <<<"$sandbox"
-
-          if [[ "$sandbox_failures" -gt 0 ]]; then
-            echo "::error::Marvin's Bash tool failed $sandbox_failures time(s) inside the action's subprocess sandbox, so it could not apply labels: ${sandbox_sample}. This is an environment failure, not a prompt or allowlist problem — check whether the pinned Claude Code version (${PINNED_CLAUDE_CODE_VERSION}) still avoids the upstream sandbox regression."
-            exit 1
-          fi
 
       - name: Upload Marvin execution log
         if: always() && steps.marvin.conclusion != 'skipped'
