@@ -344,3 +344,87 @@ class TestDeepObjectStyle:
 
                     # Should have some properties
                     assert len(tool.input_schema["properties"]) > 0
+
+    @pytest.mark.parametrize(
+        "param,args,expected_params",
+        [
+            (
+                {
+                    "name": "filter",
+                    "in": "query",
+                    "style": "deepObject",
+                    "explode": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "a": {
+                                "type": "object",
+                                "properties": {"b": {"type": "integer"}},
+                            },
+                            "tags": {"type": "array", "items": {"type": "string"}},
+                        },
+                    },
+                },
+                {"filter": {"a": {"b": 1}, "tags": ["x", "y"]}},
+                [("filter[a]", '{"b":1}'), ("filter[tags]", '["x","y"]')],
+            ),
+            (
+                {
+                    "name": "o",
+                    "in": "query",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "k": {"type": "array", "items": {"type": "integer"}}
+                        },
+                    },
+                },
+                {"o": {"k": [1, 2]}},
+                [("k", "[1,2]")],
+            ),
+            (
+                {
+                    "name": "q",
+                    "in": "query",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"a": {"type": "integer"}},
+                        },
+                    },
+                },
+                {"q": [{"a": 1}]},
+                [("q", '{"a":1}')],
+            ),
+        ],
+    )
+    async def test_nested_objects_and_arrays_in_query_params_are_json_encoded(
+        self, param, args, expected_params
+    ):
+        """Nested dicts/lists in query params must serialize as JSON, not Python repr (#6785)."""
+        spec = {
+            "openapi": "3.0.3",
+            "info": {"title": "t", "version": "1"},
+            "servers": [{"url": "http://api"}],
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "op",
+                        "parameters": [param],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                }
+            },
+        }
+        seen = []
+        transport = httpx2.MockTransport(
+            lambda r: seen.append(r.url) or httpx2.Response(200, json={})
+        )
+        mcp = FastMCP.from_openapi(
+            spec, client=httpx2.AsyncClient(transport=transport, base_url="http://api")
+        )
+        async with Client(mcp) as c:
+            await c.call_tool("op", args)
+
+        assert httpx2.URL(str(seen[0])).params.multi_items() == expected_params

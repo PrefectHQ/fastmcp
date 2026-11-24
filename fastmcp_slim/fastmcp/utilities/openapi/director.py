@@ -37,6 +37,17 @@ def _query_scalar_to_str(value: Any) -> str:
     return str(value)
 
 
+def _query_value_to_str(value: Any) -> str:
+    """Convert a query parameter value or nested item to string.
+
+    Nested dicts and lists are JSON-encoded so they are not sent as
+    Python repr strings.
+    """
+    if isinstance(value, dict | list):
+        return _json.dumps(value, separators=(",", ":"))
+    return _query_scalar_to_str(value)
+
+
 def _uses_default_multipart_encoding(encoding: dict[str, Any]) -> bool:
     """Explicit defaults serialize like omitted encoding; overrides stay unchanged."""
     defaults = {
@@ -788,7 +799,7 @@ class RequestDirector:
                             property_name = _query_scalar_to_str(k)
                             if param_info.style == "deepObject":
                                 property_name = f"{key}[{property_name}]"
-                            add(property_name, _query_scalar_to_str(v))
+                            add(property_name, _query_value_to_str(v))
                     else:
                         delimiter = self._STYLE_DELIMITERS.get(style, ",")
                         # form,explode=false on objects: key,value pairs
@@ -796,7 +807,7 @@ class RequestDirector:
                         parts: list[str] = []
                         for k, v in value.items():
                             parts.append(_query_scalar_to_str(k))
-                            parts.append(_query_scalar_to_str(v))
+                            parts.append(_query_value_to_str(v))
                         add(key, delimiter.join(parts))
                     continue
                 if not explode:
@@ -804,8 +815,15 @@ class RequestDirector:
                     if isinstance(value, list):
                         if not value:
                             continue
-                        add(key, delimiter.join(_query_scalar_to_str(v) for v in value))
+                        add(key, delimiter.join(_query_value_to_str(v) for v in value))
                         continue
+            if isinstance(value, list):
+                value = [
+                    _query_value_to_str(v) if isinstance(v, bool | dict | list) else v
+                    for v in value
+                ]
+            elif isinstance(value, dict | bool):
+                value = _query_value_to_str(value)
             add(key, value)
         return serialized
 
