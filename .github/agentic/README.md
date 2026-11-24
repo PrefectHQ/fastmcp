@@ -31,7 +31,7 @@ at every open issue labeled `needs:triage` and every open issue an outside PR sa
 fixes. When one has changed since triage last saw it (`fastmcp-triage-handled-<n>`, written
 by every intake), or triage never saw it, or its last run failed on older code, it starts
 the same intake an issue event would, with the issue automation's pinned parameters, at
-most three per pass. It waits while an intake for the issue is still running and stops
+most three per pass, changes after a hand-off before issues it has never seen. It waits while an intake for the issue is still running and stops
 after three runs on the same revision; those failures already raised the intake alert. A person removing `needs:triage` clears the hand-off: triage keeps
 recording the issue's next step but never puts the label back.
 

@@ -93,6 +93,8 @@ def stale(record: dict | None, revision: str, source_sha: str) -> str | None:
     return None
 
 
+PRIORITY = {"changed since triage": 0, "failed on older code": 1, "never followed": 2}
+
 # Follow-through runs for one revision of one issue. Intake retries a failed issue
 # up to three times itself; past that the failure alert has fired, and the next
 # change to the issue starts over.
@@ -149,6 +151,9 @@ def plan(
             held.append({**item, "held": f"{attempt} runs on this revision failed"})
             continue
         due.append({**item, "attempt": attempt})
+    # Something moved on an issue a person was already handed comes first: that is
+    # what this pass is for. Backfilling issues triage never saw can wait.
+    due.sort(key=lambda item: (PRIORITY[item["why"]], item["issue_number"]))
     return {"owed": len(issues), "due": due, "held": held, "dispatch": due[:limit]}
 
 
