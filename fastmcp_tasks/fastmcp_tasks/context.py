@@ -13,7 +13,7 @@ import logging
 import weakref
 from collections import OrderedDict
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from fastmcp_tasks.encryption import SnapshotDecryptionError, snapshot_codec
@@ -163,12 +163,30 @@ class TaskContextSnapshot:
     Stored as a single Redis key per task, restored once in the worker.
     """
 
-    access_token_json: str | None = None
-    http_headers: dict[str, str] | None = None
+    access_token_json: str | None = field(default=None, repr=False)
+    http_headers: dict[str, str] | None = field(default=None, repr=False)
     origin_request_id: str | None = None
     session_id: str | None = None
     owning_tool_name: str | None = None
     owning_tool_version: str | None = None
+
+    def __repr__(self) -> str:
+        """Return a representation that redacts token and header values."""
+        headers_repr = (
+            f"<{len(self.http_headers)} headers: {sorted(self.http_headers.keys())}>"
+            if self.http_headers is not None
+            else None
+        )
+        token_repr = "'**********'" if self.access_token_json is not None else None
+        return (
+            f"{type(self).__name__}("
+            f"access_token_json={token_repr}, "
+            f"http_headers={headers_repr}, "
+            f"origin_request_id={self.origin_request_id!r}, "
+            f"session_id={self.session_id!r}, "
+            f"owning_tool_name={self.owning_tool_name!r}, "
+            f"owning_tool_version={self.owning_tool_version!r})"
+        )
 
     @classmethod
     def capture(
