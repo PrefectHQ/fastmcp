@@ -6,6 +6,72 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.2.6" description="2026-11-24">
+
+**[v4.2.6: Model Behavior](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.6)**
+
+This release adds an experimental `CodeModeClient`, which wraps a `Client` or `ClientGroup` and runs CodeMode on the client side, so an agent gets the search, schema and execute meta-tools over servers that don't run CodeMode themselves, and one `execute` block can chain tools across servers. Server spans now carry `network.transport` and, over HTTP, `network.protocol.name` and `network.protocol.version`. Fixes cover client callbacks and results, OpenAPI schemas and path parameters, resource links returned by a mounted server's tools (now namespaced like the rest of the mount), and response limiting, which now keeps truncated results within `max_size` as serialized.
+
+**Authlib is no longer installed with fastmcp.** The client and server no longer use it, so code that imports `authlib` directly must declare it as its own dependency.
+
+**Experimental events now declare each event type as a Pydantic model.** Register a model with `@events.event("name")`, then feed it with `await events.emit(...)` or with a reader registered by `@events.reader(Model)`. An optional `for_subscription` method on the model takes the subscription arguments and decides what each subscription receives. The check-function form from 4.2.5 is removed, so port each check function to a model and a reader. Emitted events can be kept in Redis through Docket with `DocketEventLog`, so they survive restarts and reach every replica.
+
+Thanks to our 28 contributors, including 12 first-time contributors.
+
+### Enhancements ✨
+* Land reviewed community fixes by [@zzstoatzz](https://github.com/zzstoatzz), [@DivyaNarahari97](https://github.com/DivyaNarahari97), [@linhongyu510](https://github.com/linhongyu510), [@himanshuchawla0807-gif](https://github.com/himanshuchawla0807-gif), [@asasemahmed](https://github.com/asasemahmed), [@mikamikasuki](https://github.com/mikamikasuki), [@Larry-Labs](https://github.com/Larry-Labs), [@PennEwan](https://github.com/PennEwan), [@Premvkmishra](https://github.com/Premvkmishra), and [@pvliesdonk](https://github.com/pvliesdonk) in [#6723](https://github.com/PrefectHQ/fastmcp/pull/6723)
+* Add client-side CodeMode via CodeModeClient by [@strawgate](https://github.com/strawgate) in [#5585](https://github.com/PrefectHQ/fastmcp/pull/5585)
+* Show a remote url server in the mcp.json docs by [@zzstoatzz](https://github.com/zzstoatzz) and [@eric-burel](https://github.com/eric-burel) in [#6750](https://github.com/PrefectHQ/fastmcp/pull/6750)
+* Add network transport attributes to server spans by [@zzstoatzz](https://github.com/zzstoatzz) in [#6751](https://github.com/PrefectHQ/fastmcp/pull/6751)
+* Remove Authlib from client and server dependencies by [@zzstoatzz](https://github.com/zzstoatzz), [@mikamikasuki](https://github.com/mikamikasuki), and [@zhuweid](https://github.com/zhuweid) in [#6794](https://github.com/PrefectHQ/fastmcp/pull/6794)
+* Declare event types as models, with emit or a reader by [@zzstoatzz](https://github.com/zzstoatzz) in [#6762](https://github.com/PrefectHQ/fastmcp/pull/6762)
+* Keep emitted events in Redis via Docket by [@zzstoatzz](https://github.com/zzstoatzz) in [#6763](https://github.com/PrefectHQ/fastmcp/pull/6763)
+### Fixes 🐞
+* Hydrate binary-format strings to bytes in client results by [@zzstoatzz](https://github.com/zzstoatzz) and [@Vanity-1](https://github.com/Vanity-1) in [#6716](https://github.com/PrefectHQ/fastmcp/pull/6716)
+* Make Client callback setters reach a live session by [@zzstoatzz](https://github.com/zzstoatzz) and [@dgenio](https://github.com/dgenio) in [#6717](https://github.com/PrefectHQ/fastmcp/pull/6717)
+* Flatten discriminated OpenAPI schemas nested below the request body by [@zzstoatzz](https://github.com/zzstoatzz) and [@tobias-bahls](https://github.com/tobias-bahls) in [#6718](https://github.com/PrefectHQ/fastmcp/pull/6718)
+* Namespace resource links returned by tools by [@zzstoatzz](https://github.com/zzstoatzz), [@Liu8Can](https://github.com/Liu8Can), and [@ldlda](https://github.com/ldlda) in [#6720](https://github.com/PrefectHQ/fastmcp/pull/6720)
+* Keep a config client's live clone connected when another client closes by [@zzstoatzz](https://github.com/zzstoatzz), [@dayan02dev](https://github.com/dayan02dev), and [@BlueX888](https://github.com/BlueX888) in [#6721](https://github.com/PrefectHQ/fastmcp/pull/6721)
+* Document that the client runs on asyncio by [@zzstoatzz](https://github.com/zzstoatzz) and [@CNSeniorious000](https://github.com/CNSeniorious000) in [#6724](https://github.com/PrefectHQ/fastmcp/pull/6724)
+* Keep a shared keep_alive=False stdio subprocess until its last client exits by [@zzstoatzz](https://github.com/zzstoatzz) and [@Aurelucien](https://github.com/Aurelucien) in [#6727](https://github.com/PrefectHQ/fastmcp/pull/6727)
+* Serialize label and matrix OpenAPI path parameters by [@zzstoatzz](https://github.com/zzstoatzz) and [@BlueX888](https://github.com/BlueX888) in [#6725](https://github.com/PrefectHQ/fastmcp/pull/6725)
+* Report the inner session ID from a single-server MCPConfigTransport by [@zzstoatzz](https://github.com/zzstoatzz) and [@67-luck](https://github.com/67-luck) in [#6738](https://github.com/PrefectHQ/fastmcp/pull/6738)
+* Apply an AggregateProvider's own transforms in get_tasks() by [@zzstoatzz](https://github.com/zzstoatzz) and [@67-luck](https://github.com/67-luck) in [#6739](https://github.com/PrefectHQ/fastmcp/pull/6739)
+* Raise the ty floor to 0.0.104 and use its renamed ignore rules by [@zzstoatzz](https://github.com/zzstoatzz) in [#6740](https://github.com/PrefectHQ/fastmcp/pull/6740)
+* generate-cli: keep SKILL.md parameter rows on one line by [@zzstoatzz](https://github.com/zzstoatzz) and [@3urek4](https://github.com/3urek4) in [#6742](https://github.com/PrefectHQ/fastmcp/pull/6742)
+* apps dev: close the proxy client when a request fails by [@zzstoatzz](https://github.com/zzstoatzz) and [@soarkit](https://github.com/soarkit) in [#6743](https://github.com/PrefectHQ/fastmcp/pull/6743)
+* Set each client redirect response parameter once by [@zzstoatzz](https://github.com/zzstoatzz) in [#6744](https://github.com/PrefectHQ/fastmcp/pull/6744)
+* Recreate OpenAPIProvider's default client on each lifespan by [@zzstoatzz](https://github.com/zzstoatzz) and [@BlueX888](https://github.com/BlueX888) in [#6745](https://github.com/PrefectHQ/fastmcp/pull/6745)
+* Bound truncated responses by their serialized size by [@zzstoatzz](https://github.com/zzstoatzz) and [@Harcend](https://github.com/Harcend) in [#6746](https://github.com/PrefectHQ/fastmcp/pull/6746)
+* Bound $ref alias chains in is_object_schema by [@zzstoatzz](https://github.com/zzstoatzz) and [@3urek4](https://github.com/3urek4) in [#6741](https://github.com/PrefectHQ/fastmcp/pull/6741)
+* Forward security= from @mcp_resource to resource templates by [@zzstoatzz](https://github.com/zzstoatzz), [@jcd1991](https://github.com/jcd1991), and [@finngladstone](https://github.com/finngladstone) in [#6749](https://github.com/PrefectHQ/fastmcp/pull/6749)
+### Docs 📚
+* docs: Keycloak and RemoteAuthProvider work with CIMD, not only DCR by [@zzstoatzz](https://github.com/zzstoatzz) in [#6752](https://github.com/PrefectHQ/fastmcp/pull/6752)
+### Other Changes 🦾
+* chore(deps): Update github actions by @prefect-renovate[bot] in https://github.com/PrefectHQ/fastmcp/pull/6507
+* chore(deps): Update dependency prefect to v3.9.3 by @prefect-renovate[bot] in https://github.com/PrefectHQ/fastmcp/pull/6508
+* chore(deps): Update dependency ruff to v0.17.5 by @prefect-renovate[bot] in https://github.com/PrefectHQ/fastmcp/pull/6509
+* chore(deps): Update python Docker tag to v3.15 by @prefect-renovate[bot] in https://github.com/PrefectHQ/fastmcp/pull/6735
+
+
+## New Contributors
+* @Vanity-1 made their first contribution in [#6716](https://github.com/PrefectHQ/fastmcp/pull/6716)
+* @tobias-bahls made their first contribution in [#6718](https://github.com/PrefectHQ/fastmcp/pull/6718)
+* @Liu8Can made their first contribution in [#6720](https://github.com/PrefectHQ/fastmcp/pull/6720)
+* @dayan02dev made their first contribution in [#6721](https://github.com/PrefectHQ/fastmcp/pull/6721)
+* @linhongyu510 made their first contribution in [#6723](https://github.com/PrefectHQ/fastmcp/pull/6723)
+* @Premvkmishra made their first contribution in [#6723](https://github.com/PrefectHQ/fastmcp/pull/6723)
+* @3urek4 made their first contribution in [#6741](https://github.com/PrefectHQ/fastmcp/pull/6741)
+* @soarkit made their first contribution in [#6743](https://github.com/PrefectHQ/fastmcp/pull/6743)
+* @Harcend made their first contribution in [#6746](https://github.com/PrefectHQ/fastmcp/pull/6746)
+* @finngladstone made their first contribution in [#6749](https://github.com/PrefectHQ/fastmcp/pull/6749)
+* @jcd1991 made their first contribution in [#6749](https://github.com/PrefectHQ/fastmcp/pull/6749)
+* @eric-burel made their first contribution in [#6750](https://github.com/PrefectHQ/fastmcp/pull/6750)
+
+**Full Changelog**: [v4.2.5...v4.2.6](https://github.com/PrefectHQ/fastmcp/compare/v4.2.5...v4.2.6)
+
+</Update>
+
 <Update label="v4.2.5" description="2026-11-23">
 
 **[v4.2.5: Smoke Signals](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.5)**
