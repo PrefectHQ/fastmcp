@@ -50,6 +50,7 @@ from flows.agentic_stack_runtime import (
     intake_tools,
     secret_sync,
 )
+from flows.agentic_vouch import load_standing
 
 
 def latest(key: str, owner: UUID | None = None) -> dict | None:
@@ -119,6 +120,13 @@ def maintainer(sender: str, read: Callable[[str], object] = github) -> bool:
         return False
 
 
+def vouched(sender: str, lookup=None) -> bool:
+    """Whether the contributor graph vouches for `sender` (and nobody denounced
+    them). Vouched people skip the burst guard. Off or unreachable: False."""
+    lookup = lookup if lookup is not None else load_standing()
+    return bool(lookup) and lookup(sender)["standing"] == "vouched"
+
+
 def sender_burst(config: Intake, read: Callable[[str], object] = github) -> dict | None:
     """The sender's burst, if this event's item is past their limit.
 
@@ -126,6 +134,8 @@ def sender_burst(config: Intake, read: Callable[[str], object] = github) -> dict
     """
     trigger = max([*config.issues, *config.pull_requests], default=0)
     if not config.sender or not trigger:
+        return None
+    if vouched(config.sender):
         return None
     try:
         limits = burst_config(Variable.get(CONFIG_VARIABLE, default={}))

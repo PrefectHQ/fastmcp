@@ -62,6 +62,15 @@ def card(login: str, read: Read, now: datetime) -> dict:
     }
 
 
+def _graph(standing: Callable[[str], dict], login: str) -> dict:
+    found = standing(login)
+    return {
+        key: found[key]
+        for key in ("standing", "vouched_by", "denounced_by", "merged_prs", "tier")
+        if key in found
+    }
+
+
 def _hours(start: str, end: str) -> float:
     delta = datetime.fromisoformat(end.replace("Z", "+00:00")) - datetime.fromisoformat(
         start.replace("Z", "+00:00")
@@ -69,7 +78,12 @@ def _hours(start: str, end: str) -> float:
     return round(delta.total_seconds() / 3600, 1)
 
 
-def people(evidence: dict, read: Read, now: datetime) -> dict:
+def people(
+    evidence: dict,
+    read: Read,
+    now: datetime,
+    standing: Callable[[str], dict] | None = None,
+) -> dict:
     issue = evidence["issue"]
     reporter = (issue.get("user") or {}).get("login")
     authors = [
@@ -99,6 +113,9 @@ def people(evidence: dict, read: Read, now: datetime) -> dict:
             **card(login, read, now),
             "role": "reporter" if login == reporter else "pr_author",
             "maintainer": login in maintainers,
+            # What the private contributor graph says: vouched, denounced or
+            # unknown, with org tier. Absent when the graph is off.
+            **({"graph": _graph(standing, login)} if standing else {}),
         }
         for login in logins
     }
