@@ -405,7 +405,9 @@ def server_span(
             _server_span_open.reset(token)
         return
 
-    parent_context, links = _get_parent_trace_context()
+    # When the seam is already open, a fallback span stays under the active
+    # context. The seam already resolved the remote parent and transport link.
+    parent_context, links = _get_parent_trace_context() if seam is None else (None, [])
     tracer = get_tracer()
     with tracer.start_as_current_span(
         name,

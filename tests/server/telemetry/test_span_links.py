@@ -43,6 +43,12 @@ class AsgiSpanMiddleware:
             await self.app(scope, receive, send)
 
 
+class ToolSpanMiddleware(FastMCPMiddleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next: CallNext):
+        with trace.get_tracer("test").start_as_current_span("tool-middleware"):
+            return await call_next(context)
+
+
 def _server() -> FastMCP:
     mcp = FastMCP("test-server")
 
@@ -120,11 +126,6 @@ async def test_propagation_only_parents_user_spans_under_meta(
 async def test_propagation_only_preserves_tool_middleware_parent(
     trace_exporter: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
 ):
-    class ToolSpanMiddleware(FastMCPMiddleware):
-        async def on_call_tool(self, context: MiddlewareContext, call_next: CallNext):
-            with trace.get_tracer("test").start_as_current_span("tool-middleware"):
-                return await call_next(context)
-
     monkeypatch.setattr(fastmcp.settings, "telemetry_mode", "propagation_only")
     mcp = _server()
     mcp.add_middleware(ToolSpanMiddleware())
@@ -139,6 +140,21 @@ async def test_propagation_only_preserves_tool_middleware_parent(
     assert middleware.parent.trace_id == caller.get_span_context().trace_id
     assert middleware.context is not None and user_work.parent is not None
     assert user_work.parent.span_id == middleware.context.span_id
+
+
+async def test_native_preserves_tool_middleware_parent(
+    trace_exporter: InMemorySpanExporter,
+):
+    mcp = _server()
+    mcp.add_middleware(ToolSpanMiddleware())
+    await _call_over_http(mcp)
+
+    spans = trace_exporter.get_finished_spans()
+    middleware = _span(spans, "tool-middleware")
+    tool = _span(spans, "tools/call greet")
+    assert middleware.context is not None and tool.parent is not None
+    assert tool.parent.span_id == middleware.context.span_id
+    assert tool.links == ()
 
 
 async def test_no_link_in_memory(trace_exporter: InMemorySpanExporter):
