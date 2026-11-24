@@ -18,6 +18,8 @@ import fastmcp
 from fastmcp import Client, FastMCP
 from fastmcp.client.mixins import tools as client_tools
 from fastmcp.server.dependencies import FastMCPRequestContext, fastmcp_request_ctx
+from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
+from fastmcp.server.middleware.middleware import Middleware as FastMCPMiddleware
 from fastmcp.server.telemetry import _get_parent_trace_context
 from fastmcp.utilities.tests import asgi_server
 
@@ -60,10 +62,12 @@ def _span_ids(spans: tuple[ReadableSpan, ...], name: str) -> set[int]:
     return {s.context.span_id for s in spans if s.name == name and s.context}
 
 
-async def _call_over_http(**http_app_kwargs: Any) -> None:
+async def _call_over_http(mcp: FastMCP | None = None, **http_app_kwargs: Any) -> None:
     async with (
         asgi_server(
-            _server(), middleware=[Middleware(AsgiSpanMiddleware)], **http_app_kwargs
+            mcp or _server(),
+            middleware=[Middleware(AsgiSpanMiddleware)],
+            **http_app_kwargs,
         ) as server,
         server.client() as client,
     ):
@@ -111,6 +115,30 @@ async def test_propagation_only_parents_user_spans_under_meta(
     user_work = _span(trace_exporter.get_finished_spans(), "user-work")
     assert user_work.context is not None
     assert user_work.context.trace_id == caller.get_span_context().trace_id
+
+
+async def test_propagation_only_preserves_tool_middleware_parent(
+    trace_exporter: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
+):
+    class ToolSpanMiddleware(FastMCPMiddleware):
+        async def on_call_tool(self, context: MiddlewareContext, call_next: CallNext):
+            with trace.get_tracer("test").start_as_current_span("tool-middleware"):
+                return await call_next(context)
+
+    monkeypatch.setattr(fastmcp.settings, "telemetry_mode", "propagation_only")
+    mcp = _server()
+    mcp.add_middleware(ToolSpanMiddleware())
+    with trace.get_tracer("test").start_as_current_span("caller") as caller:
+        await _call_over_http(mcp)
+
+    spans = trace_exporter.get_finished_spans()
+    middleware = _span(spans, "tool-middleware")
+    user_work = _span(spans, "user-work")
+    assert middleware.parent is not None
+    assert middleware.parent.is_remote
+    assert middleware.parent.trace_id == caller.get_span_context().trace_id
+    assert middleware.context is not None and user_work.parent is not None
+    assert user_work.parent.span_id == middleware.context.span_id
 
 
 async def test_no_link_in_memory(trace_exporter: InMemorySpanExporter):

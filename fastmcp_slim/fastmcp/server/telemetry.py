@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 
+from mcp.server.context import ServerRequestContext
 from opentelemetry import context as otel_context
 from opentelemetry.context import Context
 from opentelemetry.trace import (
@@ -58,6 +59,10 @@ _active_seam_span: ContextVar[_SeamSpan | None] = ContextVar(
 # consumers see one request no matter how deep the call goes.
 _server_span_open: ContextVar[bool] = ContextVar(
     "fastmcp_server_span_open", default=False
+)
+
+_propagated_request: ContextVar[ServerRequestContext | None] = ContextVar(
+    "fastmcp_propagated_request", default=None
 )
 
 
@@ -182,14 +187,25 @@ def _propagation_only_span() -> Generator[Span, None, None]:
     Yields `INVALID_SPAN`, which is non-recording, so callers' `is_recording()`
     guards skip attribute and error bookkeeping on it.
     """
-    parent_context, _ = _get_parent_trace_context()
+    from fastmcp.server.dependencies import fastmcp_request_ctx
+
+    request = fastmcp_request_ctx.get()
+    # The dispatcher and handler each wrap the same SDK request. Preserve any
+    # middleware spans created after its trace context was already attached.
+    if request is None or _propagated_request.get() is request._srctx:
+        yield INVALID_SPAN
+        return
+
+    parent_context = _extract_meta_trace_context(request.meta)
     if parent_context is None:
         yield INVALID_SPAN
         return
     token = otel_context.attach(parent_context)
+    request_token = _propagated_request.set(request._srctx)
     try:
         yield INVALID_SPAN
     finally:
+        _propagated_request.reset(request_token)
         otel_context.detach(token)
 
 
@@ -330,9 +346,9 @@ def server_span(
     Automatically records any exception on the span and sets error status.
 
     In `propagation_only` mode no span is opened or enriched. The seam has
-    normally already attached the incoming parent context for this request;
-    doing it again here is a no-op, and covers the in-process callers that
-    bypass the dispatcher and so never reach the seam at all.
+    normally already attached the incoming parent context for this request,
+    so the active context (including middleware spans) is preserved. Calls
+    that bypass the dispatcher can still attach incoming context here.
     """
     if telemetry_mode() == "propagation_only":
         with _propagation_only_span() as span:
