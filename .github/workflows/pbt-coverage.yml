@@ -1,0 +1,82 @@
+name: PBT coverage map
+on:
+  # Rebuild from the latest commit whenever code, tests or the docs that
+  # define the public API change; the daily run catches anything else.
+  push:
+    branches: [main]
+    paths:
+      - "fastmcp_slim/fastmcp/**"
+      - "tests/**"
+      - "docs/**"
+      - "scripts/pbt_coverage.py"
+      - ".github/workflows/pbt-coverage.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+  schedule:
+    - cron: "23 12 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/pbt-coverage.yml"
+      - "scripts/pbt_coverage.py"
+      - "tests/test_pbt_coverage.py"
+      - "status-site/pbt.js"
+permissions: {}
+# A newer push supersedes an older build; publishing still queues.
+concurrency:
+  group: pbt-coverage-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  # Runs repository code (the property-based suite) with a read-only token.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Run property-based tests under coverage
+        run: uv run scripts/pbt_coverage.py --output "$RUNNER_TEMP/pbt-coverage.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pbt-coverage
+          path: ${{ runner.temp }}/pbt-coverage.json
+          retention-days: 3
+  # Holds the only write token and runs no repository code.
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: maintenance-status-publish
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: pbt-coverage
+          path: snapshot
+      - name: Commit to the status branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git init -q site
+          cd site
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
+          git fetch -q --depth 1 origin status
+          git checkout -q -b status FETCH_HEAD
+          cp ../snapshot/pbt-coverage.json .
+          git add pbt-coverage.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "pbt coverage: $(jq -r .generated_at pbt-coverage.json)"
+          git push -q origin status

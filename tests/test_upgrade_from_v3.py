@@ -231,7 +231,7 @@ REMOVED_NAMES = [
     # old misspelled names renamed to Cacheable* (no alias)  codespell:ignore
     ("fastmcp.server.middleware.caching", "CachableToolResult"),  # codespell:ignore
     ("fastmcp.server.middleware.caching", "CachablePromptResult"),  # codespell:ignore
-    # 3.0-era rename alias -> SkillsDirectoryProvider
+    # 3.0-era rename alias -> fastmcp.skills.provider.SkillsDirectoryProvider
     ("fastmcp.server.providers.skills", "SkillsProvider"),
     ("fastmcp.server.providers", "SkillsProvider"),
 ]

@@ -25,10 +25,10 @@ import shutil
 import subprocess
 import sys
 import urllib.request
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-UTC = timezone.utc
+UTC = UTC
 
 REPO = "PrefectHQ/fastmcp"
 SCHEMA = "fastmcp-maintenance/1"
@@ -52,6 +52,20 @@ AUTOMATIONS = [
         "what": "labels each new issue and PR, and flags submissions that don't follow CONTRIBUTING.md",
         "cadence": "on each new issue or PR",
         "workflows": ["marvin-label-triage.yml"],
+    },
+    {
+        "id": "pr-type-label",
+        "name": "PR type labels",
+        "what": "gives each PR a bug/enhancement/documentation label for release notes: linked issue, template box, docs-only, title prefix, then one model call",
+        "cadence": "on each new or edited PR",
+        "workflows": ["label-pr-type.yml"],
+    },
+    {
+        "id": "issue-type-label",
+        "name": "issue type labels",
+        "what": "labels an issue opened without a template bug, enhancement or documentation with one model call",
+        "cadence": "on each new issue",
+        "workflows": ["label-issue-type.yml"],
     },
     {
         "id": "dedupe",

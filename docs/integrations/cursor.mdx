@@ -74,7 +74,7 @@ fastmcp install cursor server.py:my_custom_server
 
 After running the command, Cursor will open automatically and prompt you to install the server. The command will be `uv`, which is expected as this is a Python STDIO server. Click "Install" to confirm:
 
-![Cursor install prompt](./cursor-install-mcp.png)
+![Cursor's Install MCP Server dialog for Dice Roller with type stdio, command uv, and an Install button](./cursor-install-mcp.png)
 
 #### Dependencies
 
@@ -113,6 +113,12 @@ Alternatively, you can use a `fastmcp.json` configuration file (recommended):
     "dependencies": ["pandas", "requests"]
   }
 }
+```
+
+Pass the configuration file to the install command in place of the server file:
+
+```bash
+fastmcp install cursor fastmcp.json
 ```
 
 

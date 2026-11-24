@@ -65,9 +65,6 @@ class MemorySkillProvider(Provider):
         }
         self.contexts: list[ServerRequestContext[Any, Any]] = []
 
-    def _validate_skill_source(self) -> None:
-        pass
-
     async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
         return [key for key in self.addressable if uri is None or key == uri]
 
@@ -174,6 +171,29 @@ async def test_list_skills_enforces_page_limit() -> None:
     async with skills_client(server) as client:
         with pytest.raises(RuntimeError, match="Reached auto-pagination limit"):
             await client.list_skills(max_pages=1)
+
+
+class EmptyCursorSkillsExtension(SkillsExtension):
+    """Serves two pages whose continuation cursor is the empty string."""
+
+    async def _handle_list(
+        self,
+        context: ServerRequestContext[Any, Any],
+        params: ListSkillsParams,
+    ) -> ListSkillsResult:
+        if params.cursor is None:
+            return ListSkillsResult(skills=[make_skill("alpha")], next_cursor="")
+        return ListSkillsResult(skills=[make_skill("beta")])
+
+
+async def test_list_skills_follows_empty_cursor() -> None:
+    server = FastMCP("skills")
+    server.add_extension(EmptyCursorSkillsExtension())
+
+    async with skills_client(server) as client:
+        all_skills = await client.list_skills()
+
+    assert [skill.frontmatter.name for skill in all_skills] == ["alpha", "beta"]
 
 
 async def test_get_skill_is_authoritative_for_unlisted_skill() -> None:
@@ -370,14 +390,6 @@ def test_extension_rejects_transformed_provider() -> None:
     server = FastMCP("skills", providers=[provider])
 
     with pytest.raises(ValueError, match="transformed providers"):
-        server.add_extension(SkillsExtension(providers=[provider]))
-
-
-def test_extension_rejects_server_level_transform() -> None:
-    provider = MemorySkillProvider(listed=[])
-    server = FastMCP("skills", providers=[provider], transforms=[Namespace("docs")])
-
-    with pytest.raises(ValueError, match="server-level transforms"):
         server.add_extension(SkillsExtension(providers=[provider]))
 
 

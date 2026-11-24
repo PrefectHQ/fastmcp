@@ -52,6 +52,18 @@ _ANTHROPIC_IMAGE_MEDIA_TYPES = frozenset(
 )
 
 
+def _stop_reason(message: Message) -> StopReason:
+    """Map Anthropic's stop reason to MCP's, so a caller can tell a reply cut off
+    at max_tokens from a finished one."""
+    if message.stop_reason == "tool_use":
+        return "toolUse"
+    if message.stop_reason == "max_tokens":
+        return "maxTokens"
+    if message.stop_reason == "stop_sequence":
+        return "stopSequence"
+    return "endTurn"
+
+
 def _image_content_to_anthropic_block(content: ImageContent) -> ImageBlockParam:
     """Convert MCP ImageContent to Anthropic ImageBlockParam."""
     if content.mime_type not in _ANTHROPIC_IMAGE_MEDIA_TYPES:
@@ -67,6 +79,24 @@ def _image_content_to_anthropic_block(content: ImageContent) -> ImageBlockParam:
             data=content.data,
         ),
     )
+
+
+def _tool_result_content_to_anthropic(
+    content: Sequence[Any],
+) -> str | list[TextBlockParam | ImageBlockParam]:
+    """Preserve text and image blocks inside Anthropic tool results."""
+    content_blocks: list[TextBlockParam | ImageBlockParam] = []
+    for item in content:
+        if isinstance(item, TextContent):
+            content_blocks.append(TextBlockParam(type="text", text=item.text))
+        elif isinstance(item, ImageContent):
+            content_blocks.append(_image_content_to_anthropic_block(item))
+
+    if not content_blocks:
+        return ""
+    if len(content_blocks) == 1 and isinstance(content[0], TextContent):
+        return content[0].text
+    return content_blocks
 
 
 class AnthropicSamplingHandler:
@@ -217,18 +247,7 @@ class AnthropicSamplingHandler:
                             "AudioContent is not supported by the Anthropic API"
                         )
                     elif isinstance(item, ToolResultContent):
-                        # Extract text content from the result
-                        result_content: str | list[TextBlockParam] = ""
-                        if item.content:
-                            text_blocks: list[TextBlockParam] = [
-                                TextBlockParam(type="text", text=sub_item.text)
-                                for sub_item in item.content
-                                if isinstance(sub_item, TextContent)
-                            ]
-                            if len(text_blocks) == 1:
-                                result_content = text_blocks[0]["text"]
-                            elif text_blocks:
-                                result_content = text_blocks
+                        result_content = _tool_result_content_to_anthropic(item.content)
 
                         content_blocks.append(
                             ToolResultBlockParam(
@@ -271,17 +290,7 @@ class AnthropicSamplingHandler:
 
             # Handle ToolResultContent (user's tool results)
             if isinstance(content, ToolResultContent):
-                result_content_str: str | list[TextBlockParam] = ""
-                if content.content:
-                    text_parts: list[TextBlockParam] = [
-                        TextBlockParam(type="text", text=item.text)
-                        for item in content.content
-                        if isinstance(item, TextContent)
-                    ]
-                    if len(text_parts) == 1:
-                        result_content_str = text_parts[0]["text"]
-                    elif text_parts:
-                        result_content_str = text_parts
+                result_content = _tool_result_content_to_anthropic(content.content)
 
                 anthropic_messages.append(
                     MessageParam(
@@ -290,7 +299,7 @@ class AnthropicSamplingHandler:
                             ToolResultBlockParam(
                                 type="tool_result",
                                 tool_use_id=content.tool_use_id,
-                                content=result_content_str,
+                                content=result_content,
                                 is_error=content.is_error
                                 if content.is_error
                                 else False,
@@ -348,6 +357,7 @@ class AnthropicSamplingHandler:
                 content=TextContent(type="text", text=text),
                 role="assistant",
                 model=message.model,
+                stop_reason=_stop_reason(message),
             )
 
         raise ValueError(
@@ -411,19 +421,6 @@ class AnthropicSamplingHandler:
         if len(message.content) == 0:
             raise ValueError("No content in response from Anthropic")
 
-        # Determine stop reason
-        stop_reason: StopReason
-        if message.stop_reason == "tool_use":
-            stop_reason = "toolUse"
-        elif message.stop_reason == "end_turn":
-            stop_reason = "endTurn"
-        elif message.stop_reason == "max_tokens":
-            stop_reason = "maxTokens"
-        elif message.stop_reason == "stop_sequence":
-            stop_reason = "stopSequence"
-        else:
-            stop_reason = "endTurn"
-
         # Build content list
         content: list[SamplingMessageContentBlock] = []
 
@@ -451,5 +448,5 @@ class AnthropicSamplingHandler:
             content=content,
             role="assistant",
             model=message.model,
-            stop_reason=stop_reason,
+            stop_reason=_stop_reason(message),
         )

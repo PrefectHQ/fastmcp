@@ -33,9 +33,7 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar, cast
 
 from fastmcp.server.providers.addressing import (
     is_app_tool_with_identity,
@@ -103,6 +101,15 @@ class Provider:
         `auto_register = True`. An explicitly registered extension with the
         same identifier takes precedence, regardless of registration order.
         Composite providers should include their children's extensions.
+        """
+        return ()
+
+    def _served_servers(self) -> Sequence[FastMCP]:
+        """FastMCP servers whose components this provider serves.
+
+        A server that adds this provider links itself to each of them, so
+        their `notify_*` also reaches its listening clients. Composite
+        providers should include their children's servers.
         """
         return ()
 

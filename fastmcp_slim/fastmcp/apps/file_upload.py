@@ -9,7 +9,7 @@ Requires ``fastmcp[apps]`` (prefab-ui).
 Usage::
 
     from fastmcp import FastMCP
-    from fastmcp.apps import FileUpload
+    from fastmcp.apps.file_upload import FileUpload
 
     mcp = FastMCP("My Server")
     mcp.add_provider(FileUpload())
@@ -61,7 +61,7 @@ except ImportError as _exc:
 
 import base64
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import RLock
 from time import monotonic
 from typing import Any
@@ -259,9 +259,7 @@ class FileUpload(FastMCPApp):
                     "size": f["size"],
                     "type": f["type"],
                     "data": f["data"],
-                    "uploaded_at": datetime.now(timezone.utc).isoformat(
-                        timespec="seconds"
-                    ),
+                    "uploaded_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 }
                 if self._file_ttl_seconds is not None:
                     entry["_expires_at"] = now + self._file_ttl_seconds

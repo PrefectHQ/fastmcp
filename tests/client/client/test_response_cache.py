@@ -161,6 +161,37 @@ class TestEraGating:
             assert cache is not None
             assert await cache.read("tools/list", "") is None
 
+    async def test_legacy_with_default_ttl_cache_is_inert(self):
+        """When default_ttl_ms is configured, legacy mode must keep the cache inert:
+        neither writing into the cache nor serving hits from it (#6298)."""
+        server = _cached_server()
+        config = CacheConfig(target_id="demo", default_ttl_ms=60000)
+        async with Client(server, mode="legacy", cache=config) as client:
+            await client.list_tools()
+            cache = client._response_cache
+            assert cache is not None
+            # Inert: nothing was written to the cache
+            assert await cache.read("tools/list", "") is None
+
+            # Inert: even if the cache were populated, legacy does not read from it
+            await cache.write(
+                "tools/list", "", mcp_types.ListToolsResult(tools=[]), 0, "use"
+            )
+
+            calls = {"n": 0}
+            original = client.session.list_tools
+
+            async def spy(**kwargs):
+                calls["n"] += 1
+                return await original(**kwargs)
+
+            client.session.list_tools = spy  # type: ignore[method-assign]
+            second = await client.list_tools()
+
+            # Wire request made, cached empty list was ignored
+            assert calls["n"] == 1
+            assert [t.name for t in second] == ["add"]
+
 
 class TestNewIndependentCache:
     async def test_new_gets_independent_cache(self):

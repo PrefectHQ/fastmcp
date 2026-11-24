@@ -51,7 +51,7 @@ This conceptual model helps you understand the purpose of each configuration sec
   },
   "environment": {
     "type": "uv",
-    "python": ">=3.10",
+    "python": ">=3.11",
     "dependencies": ["pandas", "numpy"]
   },
   "deployment": {
@@ -155,8 +155,8 @@ FastMCP uses an extensible environment system with a base `Environment` class th
     <ParamField body="python" type="string">
       Python version constraint. Examples:
       - Exact version: `"3.12"`
-      - Minimum version: `">=3.10"`
-      - Version range: `">=3.10,<3.13"`
+      - Minimum version: `">=3.11"`
+      - Version range: `">=3.11,<3.14"`
     </ParamField>
     
     <ParamField body="dependencies" type="list[str]">
@@ -195,7 +195,7 @@ FastMCP uses an extensible environment system with a base `Environment` class th
     ```json
     "environment": {
       "type": "uv",
-      "python": ">=3.10",
+      "python": ">=3.11",
       "dependencies": ["pandas", "numpy"],
       "editable": ["."]
     }
@@ -304,9 +304,9 @@ The `env` field in deployment configuration supports runtime interpolation of en
 
 When the server starts, FastMCP replaces `${ENVIRONMENT}`, `${DB_USER}`, etc. with values from your system's environment variables. If a variable doesn't exist, the placeholder is preserved as-is.
 
-**Example**: If your system has `ENVIRONMENT=production` and `DB_HOST=db.example.com`:
+For example, suppose your system has `ENVIRONMENT=production` and `DB_HOST=db.example.com`, and your configuration contains:
+
 ```json
-// Configuration
 {
   "deployment": {
     "env": {
@@ -315,8 +315,11 @@ When the server starts, FastMCP replaces `${ENVIRONMENT}`, `${DB_USER}`, etc. wi
     }
   }
 }
+```
 
-// Result at runtime
+The server process then starts with these values:
+
+```json
 {
   "API_URL": "https://api.production.example.com",
   "DB_HOST": "db.example.com"
@@ -472,7 +475,7 @@ A configuration optimized for local development:
   "environment": {
     "type": "uv",
     "python": "3.12",
-    "dependencies": ["fastmcp[dev]"],
+    "dependencies": ["fastmcp"],
     "editable": ["."]
   },
   "deployment": {

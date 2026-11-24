@@ -4,6 +4,7 @@ import re
 from collections import Counter
 from typing import Any
 
+from fastmcp.utilities.json_schema import ref_target_name
 from fastmcp.utilities.logging import get_logger
 
 from .json_schema_converter import (
@@ -94,13 +95,13 @@ _SUBSCHEMA_KEYWORDS = (
 def _ref_component_name(ref: str) -> str | None:
     """Return the component schema a local `$ref` points into, if any.
 
-    The name is the segment after `#/$defs/` or `#/components/schemas/`, so
-    `#/$defs/Pet/properties/status` needs the `Pet` definition.
+    The name is the decoded segment after `#/$defs/` or
+    `#/components/schemas/`, so `#/$defs/Pet/properties/status` needs the
+    `Pet` definition and `#/$defs/a~1b` needs `a/b`.
     """
-    for prefix in ("#/$defs/", "#/components/schemas/"):
-        if ref.startswith(prefix):
-            return ref.removeprefix(prefix).split("/")[0] or None
-    return None
+    if not ref.startswith("#/"):
+        return None
+    return ref_target_name(ref, roots=(("$defs",), ("components", "schemas")))
 
 
 def _replace_ref_with_defs(
@@ -524,6 +525,67 @@ def _flatten_discriminator_subtypes(
     return properties
 
 
+def _flatten_discriminator_definition(schema: Any, schema_defs: dict[str, Any]) -> Any:
+    """Return a copy of *schema* with its discriminator subtypes flattened in.
+
+    A parent with ``oneOf`` or ``anyOf`` already references its subtypes, so
+    it is returned unchanged.
+    """
+    if not isinstance(schema, dict) or "oneOf" in schema or "anyOf" in schema:
+        return schema
+    flattened_props = _flatten_discriminator_subtypes(schema, schema_defs)
+    if flattened_props is None:
+        return schema
+    flattened = {k: v for k, v in schema.items() if k != "discriminator"}
+    flattened["properties"] = flattened_props
+    return flattened
+
+
+def _flatten_discriminator_definitions(
+    schema_defs: dict[str, Any],
+) -> dict[str, Any]:
+    """Flatten discriminated parents in *schema_defs*, keeping subtypes exact.
+
+    A parent reached through a ``$ref`` (an envelope property, array items)
+    links its subtypes only through the mapping, which is dropped in
+    conversion, so its definition gets the subtype fields the same way as the
+    body. A subtype composing the parent through ``allOf`` still means "the
+    parent's own fields plus mine", so those ``allOf`` references are pointed
+    at an unflattened copy; otherwise ``Cat`` would advertise ``Dog``'s fields.
+    """
+    flattened = {
+        name: _flatten_discriminator_definition(def_schema, schema_defs)
+        for name, def_schema in schema_defs.items()
+    }
+    base_refs: dict[str, str] = {}
+    for name, def_schema in schema_defs.items():
+        if flattened[name] is def_schema:
+            continue
+        base_name = f"{name}Base"
+        while base_name in schema_defs or base_name in flattened:
+            base_name += "_"
+        flattened[base_name] = {
+            k: v for k, v in def_schema.items() if k != "discriminator"
+        }
+        escaped = base_name.replace("~", "~0").replace("/", "~1")
+        base_refs[name] = f"#/$defs/{escaped}"
+    if not base_refs:
+        return flattened
+
+    def compose_with_base(member: Any) -> Any:
+        ref = member.get("$ref") if isinstance(member, dict) else None
+        name = _discriminator_target_name(ref) if isinstance(ref, str) else None
+        if name not in base_refs:
+            return member
+        return {**member, "$ref": base_refs[name]}
+
+    for name, def_schema in flattened.items():
+        if isinstance(def_schema, dict) and isinstance(def_schema.get("allOf"), list):
+            members = [compose_with_base(member) for member in def_schema["allOf"]]
+            flattened[name] = {**def_schema, "allOf": members}
+    return flattened
+
+
 def _combine_schemas_and_map_params(
     route: HTTPRoute,
     convert_refs: bool = True,
@@ -625,14 +687,20 @@ def _combine_schemas_and_map_params(
 
         # A kept $ref is paired with its siblings through allOf: resolving a
         # $ref that has siblings lets the siblings overwrite the target's keywords.
+        # The allOf is built from a copy: with convert_refs=False body_schema is
+        # the route's stored schema, and the director reads its $ref at call time
+        # to send the whole body.
         if not ref_is_object:
-            ref = body_schema.pop("$ref")
-            if not body_schema.get("properties"):
-                body_schema.pop("properties", None)
+            ref = body_schema["$ref"]
+            siblings = {
+                keyword: value
+                for keyword, value in body_schema.items()
+                if keyword != "$ref"
+            }
+            if not siblings.get("properties"):
+                siblings.pop("properties", None)
             body_schema = (
-                {"allOf": [{"$ref": ref}, body_schema]}
-                if body_schema
-                else {"$ref": ref}
+                {"allOf": [{"$ref": ref}, siblings]} if siblings else {"$ref": ref}
             )
 
         # Merge discriminated subtype fields in as optional. The discriminator
@@ -759,7 +827,9 @@ def _combine_schemas_and_map_params(
         "required": required,
     }
     # Add schema definitions if available
-    schema_defs = {**route.request_schemas, **body_defs}
+    schema_defs = _flatten_discriminator_definitions(
+        {**route.request_schemas, **body_defs}
+    )
     if schema_defs:
         if convert_refs:
             # Need to convert refs and prune

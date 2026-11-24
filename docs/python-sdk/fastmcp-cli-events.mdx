@@ -1,0 +1,53 @@
+---
+title: events
+sidebarTitle: events
+---
+
+# `fastmcp.cli.events`
+
+
+`fastmcp experimental events`: list a server's event types and watch one as it fires.
+
+Experimental: this command may change in any release without a deprecation period.
+
+
+## Functions
+
+### `list_events_command` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/events.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_events_command(server_spec: ServerSpec = None) -> None
+```
+
+
+List the event types a server offers.
+
+**Examples:**
+
+```
+fastmcp experimental events list server.py
+fastmcp experimental events list http://localhost:8000/mcp --json
+```
+
+
+### `watch_command` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/cli/events.py#L141" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+watch_command(server_spec: ServerSpec = None, name: Annotated[str, cyclopts.Parameter(help='Event type to subscribe to')] = '', *arguments: str) -> None
+```
+
+
+Subscribe to an event type and print each event as it arrives.
+
+Arguments are key=value pairs, coerced with the event type's input
+schema. The watch runs until interrupted (or `--count` events), then
+prints the cursor to resume from.
+
+**Examples:**
+
+```
+fastmcp experimental events watch server.py alert.fired
+fastmcp experimental events watch server.py alert.fired severity=P1 --json
+fastmcp experimental events watch http://localhost:8000/mcp alert.fired --cursor 42
+```
+

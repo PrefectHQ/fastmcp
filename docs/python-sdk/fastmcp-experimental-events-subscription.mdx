@@ -1,0 +1,123 @@
+---
+title: subscription
+sidebarTitle: subscription
+---
+
+# `fastmcp.experimental.events.subscription`
+
+
+Client functions for the MCP Events extension: list, poll and subscribe.
+
+Experimental: this API may change in any release without a deprecation period.
+
+
+## Functions
+
+### `list_events_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/subscription.py#L449" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_events_mcp(client: Client) -> ListEventsResult
+```
+
+
+Send one `events/list` request and return its protocol result.
+
+**Args:**
+- `cursor`: Optional pagination cursor from a previous result.
+
+**Raises:**
+- `RuntimeError`: If the client is disconnected or Events was not negotiated.
+- `MCPError`: If the server rejects the request.
+
+
+### `list_events` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/subscription.py#L504" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_events(client: Client, max_pages: int = AUTO_PAGINATION_MAX_PAGES) -> list[EventType]
+```
+
+
+Retrieve every event type the server offers.
+
+**Args:**
+- `max_pages`: Maximum number of pages to fetch before raising.
+
+**Raises:**
+- `RuntimeError`: If Events was not negotiated or the page limit is reached.
+- `MCPError`: If the server rejects a request.
+
+
+### `poll_events_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/subscription.py#L531" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+poll_events_mcp(client: Client, name: str, arguments: dict[str, Any] | None = None) -> PollEventsResult
+```
+
+
+Send one `events/poll` request and return its protocol result.
+
+**Args:**
+- `name`: Event type to poll.
+- `arguments`: Subscription arguments matching the event's input schema.
+- `cursor`: Position from a previous poll. `None` starts from now\: the
+server returns no events and a cursor for later polls.
+- `max_age_ms`: Do not replay events older than this.
+- `max_events`: Cap on the number of events returned.
+
+**Raises:**
+- `RuntimeError`: If the client is disconnected or Events was not negotiated.
+- `MCPError`: If the server rejects the request.
+
+
+### `subscribe_events` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/subscription.py#L600" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+subscribe_events(client: Client, name: str, arguments: dict[str, Any] | None = None) -> EventSubscription
+```
+
+
+Subscribe to one event type and iterate its events as they arrive.
+
+With push delivery the client holds an `events/stream` request open
+and the server writes events to it; a stream that is cut off or goes
+quiet is reopened from the cursor a few times before the error is raised. With poll delivery the client asks
+on the interval the server recommends and drains a backlog without
+waiting. Either way events already yielded are dropped, and the
+subscription runs only while iterated: leaving the `async for` ends it.
+
+**Args:**
+- `name`: Event type to subscribe to.
+- `arguments`: Subscription arguments matching the event's input schema.
+- `cursor`: Position to resume from. `None` starts from now.
+- `max_age_ms`: Do not replay events older than this.
+- `max_events`: Cap on the number of events per poll.
+- `min_poll_interval`: Shortest wait between polls, in seconds, whatever
+the server recommends.
+- `delivery`: `"push"` or `"poll"`. By default the subscription uses
+push when the event type offers it and poll otherwise.
+
+
+## Classes
+
+### `EventBacklogFullError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/subscription.py#L69" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A push subscription's consumer fell so far behind that frames were lost.
+
+The subscription has ended. Its `cursor` is the last cursor the server
+confirmed, which can be the start of the batch that overflowed, so
+resubscribing from it repeats events rather than skipping them. A push
+batch larger than the buffer overflows again on every retry; a consumer
+that cannot keep up should poll with `max_events` instead.
+
+
+### `EventSubscription` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/subscription.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+One subscription to an event type, iterated with `async for`.
+
+`cursor` is the position to resume from: at or before the last event
+yielded, never after an event not yet yielded. Persist it and pass
+it to `subscribe_events(client, ..., cursor=...)` to resume after a restart. `truncated`
+is set once the server reports that it skipped events the cursor asked for.
+

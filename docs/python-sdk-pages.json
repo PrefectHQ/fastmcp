@@ -24,6 +24,7 @@
     "pages": [
       "python-sdk/fastmcp-cli-__init__",
       "python-sdk/fastmcp-cli-apps_dev",
+      "python-sdk/fastmcp-cli-apps_dev_log",
       "python-sdk/fastmcp-cli-apps_dev_security",
       "python-sdk/fastmcp-cli-auth",
       "python-sdk/fastmcp-cli-cimd",
@@ -43,6 +44,7 @@
         ]
       },
       "python-sdk/fastmcp-cli-discovery",
+      "python-sdk/fastmcp-cli-events",
       "python-sdk/fastmcp-cli-generate",
       {
         "group": "install",
@@ -126,6 +128,22 @@
     "group": "fastmcp.experimental",
     "pages": [
       {
+        "group": "client",
+        "pages": [
+          "python-sdk/fastmcp-experimental-client-code_mode"
+        ]
+      },
+      {
+        "group": "events",
+        "pages": [
+          "python-sdk/fastmcp-experimental-events-__init__",
+          "python-sdk/fastmcp-experimental-events-client",
+          "python-sdk/fastmcp-experimental-events-extension",
+          "python-sdk/fastmcp-experimental-events-models",
+          "python-sdk/fastmcp-experimental-events-subscription"
+        ]
+      },
+      {
         "group": "transforms",
         "pages": [
           "python-sdk/fastmcp-experimental-transforms-code_mode",
@@ -175,6 +193,7 @@
               "python-sdk/fastmcp-server-auth-oauth_proxy-consent",
               "python-sdk/fastmcp-server-auth-oauth_proxy-models",
               "python-sdk/fastmcp-server-auth-oauth_proxy-proxy",
+              "python-sdk/fastmcp-server-auth-oauth_proxy-revocation",
               "python-sdk/fastmcp-server-auth-oauth_proxy-ui",
               "python-sdk/fastmcp-server-auth-oauth_proxy-upstream"
             ]
@@ -231,7 +250,8 @@
           "python-sdk/fastmcp-server-middleware-rate_limiting",
           "python-sdk/fastmcp-server-middleware-response_limiting",
           "python-sdk/fastmcp-server-middleware-timing",
-          "python-sdk/fastmcp-server-middleware-tool_injection"
+          "python-sdk/fastmcp-server-middleware-tool_injection",
+          "python-sdk/fastmcp-server-middleware-usage"
         ]
       },
       {

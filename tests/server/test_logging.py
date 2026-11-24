@@ -55,7 +55,7 @@ async def test_uvicorn_logging_default_level(
     server_task.cancel()
     try:
         await asyncio.wait_for(server_task, timeout=2.0)
-    except (asyncio.CancelledError, asyncio.TimeoutError):
+    except (TimeoutError, asyncio.CancelledError):
         pass
 
 
@@ -120,7 +120,7 @@ async def test_uvicorn_logging_with_custom_log_config(
     server_task.cancel()
     try:
         await asyncio.wait_for(server_task, timeout=2.0)
-    except (asyncio.CancelledError, asyncio.TimeoutError):
+    except (TimeoutError, asyncio.CancelledError):
         pass
 
 
@@ -188,5 +188,5 @@ async def test_uvicorn_logging_custom_log_config_overrides_log_level_param(
     server_task.cancel()
     try:
         await asyncio.wait_for(server_task, timeout=2.0)
-    except (asyncio.CancelledError, asyncio.TimeoutError):
+    except (TimeoutError, asyncio.CancelledError):
         pass

@@ -16,6 +16,7 @@ from fastmcp.prompts import Prompt
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.openapi.components import (
+    ForwardClientHeaders,
     OpenAPIResource,
     OpenAPIResourceTemplate,
     OpenAPITool,
@@ -89,6 +90,7 @@ class OpenAPIProvider(Provider):
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
         validate_output: bool = True,
+        forward_client_headers: ForwardClientHeaders = True,
     ):
         """Initialize provider by parsing OpenAPI spec and creating components.
 
@@ -109,6 +111,11 @@ class OpenAPIProvider(Provider):
                 extracted from the OpenAPI spec for response validation. If
                 False, a permissive schema is used instead, allowing any
                 response structure while still returning structured JSON.
+            forward_client_headers: Which headers of the incoming MCP request
+                are forwarded to the API when the outgoing request does not
+                set them. True (default) forwards all but credential,
+                connection and MCP transport headers; False forwards none; a
+                collection of names forwards only those.
         """
         super().__init__()
 
@@ -126,6 +133,7 @@ class OpenAPIProvider(Provider):
         self._client = client
         self._mcp_component_fn = mcp_component_fn
         self._validate_output = validate_output
+        self._forward_client_headers = forward_client_headers
 
         # Keep track of names to detect collisions
         self._used_names: dict[str, Counter[str]] = {
@@ -202,12 +210,32 @@ class OpenAPIProvider(Provider):
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncGenerator[None, None]:
-        """Manage the lifecycle of the auto-created httpx client."""
-        if self._owns_client:
-            async with self._client:
-                yield
-        else:
+        """Manage the lifecycle of the auto-created httpx client.
+
+        A closed httpx client cannot be reopened, so each lifespan after the
+        first gets a fresh default client.
+        """
+        if not self._owns_client:
             yield
+            return
+        if self._client.is_closed:
+            self._replace_client(
+                httpx2.AsyncClient(
+                    base_url=self._client.base_url, timeout=self._client.timeout
+                )
+            )
+        async with self._client:
+            yield
+
+    def _replace_client(self, client: httpx2.AsyncClient) -> None:
+        """Point the provider and its components at a new client."""
+        self._client = client
+        for component in (
+            *self._tools.values(),
+            *self._resources.values(),
+            *self._templates.values(),
+        ):
+            component._client = client
 
     def _generate_default_name(
         self, route: HTTPRoute, mcp_names_map: dict[str, str] | None = None
@@ -272,13 +300,17 @@ class OpenAPIProvider(Provider):
 
         if not self._validate_output and output_schema is not None:
             # Use a permissive schema that accepts any object, preserving
-            # the wrap-result flag so non-object responses still get wrapped
+            # the wrap-result flag so non-object responses still get wrapped.
+            # For wrapped results the permissive schema must keep the wrapper
+            # shape: the client unwraps `result` and validates it against
+            # properties.result, so a missing entry breaks result.data.
             permissive: dict[str, Any] = {
                 "type": "object",
                 "additionalProperties": True,
             }
             if output_schema.get("x-fastmcp-wrap-result"):
                 permissive["x-fastmcp-wrap-result"] = True
+                permissive["properties"] = {"result": {}}
             output_schema = permissive
 
         tool_name = self._get_unique_name(name, "tool")
@@ -297,6 +329,7 @@ class OpenAPIProvider(Provider):
             parameters=combined_schema,
             output_schema=output_schema,
             tags=set(route.tags or []) | tags,
+            forward_client_headers=self._forward_client_headers,
         )
 
         if self._mcp_component_fn is not None:
@@ -330,6 +363,7 @@ class OpenAPIProvider(Provider):
             description=base_description,
             mime_type=_extract_mime_type_from_route(route),
             tags=set(route.tags or []) | tags,
+            forward_client_headers=self._forward_client_headers,
         )
 
         if self._mcp_component_fn is not None:
@@ -393,6 +427,7 @@ class OpenAPIProvider(Provider):
             parameters=template_params_schema,
             tags=set(route.tags or []) | tags,
             mime_type=_extract_mime_type_from_route(route),
+            forward_client_headers=self._forward_client_headers,
         )
 
         if self._mcp_component_fn is not None:

@@ -59,8 +59,9 @@
     "drilldown": false
   },
   "logo": {
-    "dark": "/assets/brand/wordmark-white.png",
-    "light": "/assets/brand/wordmark.png"
+    "href": "https://gofastmcp.com",
+    "dark": "/assets/brand/wordmark-white.svg",
+    "light": "/assets/brand/wordmark.svg"
   },
   "name": "FastMCP",
   "navbar": {
@@ -168,6 +169,7 @@
                       "servers/storage-backends",
                       "servers/sessions",
                       "servers/extensions",
+                      "servers/events",
                       "servers/tasks",
                       "servers/versioning"
                     ]
@@ -368,6 +370,7 @@
                     "group": "Upgrading",
                     "icon": "up",
                     "pages": [
+                      "getting-started/upgrading/from-fastmcp-4-1",
                       "getting-started/upgrading/from-fastmcp-3",
                       "getting-started/upgrading/from-fastmcp-2",
                       "getting-started/upgrading/from-mcp-sdk-v1",
@@ -416,7 +419,7 @@
             "icon": "code"
           }
         ],
-        "version": "v4.0.5"
+        "version": "v4"
       },
       {
         "$ref": "./v3-navigation.json"
@@ -561,7 +564,24 @@
     }
   ],
   "search": {
-    "prompt": "Search the docs..."
+    "prompt": "Search..."
+  },
+  "seo": {
+    "metatags": {
+      "canonical": "https://gofastmcp.com/docs"
+    },
+    "organization": {
+      "name": "FastMCP",
+      "legalName": "Prefect Technologies, Inc.",
+      "url": "https://gofastmcp.com",
+      "logo": "https://gofastmcp.com/docs/assets/brand/wordmark.png",
+      "sameAs": [
+        "https://github.com/PrefectHQ/fastmcp",
+        "https://x.com/fastmcp",
+        "https://bsky.app/profile/gofastmcp.com",
+        "https://www.prefect.io"
+      ]
+    }
   },
   "styling": {
     "codeblocks": {

@@ -20,10 +20,12 @@ Register them once with `roots=`, and the client answers however the server asks
 When the paths are known up front, pass them as a list. The client holds them for the life of the connection and hands back the same set every time a server asks.
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     roots=["file:///path/to/root1", "file:///path/to/root2"]
 )
 ```
@@ -33,6 +35,8 @@ client = Client(
 Pass a callback instead when the roots depend on something the client learns at runtime, such as the workspace the user has open. It runs at the moment a server asks, on either route, and receives the request context so you can see which request it is answering:
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.roots import RequestContext
 
@@ -41,7 +45,7 @@ async def roots_callback(context: RequestContext) -> list[str]:
     return ["file:///path/to/root1", "file:///path/to/root2"]
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     roots=roots_callback
 )
 ```

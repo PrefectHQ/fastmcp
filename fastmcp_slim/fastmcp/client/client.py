@@ -14,7 +14,12 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from contextlib import (
+    AbstractAsyncContextManager,
+    AsyncExitStack,
+    asynccontextmanager,
+    suppress,
+)
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import TracebackType
@@ -53,6 +58,9 @@ from mcp.client.session import (
     ElicitationFnT,
     MessageHandlerFnT,
 )
+from mcp.client.subscriptions import Subscription
+from mcp.client.subscriptions import listen as _sdk_listen
+from mcp.shared.subscriptions import ServerEvent, event_to_notification
 from mcp_types.methods import validate_server_result
 from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, MODERN_PROTOCOL_VERSIONS
 from pydantic import AnyUrl, ValidationError
@@ -109,7 +117,7 @@ from .transports import (
     StreamableHttpTransport,
     infer_transport,
 )
-from .transports.base import TransportOptions
+from .transports.base import TransportOptions, _is_verify_replaceable_factory
 
 __all__ = [
     "Client",
@@ -196,12 +204,12 @@ async def _conformant_discover_only(
     # A transport may itself have installed a `send_discover` override, so restore
     # whatever was there rather than assuming the class attribute.
     had_own = "send_discover" in vars(session)
-    session.send_discover = _checked_send_discover  # ty: ignore[invalid-assignment]
+    session.send_discover = _checked_send_discover
     try:
         yield
     finally:
         if had_own:
-            session.send_discover = send_discover  # ty: ignore[invalid-assignment]
+            session.send_discover = send_discover
         else:
             del session.send_discover
 
@@ -306,7 +314,7 @@ class Client(
                 - ClientTransport: Direct transport instance
                 - FastMCP: In-process FastMCP server
                 - AnyUrl or str: URL to connect to
-                - Path: File path for local socket
+                - Path: Python (.py) or Node (.js) script to run over stdio
                 - MCPConfig: MCP server configuration
                 - dict: Transport configuration
 
@@ -480,12 +488,16 @@ class Client(
             if isinstance(self.transport, StreamableHttpTransport | SSETransport):
                 self.transport.verify = verify
                 # Re-sync existing OAuth auth with the new verify setting,
-                # but only if the transport doesn't have a custom factory
-                # (which takes precedence and was already applied to OAuth).
+                # but only if neither the transport nor the auth provider has
+                # a custom factory (which takes precedence and was already
+                # applied to OAuth).
                 if (
                     isinstance(self.transport.auth, OAuth)
                     and auth is None
                     and self.transport.httpx_client_factory is None
+                    and _is_verify_replaceable_factory(
+                        self.transport.auth.httpx_client_factory
+                    )
                 ):
                     verify_factory = self.transport._make_verify_factory()
                     if verify_factory is not None:
@@ -748,7 +760,11 @@ class Client(
         return session.instructions if session is not None else None
 
     def set_roots(self, roots: RootsList | RootsHandler) -> None:
-        """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
+        """Set the roots for the client. This does not automatically call `send_roots_list_changed`.
+
+        A connected session that was opened with roots answers with the new roots
+        immediately; otherwise they apply from the next connection.
+        """
         self._session_kwargs["list_roots_callback"] = create_roots_callback(roots)
 
     def set_sampling_callback(
@@ -756,7 +772,12 @@ class Client(
         sampling_callback: SamplingHandler,
         sampling_capabilities: mcp_types.SamplingCapability | None = None,
     ) -> None:
-        """Set the sampling callback for the client."""
+        """Set the sampling callback for the client.
+
+        A connected session that was opened with a sampling handler uses the new
+        one immediately; otherwise, and for `sampling_capabilities`, the change
+        applies from the next connection.
+        """
         self._session_kwargs["sampling_callback"] = create_sampling_callback(
             sampling_callback
         )
@@ -769,13 +790,69 @@ class Client(
     def set_elicitation_callback(
         self, elicitation_callback: ElicitationHandler
     ) -> None:
-        """Set the elicitation callback for the client."""
+        """Set the elicitation callback for the client.
+
+        A connected session that was opened with an elicitation handler uses the
+        new one immediately; otherwise it applies from the next connection.
+        """
         self._elicitation_callback = create_elicitation_callback(elicitation_callback)
         self._session_kwargs["elicitation_callback"] = self._elicitation_callback
         # Rebuild internal extensions (e.g. the tasks extension) so a background
         # task's in-task input is answered through the newly-set handler, not the
         # one captured when the client was constructed.
         self._session_kwargs.update(self._build_extension_kwargs())
+
+    def _late_bound_session_kwargs(self) -> SessionKwargs:
+        """Session kwargs whose server-request callbacks look up the current handler.
+
+        The SDK session keeps the callbacks it was constructed with, so each one
+        configured at connect time is handed over as a stable trampoline that
+        reads `_session_kwargs` per request. `set_roots`,
+        `set_sampling_callback`, and `set_elicitation_callback` then reach a
+        live session. A callback absent at connect stays absent: the session's
+        negotiated capabilities do not change until the next connection.
+        """
+        kwargs: SessionKwargs = {**self._session_kwargs}
+
+        if (sampling := kwargs.get("sampling_callback")) is not None:
+
+            async def sampling_callback(
+                context: ClientRequestContext,
+                params: mcp_types.CreateMessageRequestParams,
+            ) -> (
+                mcp_types.CreateMessageResult
+                | mcp_types.CreateMessageResultWithTools
+                | mcp_types.ErrorData
+            ):
+                callback = self._session_kwargs.get("sampling_callback") or sampling
+                return await callback(context, params)
+
+            kwargs["sampling_callback"] = sampling_callback
+
+        if (elicitation := kwargs.get("elicitation_callback")) is not None:
+
+            async def elicitation_callback(
+                context: ClientRequestContext,
+                params: mcp_types.ElicitRequestParams,
+            ) -> mcp_types.ElicitResult | mcp_types.ErrorData:
+                callback = (
+                    self._session_kwargs.get("elicitation_callback") or elicitation
+                )
+                return await callback(context, params)
+
+            kwargs["elicitation_callback"] = elicitation_callback
+
+        if (roots := kwargs.get("list_roots_callback")) is not None:
+
+            async def list_roots_callback(
+                context: ClientRequestContext,
+            ) -> mcp_types.ListRootsResult | mcp_types.ErrorData:
+                callback = self._session_kwargs.get("list_roots_callback") or roots
+                return await callback(context)
+
+            kwargs["list_roots_callback"] = list_roots_callback
+
+        return kwargs
 
     def is_connected(self) -> bool:
         """Check if the client is currently connected."""
@@ -843,17 +920,21 @@ class Client(
             # both `Client.mode` and an MCPConfig's server set may change before
             # the client connects. Preserve options contributed by other layers.
             transport_options = replace(
-                transport_options or TransportOptions(), backend_mode=self.mode
+                transport_options or TransportOptions(),
+                backend_mode=self.mode,
+                # 0 (not None) so a disabled timeout is not replaced by the global setting
+                backend_init_timeout=self._init_timeout or 0,
             )
 
+        session_kwargs = self._late_bound_session_kwargs()
         # Only passed when this client actually wants non-default settings, so an
         # ordinary client never sends an argument a transport might not accept.
         if transport_options is not None:
             connection = self.transport.connect_session(
-                transport_options=transport_options, **self._session_kwargs
+                transport_options=transport_options, **session_kwargs
             )
         else:
-            connection = self.transport.connect_session(**self._session_kwargs)
+            connection = self.transport.connect_session(**session_kwargs)
 
         with catch(get_catch_handlers()):
             async with connection as session:
@@ -1354,6 +1435,8 @@ class Client(
             return await send()
         # A closed (or never-entered) client must raise, never serve cached entries.
         _ = self.session
+        if self.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+            return await send()
         if cursor is not None:
             # Continuation pages skip the cache; an expired cursor means the listing
             # changed, so evict (spec SHOULD) and re-raise.
@@ -1507,6 +1590,61 @@ class Client(
         await self.transport.close()
 
     # --- MCP Client Methods ---
+
+    def listen(
+        self,
+        *,
+        tools_list_changed: bool = False,
+        prompts_list_changed: bool = False,
+        resources_list_changed: bool = False,
+        resource_subscriptions: Sequence[str] = (),
+    ) -> AbstractAsyncContextManager[Subscription]:
+        """Open a `subscriptions/listen` stream of change events.
+
+        On 2026-07-28 connections the server has no standing channel to push
+        change notifications on, so they arrive on a stream the client opens.
+        Entering waits for the server's acknowledgment (`subscription.honored`);
+        each event is a level trigger to refetch. With `cache` enabled, the
+        matching cached list is evicted before the event is yielded, so an
+        immediate refetch sees the change.
+
+        ```python
+        async with client.listen(tools_list_changed=True) as subscription:
+            async for event in subscription:
+                tools = await client.list_tools()
+        ```
+
+        Raises `mcp.client.subscriptions.ListenNotSupportedError` on a
+        handshake-era connection, where `message_handler` receives the same
+        notifications instead. Iterating raises
+        `mcp.client.subscriptions.SubscriptionLost` when the stream ends from
+        the server side (shutdown, restart, or a dropped connection); events
+        are not replayed, so refetch after reconnecting.
+        """
+        return _sdk_listen(
+            self.session,
+            tools_list_changed=tools_list_changed,
+            prompts_list_changed=prompts_list_changed,
+            resources_list_changed=resources_list_changed,
+            resource_subscriptions=resource_subscriptions,
+            on_event=(
+                self._evict_for_listen_event
+                if self._response_cache is not None
+                else None
+            ),
+        )
+
+    async def _evict_for_listen_event(self, event: ServerEvent) -> None:
+        # Awaited by the SDK before the event is yielded. Without it, a
+        # consumer that refetches right away can race the message-handler
+        # eviction and read the stale cached list.
+        cache = self._response_cache
+        if cache is None:
+            return
+        try:
+            await cache.evict_for_notification(event_to_notification(event, {}))
+        except Exception:  # cache store is user code; still deliver the event
+            logger.exception("Response cache eviction failed for listen event")
 
     async def ping(self) -> bool:
         """Send a ping request."""

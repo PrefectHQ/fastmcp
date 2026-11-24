@@ -46,7 +46,7 @@ Have your agent read [AGENTS.md](https://github.com/PrefectHQ/fastmcp/blob/main/
 
 ## Set up the repository
 
-Use Python 3.10 or newer and [uv](https://docs.astral.sh/uv/). Fork the repository for an external contribution, clone your fork, then install the workspace dependencies and commit hooks:
+Use Python 3.11 or newer and [uv](https://docs.astral.sh/uv/). Fork the repository for an external contribution, clone your fork, then install the workspace dependencies and commit hooks:
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/fastmcp.git
@@ -114,7 +114,7 @@ Read review-bot comments and maintainer replies, evaluate concrete findings, and
 
 The [public backlog dashboard](https://prefecthq.github.io/fastmcp/) charts open issues and PRs, incoming work, and closure outcomes. Backlog snapshots update every 30 minutes; older reconstructed counts and the limits of closure history are identified on the page. The [maintenance status page](https://prefecthq.github.io/fastmcp/operations.html) reports automation health and the contributor queue twice a day. Check its timestamp before treating a status as current. The accompanying `status.json` uses the `fastmcp-maintenance/1` schema; `idle` means there was nothing to do, while `degraded` means a run failed.
 
-Automation labels and deduplicates issues, enforces the contribution gate, explains CI failures, and checks new dependency releases nightly. Duplicate issues and reports still missing a reproduction after seven days without an author reply close automatically. Maintainers can request work with `/marvin`. A separate triage agent reproduces reported bugs and may leave comment-only reviews on linked pull requests; it does not assign contributors, approve, or merge.
+Automation labels and deduplicates issues, enforces the contribution gate, explains CI failures, and checks new dependency releases nightly. Issues marked as duplicates close automatically after three days without further activity, and reports still missing a reproduction close after seven days without an author reply. Maintainers can request work with `/marvin`. A separate triage agent reproduces reported bugs and may leave comment-only reviews on linked pull requests; it does not assign contributors, approve, or merge.
 
 Maintainers decide assignments, merge readiness, changes to supported behavior or APIs, releases, and security-report classification. Release publishing and docs deployment run automatically after the corresponding maintainer actions; see [Releases](/development/releases#creating-releases).
 

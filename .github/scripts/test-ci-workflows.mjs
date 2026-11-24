@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -25,6 +26,12 @@ print(json.dumps({name: yaml.load(Path(f'.github/workflows/{name}.yml').read_tex
   ),
 );
 const workflow = workflows["run-tests"];
+// A cell's tests run for code changes, except that pull requests run only the
+// cells marked `on-pr`.
+const CELL_RUNS =
+  "needs.changes.outputs.run-tests != 'false' && (github.event_name != 'pull_request' || matrix.on-pr)";
+const CELL_SKIPPED_ON_PR =
+  "needs.changes.outputs.run-tests != 'false' && github.event_name == 'pull_request' && matrix.on-pr == false";
 const script = workflow.jobs.changes.steps[0].with.script;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
@@ -88,6 +95,7 @@ for (const filename of [
   "CODE_OF_CONDUCT.md",
   "docs/clients/tools.mdx",
   "docs/v3/guide.md",
+  "docs/python-sdk-pages.json",
 ]) {
   test(`editorial change: ${filename}`, async () => {
     assert.equal((await classify([{ filename }])).result, false);
@@ -106,6 +114,8 @@ for (const filename of [
   "uv.lock",
   ".pre-commit-config.yaml",
   "docs/script.js",
+  "docs/docs.json",
+  "docs/other/python-sdk-pages.json",
   "docs/snippets/example.py",
   "new-package/README.md",
   "AGENTS.md",
@@ -191,28 +201,29 @@ test("required matrix checks retain names even when editorial steps skip", () =>
   );
   assert.deepEqual(matrix.strategy.matrix, {
     os: ["ubuntu-latest"],
-    "python-version": ["3.10"],
+    "python-version": ["3.11"],
     include: [
-      { os: "ubuntu-latest", "python-version": "3.11" },
-      { os: "ubuntu-latest", "python-version": "3.12" },
-      { os: "ubuntu-latest", "python-version": "3.13" },
-      { os: "ubuntu-latest", "python-version": "3.14" },
-      { os: "ubuntu-latest", "python-version": "3.15" },
+      { os: "ubuntu-latest", "python-version": "3.11", "on-pr": "true" },
+      { os: "ubuntu-latest", "python-version": "3.12", "on-pr": "false" },
+      { os: "ubuntu-latest", "python-version": "3.13", "on-pr": "false" },
+      { os: "ubuntu-latest", "python-version": "3.14", "on-pr": "false" },
+      { os: "ubuntu-latest", "python-version": "3.15", "on-pr": "true" },
     ],
   });
   assert.equal(matrix.if, "${{ !cancelled() }}");
   assert.match(matrix.steps[0].uses, /^actions\/checkout@/);
   for (const step of matrix.steps.slice(2, 4))
-    assert.equal(step.if, "needs.changes.outputs.run-tests != 'false'");
+    assert.equal(step.if, CELL_RUNS);
   assert.equal(
     matrix.steps[1].if,
-    "needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10')",
+    `(${CELL_RUNS}) || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11')`,
   );
   assert.equal(
     matrix.steps[4].if,
-    "needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'",
+    "needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'",
   );
   assert.equal(matrix.steps[4].run, "uv run pytest tests/docs -n 0");
+  assert.equal(matrix.steps[5].if, CELL_SKIPPED_ON_PR);
   for (const name of [
     "run_tests_lowest_direct",
     "run_conformance_tests",
@@ -233,7 +244,11 @@ test("Windows runs code PRs and retains check names for editorial PRs", () => {
     "Tests: Python ${{ matrix.python-version }} on windows-latest",
   );
   assert.deepEqual(windows.strategy.matrix, {
-    "python-version": ["3.10", "3.14"],
+    "python-version": ["3.11", "3.14"],
+    include: [
+      { "python-version": "3.11", "on-pr": "false" },
+      { "python-version": "3.14", "on-pr": "true" },
+    ],
   });
   assert.equal(windows.if, "${{ !cancelled() }}");
   assert.equal(windows["runs-on"], "windows-latest");
@@ -246,9 +261,41 @@ test("Windows runs code PRs and retains check names for editorial PRs", () => {
   assert.equal(windows.steps[3].uses, "./.github/actions/run-pytest");
   assert.equal(windows.steps[3].with["test-type"], "client_process");
   assert.equal(windows.steps[0].if, undefined);
-  assert.ok(
-    windows.steps.slice(1).every((step) => step.if === "needs.changes.outputs.run-tests != 'false'"),
-  );
+  assert.ok(windows.steps.slice(1, 4).every((step) => step.if === CELL_RUNS));
+  assert.equal(windows.steps[4].if, CELL_SKIPPED_ON_PR);
+});
+test("pull requests run the oldest and newest Linux Python and one Windows", () => {
+  const cells = (job) =>
+    workflow.jobs[job].strategy.matrix.include.map((cell) => ({
+      os: cell.os ?? "windows-latest",
+      version: cell["python-version"],
+      onPr: cell["on-pr"],
+    }));
+  const onPr = (job) =>
+    cells(job)
+      .filter((cell) => cell.onPr === "true")
+      .map((cell) => `${cell.os} ${cell.version}`);
+  assert.deepEqual(onPr("run_tests"), ["ubuntu-latest 3.11", "ubuntu-latest 3.15"]);
+  assert.deepEqual(onPr("run_windows_tests"), ["windows-latest 3.14"]);
+  // Every cell skipped on PRs still runs nightly in the upgrade checks.
+  const upgrade = workflows["run-upgrade-checks"].jobs.run_tests.strategy.matrix;
+  const nightly = [
+    ...upgrade.os.flatMap((os) => upgrade["python-version"].map((version) => ({ os, version }))),
+    ...upgrade.include.map((cell) => ({ os: cell.os, version: cell["python-version"] })),
+  ];
+  for (const cell of [...cells("run_tests"), ...cells("run_windows_tests")])
+    assert.ok(
+      nightly.some((n) => n.os === cell.os && n.version === cell.version),
+      `${cell.os} ${cell.version} has no nightly run`,
+    );
+});
+test("on-pr flags are YAML booleans, which the step conditions compare as booleans", () => {
+  // BaseLoader reads every scalar as a string, so check the source: a quoted
+  // "false" is truthy in `|| matrix.on-pr` and would run the cell on PRs.
+  const source = readFileSync(`${repoRoot}.github/workflows/run-tests.yml`, "utf8");
+  const flags = [...source.matchAll(/^\s*on-pr:\s*(.+)$/gm)].map((m) => m[1].trim());
+  assert.equal(flags.length, 7);
+  for (const flag of flags) assert.match(flag, /^(true|false)$/);
 });
 test("PR cancellation cannot supersede main or manual runs", () => {
   for (const name of ["run-tests", "run-static"]) {
@@ -270,9 +317,11 @@ test("upgrade coverage remains nightly and manually dispatchable", () => {
   });
   assert.deepEqual(workflows["run-upgrade-checks"].jobs.run_tests.strategy.matrix, {
     os: ["ubuntu-latest", "windows-latest"],
-    "python-version": ["3.10"],
+    "python-version": ["3.11"],
     include: [
-      ...workflow.jobs.run_tests.strategy.matrix.include,
+      ...workflow.jobs.run_tests.strategy.matrix.include.map(
+        ({ os, "python-version": version }) => ({ os, "python-version": version }),
+      ),
       { os: "windows-latest", "python-version": "3.14" },
     ],
   });

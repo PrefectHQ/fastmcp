@@ -195,3 +195,21 @@ def test_title_search_matches_do_not_block_an_issue_with_few_linked_prs():
 
     with pytest.raises(ValueError, match="7 PRs link this issue"):
         contributions([pr(n, True, 1) for n in range(7)], {})
+
+
+def test_contribution_moving_during_collection_is_a_requeued_change():
+    # Stale evidence is requeued quietly; it must not page as a skipped issue.
+    from flows.agentic_review_publication import EvidenceChanged
+    from flows.agentic_stack_context import revisions
+    from flows.agentic_triage import attention
+
+    def read(path):
+        if path.endswith("/pulls/7"):
+            return {"head": {"sha": "f" * 40}, "updated_at": "later"}
+        return {"status": "ahead", "files": [], "commits": [], "total_commits": 0}
+
+    pr = {"number": 7, "head_sha": "e" * 40, "base_sha": "d" * 40, "updated_at": "x"}
+    with pytest.raises(EvidenceChanged):
+        revisions(pr, read)
+    review = {"bins": {"operational": [{"issue_number": 1, "status": "stale"}]}}
+    assert attention(review, {1}) == []

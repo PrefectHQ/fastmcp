@@ -22,10 +22,6 @@ class _SkillSource(Protocol):
         self, uri: str, context: ServerRequestContext[Any, Any]
     ) -> MCPSkill | None: ...
 
-    def _validate_skill_source(self) -> None:
-        """Reject sources that have not opted into protocol publication."""
-        ...
-
     async def _skill_uris(self, uri: str | None = None) -> Sequence[str]:
         """Return identities before authorization/validation, preserving duplicates."""
         ...

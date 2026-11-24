@@ -13,7 +13,14 @@ from prefect.client.schemas.filters import FlowRunFilter
 from prefect.states import Completed, Failed, Running
 from prefect.testing.utilities import prefect_test_harness
 
-from flows.agentic_backlog import Intake, due, inventory, settle
+from flows.agentic_backlog import (
+    Intake,
+    due,
+    handled_key,
+    handoff_revision,
+    inventory,
+    settle,
+)
 from flows.agentic_freshness import revalidate
 from flows.agentic_intake import evidence_revision, policy_outcome, route_intake
 from flows.agentic_stack_runtime import AgentPlan, Runtime, gh_api, record
@@ -108,6 +115,19 @@ def test_event_intake_resolves_pull_requests_to_referenced_open_issues(github_se
     assert "/repos/PrefectHQ/fastmcp/issues/8203" not in requests
     assert config.scope() != Intake(issues=[1], queue="events").scope()
     assert Intake(issues=[9]).scope() != config.scope()
+
+
+def test_event_intake_skips_closed_pull_requests(github_server):
+    read, responses, requests = github_server
+    responses["/repos/PrefectHQ/fastmcp/pulls/7"] = {
+        "number": 7,
+        "state": "closed",
+        "body": "Fixes #5",
+    }
+    responses["/repos/PrefectHQ/fastmcp/issues/5"] = issue(5)
+    result = inventory(read, Intake(pull_requests=[7], queue="events"), 1)
+    assert result["pending"] == []
+    assert "/repos/PrefectHQ/fastmcp/issues/5" not in requests
 
 
 def test_receipts_defer_but_do_not_certify_unchanged_contribution_history():
@@ -251,6 +271,8 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
     for number in (1, 2, 3):
         responses[f"/repos/PrefectHQ/fastmcp/issues/{number}"] = issue(number)
     responses["/repos/PrefectHQ/fastmcp/commits/main"] = {"sha": "a" * 40}
+    responses["/repos/PrefectHQ/fastmcp/pulls?state=open&per_page=100&page=1"] = []
+    responses["/repos/PrefectHQ/fastmcp/issues?state=open&per_page=100&page=1"] = []
     config = Intake(issues=[1, 2, 3], max_items=2)
     with prefect_test_harness(), get_client(sync_client=True) as client:
         client.create_work_pool(WorkPoolCreate(name="managed", type="process"))
@@ -273,6 +295,11 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
         plan = admit(config, runtime, deployment, owner, read)
         assert len(plan["pending"]) == 3
         assert len(plan["batch"]["groups"][0]["items"]) == 2
+        # What each admitted issue looked like, for the follow-through pass.
+        assert plan["handoff"] == {
+            "1": handoff_revision(issue(1), []),
+            "2": handoff_revision(issue(2), []),
+        }
         assert {item["mode"] for item in plan["batch"]["groups"][0]["items"]} == {"mre"}
         assert checkpoint(config.scope())[1] == plan
         child = dispatch.fn(plan)
@@ -331,6 +358,9 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
         ] == evidence_revision(accepted)
         assert latest(f"{config.scope()}-issue-1")["baseline_sha"] == "b" * 40
         assert latest(f"{config.scope()}-issue-2") is None
+        # Recorded per issue across all intakes, not per queue.
+        assert latest(handled_key(1))["handoff_revision"] == plan["handoff"]["1"]
+        assert latest(handled_key(2)) is None
         for artifact in client.read_artifacts(
             flow_run_filter=FlowRunFilter(id={"any_": [replacement]})
         ):
@@ -474,6 +504,9 @@ def test_finish_commits_policy_decisions_saved_by_an_older_controller(
         )
         assert state["completed"] == [1]
         assert state["review"]["bins"]["decisions"] == [policy_outcome(1, legacy)]
+        assert state["issues"] == [
+            {"issue_number": 1, "title": "Report 1", "author": "reporter"}
+        ]
         assert checkpoint(config.scope()) == (owner, state)
 
 
@@ -507,7 +540,7 @@ def test_different_manual_pr_request_does_not_resume_previous_pr(github_server):
         )
 
 
-def test_only_unrequeued_operational_work_raises_an_alert():
+def test_only_exhausted_unrequeued_operational_work_raises_an_alert():
     review = {
         "bins": {
             "operational": [
@@ -526,8 +559,17 @@ def test_only_unrequeued_operational_work_raises_an_alert():
             ]
         }
     }
-    assert attention(review) == [
+    assert attention(review, {1, 2, 3, 4}) == [
         "#3: 7 PRs link this issue; review handles at most 6",
         "#4: Review delivery failed: Independent review record is not readable yet",
     ]
-    assert attention({"bins": {"operational": review["bins"]["operational"][:2]}}) == []
+    # An issue with retries left stays quiet.
+    assert attention(review, {3}) == [
+        "#3: 7 PRs link this issue; review handles at most 6"
+    ]
+    operational = review["bins"]["operational"][:2]
+    assert attention({"bins": {"operational": operational}}, {1, 2}) == []
+    # A controller-wide failure names no issue; it alerts once any issue is exhausted.
+    batch = {"bins": {"operational": [{"reason": "Controller stopped", "run_id": "r"}]}}
+    assert attention(batch, {5}) == ["#?: Controller stopped"]
+    assert attention(batch, set()) == []

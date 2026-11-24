@@ -17,7 +17,30 @@ replace_refs(*args: Any, **kwargs: Any) -> Any
 Call jsonref lazily while preserving the module's patchable boundary.
 
 
-### `require_discriminator_property` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L262" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ref_target_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+ref_target_name(ref: str, roots: Sequence[Sequence[str]] = (('$defs',),)) -> str | None
+```
+
+
+Return the definition name a local JSON Pointer ``$ref`` addresses.
+
+The name is the first pointer segment after one of *roots* (``$defs`` by
+default, ``components/schemas`` for raw OpenAPI documents), decoded the
+way `_resolve_local_ref` decodes pointers: the fragment is percent-decoded
+before it is split, and ``~1``/``~0`` are unescaped per RFC 6901. A
+pointer may continue past the name into the definition's own contents, so
+``#/$defs/Container/properties/value`` still names ``Container``.
+
+Returns ``None`` when the pointer does not name a definition under one of
+*roots*. Reference collectors must use this instead of reading the raw
+pointer text: a definition called ``a/b`` is referenced as ``a~1b``, one
+called ``Alias One`` as ``Alias%20One``, and neither decoded name appears
+in the raw text.
+
+
+### `require_discriminator_property` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L288" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 require_discriminator_property(schema: dict[str, Any]) -> dict[str, Any]
@@ -34,7 +57,7 @@ model with ``union_tag_not_found``. No-op if there is no string
 ``propertyName``.
 
 
-### `dereference_refs` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L317" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `dereference_refs` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L343" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 dereference_refs(schema: dict[str, Any]) -> dict[str, Any]
@@ -67,7 +90,7 @@ schemas from untrusted servers.
 - when no longer needed
 
 
-### `resolve_root_ref` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L483" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_root_ref` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L515" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]
@@ -89,7 +112,7 @@ the referenced definition while preserving $defs for nested references.
 - if no resolution is needed
 
 
-### `compress_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L914" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `compress_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L950" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 compress_schema(schema: dict[str, Any], prune_params: list[str] | None = None, prune_additional_properties: bool = False, prune_titles: bool = False, dereference: bool = False) -> dict[str, Any]
@@ -108,4 +131,14 @@ Defaults to False to maintain MCP client compatibility, as some clients
 - `dereference`: Whether to dereference $ref by inlining definitions.
 Defaults to False; dereferencing is typically handled by
 middleware at serve-time instead.
+
+
+### `is_object_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L993" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_object_schema(schema: dict[str, Any]) -> bool
+```
+
+
+Check if a JSON schema represents an object type.
 

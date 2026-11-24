@@ -5,6 +5,7 @@ from typing import Annotated
 
 from pydantic import Field
 
+from fastmcp import Client, FastMCP
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.utilities.docstring_parsing import parse_docstring
 
@@ -352,6 +353,48 @@ class TestEdgeCases:
         parsed = parse_docstring(fn)
         assert parsed.description == inspect.getdoc(fn)
 
+    def test_colon_line_in_prose_is_not_a_section(self):
+        def fn() -> str:
+            """Choose an execution mode.
+
+            if bSudoMode:
+                Elevated privileges
+            else:
+                Normal privileges
+            """
+            return "ok"
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == inspect.getdoc(fn)
+        assert parsed.parameters == {}
+
+    def test_custom_heading_in_prose_is_not_a_section(self):
+        def fn() -> str:
+            """Run a command.
+
+            Rules:
+                - Never run as root.
+                - Prefer dry runs.
+
+            Report the exit code.
+            """
+            return "ok"
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == inspect.getdoc(fn)
+
+    def test_note_section_excluded_no_params(self):
+        def fn() -> int:
+            """Do a thing.
+
+            Note:
+                Only call this once.
+            """
+            return 1
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do a thing."
+
     def test_async_function(self):
         async def fn(a: float) -> float:
             """Async summary.
@@ -624,6 +667,25 @@ class TestParsedFunctionIntegration:
 
         p = ParsedFunction.from_function(status)
         assert p.description == "Return current status."
+
+    async def test_colon_line_in_prose_reaches_tool_listing(self):
+        server = FastMCP("docstrings")
+
+        @server.tool
+        def choose_mode() -> str:
+            """Choose an execution mode.
+
+            if bSudoMode:
+                Elevated privileges
+            else:
+                Normal privileges
+            """
+            return "ok"
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+
+        assert tools[0].description == inspect.getdoc(choose_mode)
 
     def test_callable_class_falls_back_to_call_description(self):
         """If the class has no docstring, fall back to __call__'s description."""

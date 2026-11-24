@@ -7,7 +7,6 @@ from tempfile import TemporaryDirectory
 from examples.skills.server import mcp
 from fastmcp import Client
 from fastmcp.skills import SkillsClientExtension
-from fastmcp.utilities.skills import list_skill_summaries
 
 
 async def main() -> None:
@@ -21,9 +20,8 @@ async def main() -> None:
                 print(f"Exported {folder.name} to a temporary directory")
 
     async with Client(mcp) as client:
-        summaries = await list_skill_summaries(client)
-        skill = await client.read_skill(summaries[0].uri)
-        print(f"Resource-only discovery and download: {skill.name}")
+        skill = await client.read_skill("skill://code-review/SKILL.md")
+        print(f"Read without the Skills extension: {skill.name}")
 
 
 if __name__ == "__main__":

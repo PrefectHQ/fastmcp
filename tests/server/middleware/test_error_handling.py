@@ -308,6 +308,19 @@ class TestErrorHandlingMiddleware:
         assert stats["ValueError:test_method"] == 2
         assert stats["RuntimeError:test_method"] == 1
 
+    def test_get_error_stats_bounds_distinct_methods(self, mock_context):
+        """Distinct request methods beyond the stats limit share one bucket."""
+        middleware = ErrorHandlingMiddleware(logger=MagicMock())
+
+        for index in range(1005):
+            mock_context.method = f"unsupported/{index}"
+            middleware._log_error(ValueError("failure"), mock_context)
+
+        stats = middleware.get_error_stats()
+        assert len(stats) == 1000
+        assert stats["ValueError:unsupported/0"] == 1
+        assert stats["<other>"] == 6
+
 
 class TestRetryMiddleware:
     """Test retry middleware functionality."""
@@ -796,6 +809,9 @@ async def test_prompt_handler_failure_remains_internal(
             await client.get_prompt("summarize", {"topic": "valid"})
 
     assert exc_info.value.error.code == -32603
+    assert (
+        "private handler failure" in exc_info.value.error.message
+    ) is not mask_error_details
 
 
 class _Payload(BaseModel):
@@ -829,3 +845,36 @@ async def test_tool_argument_validation_maps_to_invalid_params(
 
     assert exc_info.value.error.code == -32602
     assert exc_info.value.error.message.startswith("Invalid params:")
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("mask_error_details", [False, True])
+@pytest.mark.parametrize("transform_errors", [False, True])
+async def test_unconvertible_arguments_preserve_invalid_params(
+    mode: Literal["auto", "legacy"], mask_error_details: bool, transform_errors: bool
+) -> None:
+    server = FastMCP(mask_error_details=mask_error_details)
+    server.add_middleware(
+        ErrorHandlingMiddleware()
+        if transform_errors
+        else ErrorHandlingMiddleware(transform_errors=False)
+    )
+
+    @server.prompt
+    def summarize(count: int) -> str:
+        return str(count)
+
+    @server.resource("data://{count}")
+    def get_data(count: int) -> str:
+        return str(count)
+
+    async with Client(server, mode=mode) as client:
+        with pytest.raises(MCPError) as prompt_exc:
+            await client.get_prompt("summarize", {"count": "zz"})
+        with pytest.raises(MCPError) as resource_exc:
+            await client.read_resource("data://zz")
+
+    assert prompt_exc.value.error.code == -32602
+    assert "Could not convert argument 'count'" in prompt_exc.value.error.message
+    assert resource_exc.value.error.code == -32602
+    assert "Invalid int value for count: 'zz'" in resource_exc.value.error.message

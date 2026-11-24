@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -23,7 +23,7 @@ def make_issue(author_association: str = "NONE") -> Issue:
     ["OWNER", "MEMBER", "COLLABORATOR"],
 )
 def test_should_not_close_maintainer_issues(author_association: str):
-    label_date = datetime.now(timezone.utc) - timedelta(days=8)
+    label_date = datetime.now(UTC) - timedelta(days=8)
 
     should_close = should_close_as_needs_mre(
         issue=make_issue(author_association),
@@ -36,7 +36,7 @@ def test_should_not_close_maintainer_issues(author_association: str):
 
 
 def test_should_close_non_maintainer_issue_without_author_activity():
-    label_date = datetime.now(timezone.utc) - timedelta(days=8)
+    label_date = datetime.now(UTC) - timedelta(days=8)
 
     should_close = should_close_as_needs_mre(
         issue=make_issue("CONTRIBUTOR"),
@@ -49,7 +49,7 @@ def test_should_close_non_maintainer_issue_without_author_activity():
 
 
 def test_should_not_close_non_maintainer_issue_with_author_activity():
-    label_date = datetime.now(timezone.utc) - timedelta(days=8)
+    label_date = datetime.now(UTC) - timedelta(days=8)
     comment = Comment(
         id=1,
         body="Here's the MRE",

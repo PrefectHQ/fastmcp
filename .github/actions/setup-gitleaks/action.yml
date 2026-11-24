@@ -6,6 +6,10 @@ inputs:
     description: "gitleaks release version (without leading v)"
     required: false
     default: "8.30.1"
+  sha256:
+    description: "SHA-256 of the linux_x64 tarball for that version, from the release's checksums.txt. Change it together with version."
+    required: false
+    default: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
 
 runs:
   using: "composite"
@@ -14,7 +18,11 @@ runs:
       shell: bash
       env:
         GITLEAKS_VERSION: ${{ inputs.version }}
+        GITLEAKS_SHA256: ${{ inputs.sha256 }}
       run: |
-        curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-          | tar -xz -C /usr/local/bin gitleaks
+        set -euo pipefail
+        tarball="$RUNNER_TEMP/gitleaks.tar.gz"
+        curl -sSfL -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+        tar -xzf "$tarball" -C /usr/local/bin gitleaks
         gitleaks version

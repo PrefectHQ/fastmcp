@@ -19,6 +19,7 @@ env:
   AGNO_VERSION: "3.1.12"
   AGENT_FRAMEWORK_VERSION: "1.24.0"
   OPENAI_AGENTS_VERSION: "0.24.0"
+  PHOENIX_VERSION: "21.0.0"
 
 on:
   push:
@@ -73,13 +74,15 @@ jobs:
       agno: ${{ steps.versions.outputs.agno }}
       agent-framework: ${{ steps.versions.outputs.agent-framework }}
       openai-agents: ${{ steps.versions.outputs.openai-agents }}
+      phoenix: ${{ steps.versions.outputs.phoenix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Build wheels
         id: build
@@ -122,6 +125,7 @@ jobs:
           agno=$(pick agno "$AGNO_VERSION")
           agent_framework=$(pick agent-framework-core "$AGENT_FRAMEWORK_VERSION")
           openai_agents=$(pick openai-agents "$OPENAI_AGENTS_VERSION")
+          phoenix=$(pick arize-phoenix "$PHOENIX_VERSION")
           {
             echo "pydantic-ai=$pydantic_ai"
             echo "langchain-mcp-adapters=$adapters"
@@ -132,6 +136,7 @@ jobs:
             echo "agno=$agno"
             echo "agent-framework=$agent_framework"
             echo "openai-agents=$openai_agents"
+            echo "phoenix=$phoenix"
           } | tee -a "$GITHUB_OUTPUT" > versions.txt
           {
             echo "### Downstream smoke plan"
@@ -151,6 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           path: fastmcp
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -166,7 +172,7 @@ jobs:
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.13"
           enable-cache: true
@@ -174,12 +180,19 @@ jobs:
 
       # Mirrors pydantic-ai's own "test FastMCP 4 compatibility" job: their locked
       # environment, with FastMCP overlaid from the wheels under test.
+      # The OpenTelemetry packages release in lockstep and pin each other exactly,
+      # so fastmcp's opentelemetry-api floor drags the whole family along, as a
+      # real resolve would.
       - name: Resolve environment
         working-directory: pydantic-ai
         run: |
+          otel_with=$(sed -n 's/^name = "\(opentelemetry-[^"]*\)"$/--with \1/p' uv.lock | tr '\n' ' ')
           echo "UV_RUN=uv run --all-extras --no-extra mcp-tasks --all-packages \
+            --exclude-newer-package authlib=false \
             --exclude-newer-package certifi=false \
-            --exclude-newer-package pydocket=2026-10-06T00:00:00Z \
+            --exclude-newer-package pydocket=2026-11-19T00:00:00Z \
+            --exclude-newer-package uncalled-for=false \
+            $otel_with \
             --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
             --with fastmcp-slim@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl) \
             --with fastmcp-tasks@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_tasks-*.whl)" >> "$GITHUB_ENV"
@@ -193,9 +206,13 @@ jobs:
 
       - name: Run pydantic-ai's MCP tests
         working-directory: pydantic-ai
+        # The deselected test asserts the pre-#5318 prompt hint (a JSON-schema
+        # suffix on plain `str` args in future-import modules). Drop the
+        # deselect once pydantic-ai relaxes that assertion.
         run: >-
           $UV_RUN --quiet pytest -p no:cacheprovider -q
           --junitxml=$GITHUB_WORKSPACE/junit.xml
+          --deselect tests/test_mcp.py::TestMCPToolsetIntegration::test_list_prompts_returns_pai_types
           tests/test_mcp.py tests/models/test_mcp_sampling.py tests/test_conftest.py
 
       - name: Summarize
@@ -210,6 +227,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           path: fastmcp
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -225,7 +243,7 @@ jobs:
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.13"
           enable-cache: true
@@ -269,6 +287,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           path: fastmcp
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -284,7 +303,7 @@ jobs:
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.12"
 
@@ -324,6 +343,92 @@ jobs:
       - name: Summarize
         if: always() && hashFiles('junit.xml') != ''
         run: python3 fastmcp/tests/downstream/_harness.py junit.xml "agno ${{ needs.plan.outputs.agno }} MCP test suite"
+
+  phoenix-suite:
+    name: Phoenix test suite
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: fastmcp
+
+      # The same sparse checkout Phoenix's own unit-test job uses.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: Arize-ai/phoenix
+          ref: arize-phoenix-v${{ needs.plan.outputs.phoenix }}
+          path: phoenix
+          persist-credentials: false
+          sparse-checkout: |
+            src/phoenix/
+            evals/
+            packages/
+            tests/unit/
+            tests/conftest.py
+            tests/__generated__/
+            tests/__init__.py
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: fastmcp-wheels
+          path: dist
+
+      # Phoenix pins the uv version its lockfile needs.
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: phoenix/pyproject.toml
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: phoenix/uv.lock
+
+      # Phoenix mounts a FastMCP server generated from its REST API with
+      # `FastMCP.from_openapi`, puts a subclassed code-mode transform with its own
+      # sandbox provider in front of it, serves it through `http_app` inside its
+      # FastAPI app, and connects its agent to it with pydantic-ai's FastMCP
+      # client. Run its MCP tests in its locked environment with FastMCP overlaid
+      # from the wheels under test.
+      - name: Resolve environment
+        working-directory: phoenix
+        run: |
+          echo "UV_RUN=uv run --frozen --all-packages \
+            --with fastmcp-slim[client,server]@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl)" >> "$GITHUB_ENV"
+
+      - name: Check the build under test is installed
+        working-directory: phoenix/tests
+        run: >-
+          $UV_RUN --quiet python -c "import fastmcp, mcp, importlib.metadata as m;
+          assert fastmcp.__version__ == '${{ needs.plan.outputs.fastmcp }}', fastmcp.__version__;
+          print('fastmcp', fastmcp.__version__, '· mcp', m.version('mcp'), '· phoenix', m.version('arize-phoenix'))"
+
+      - name: Run Phoenix's MCP tests
+        working-directory: phoenix/tests
+        env:
+          PHOENIX_MASK_INTERNAL_SERVER_ERRORS: "false"
+        run: >-
+          $UV_RUN --quiet pytest -q -n 4 --timeout 360
+          --junitxml=$GITHUB_WORKSPACE/junit.xml
+          unit/server/test_app_mcp_mount.py
+          unit/server/test_mcp_code_mode.py
+          unit/server/test_mcp_sql_tools.py
+          unit/server/test_mcp_graphql_tools.py
+          unit/server/mcp
+          unit/server/agents/capabilities/test_phoenix_mcp.py
+          unit/server/agents/capabilities/test_github_mcp.py
+          unit/server/agents/test_agent_factory.py
+          unit/server/test_app_docs_mcp_lifespan.py
+          unit/server/test_bearer_auth.py
+          unit/server/test_well_known_path_inserted.py
+          unit/server/test_anonymous_cors.py
+          unit/server/agents/test_agents_router.py::test_chat_turn_hands_the_agent_the_phoenix_mcp_server
+          unit/pxi/evals/test_agent_backend.py::test_shared_mcp_server_supports_concurrent_examples
+
+      - name: Summarize
+        if: always() && hashFiles('junit.xml') != ''
+        run: python3 fastmcp/tests/downstream/_harness.py junit.xml "Phoenix ${{ needs.plan.outputs.phoenix }} MCP test suite"
 
   smoke:
     name: ${{ matrix.consumer }} smoke
@@ -389,6 +494,8 @@ jobs:
       FASTMCP_EXPECTED_VERSION: ${{ needs.plan.outputs.fastmcp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # The servers every smoke connects to run from this environment.
       - name: Setup uv

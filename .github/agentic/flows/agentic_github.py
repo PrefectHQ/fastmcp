@@ -3,8 +3,21 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 
 REPOSITORY = "PrefectHQ/fastmcp"
+WRITE_ROLES = frozenset({"admin", "maintain", "write"})
+
+
+def can_write(read: Callable[[str], object], login: str) -> bool:
+    """Whether `login` has write, maintain or admin access to the repository."""
+    grant = read(f"repos/{REPOSITORY}/collaborators/{login}/permission")
+    if not isinstance(grant, dict):
+        raise ValueError("Invalid collaborator permission")
+    # `permission` folds maintain into write; `role_name` names the actual role.
+    return (
+        grant.get("role_name") in WRITE_ROLES or grant.get("permission") in WRITE_ROLES
+    )
 
 
 class GitHub:

@@ -12,6 +12,7 @@ from fastmcp.server.auth.redirect_validation import (
     DEFAULT_LOCALHOST_PATTERNS,
     add_query_params,
     build_client_redirect,
+    is_redirect_uri_allowed_for_application_type,
     matches_allowed_pattern,
     replace_query_param,
     validate_redirect_uri,
@@ -118,6 +119,12 @@ class TestBuildClientRedirect:
     than hand-building a params dict with its own `"iss"` key.
     """
 
+    def test_registered_response_param_is_not_repeated(self):
+        result = build_client_redirect(
+            "https://c.example/cb?state=a&keep=1", {"state": "b"}, iss="i"
+        )
+        assert result == "https://c.example/cb?state=b&keep=1&iss=i"
+
     def test_appends_params_and_iss_when_absent(self):
         url = "https://client.example.com/callback"
 
@@ -154,6 +161,42 @@ class TestBuildClientRedirect:
         iss_values = parse_qs(result_query)["iss"]
         assert len(iss_values) == 1
         assert iss_values == ["https://issuer.example.com/"]
+
+    def test_collapses_a_repeated_iss_from_the_registered_redirect_uri(self):
+        """A redirect_uri may carry `iss` more than once (`?iss=a&iss=b`).
+        `replace_query_param` rewrites only the first match, so the survivor
+        used to be `iss=<issuer>&iss=b` -- two response parameters, exactly
+        what RFC 6749 §3.1 forbids. The helper promises "exactly one", so
+        the later copies are dropped.
+        """
+        url = "https://client.example.com/cb?iss=a&iss=b"
+
+        result = build_client_redirect(
+            url,
+            {"error": "access_denied", "state": "xyz"},
+            iss="https://issuer.example.com/",
+        )
+
+        assert parse_qs(urlparse(result).query)["iss"] == [
+            "https://issuer.example.com/"
+        ]
+
+    def test_dropping_repeated_iss_keeps_other_query_bytes_verbatim(self):
+        """Collapsing the duplicates must not round-trip the rest of the
+        query: the valueless `flag` and the non-UTF-8 `sig` stay byte for
+        byte, and the surviving `iss` keeps its position.
+        """
+        url = "https://client.example.com/cb?iss=a&flag&sig=%FF%FE&iss=b"
+
+        result = build_client_redirect(
+            url,
+            {"code": "abc"},
+            iss="https://issuer.example.com/",
+        )
+
+        assert urlparse(result).query == (
+            "iss=https%3A%2F%2Fissuer.example.com%2F&flag&sig=%FF%FE&code=abc"
+        )
 
     def test_preserves_valueless_param_and_non_utf8_bytes_alongside_existing_iss(
         self,
@@ -202,6 +245,29 @@ class TestBuildClientRedirect:
         )
         assert "&&" not in result
         assert not result.endswith("&")
+
+    @pytest.mark.parametrize(
+        "registered_uri,expected_prefix",
+        [
+            ("myapp://", "myapp://?"),
+            ("myapp:///callback", "myapp:///callback?"),
+            ("myapp://callback", "myapp://callback?"),
+            ("com.example.app:/callback", "com.example.app:/callback?"),
+        ],
+    )
+    def test_preserves_custom_scheme_empty_authority(
+        self, registered_uri: str, expected_prefix: str
+    ):
+        """Regression test for #6296: custom native-app schemes with an empty
+        authority (`myapp://`, `myapp:///callback`) must not have their `//`
+        stripped by `urlunparse` when query parameters are appended."""
+        result = build_client_redirect(
+            registered_uri,
+            {"code": "abc"},
+            iss="https://as.example/",
+        )
+
+        assert result == (f"{expected_prefix}code=abc&iss=https%3A%2F%2Fas.example%2F")
 
 
 class TestNoHandSpecifiedIssOutsideHelper:
@@ -287,6 +353,170 @@ class TestMatchesAllowedPattern:
         assert not matches_allowed_pattern(
             "http://app.example.com:8080/auth/callback", pattern
         )
+
+
+class TestQueryMatching:
+    """The query component is part of the registered redirect URI.
+
+    RFC 6749 §3.1.2 requires the redirect URI to match the registered one
+    by simple string comparison, so a URI that adds, drops, or changes
+    query parameters does not match — unless the pattern is a wildcard
+    pattern with no query of its own, in which case any query is
+    accepted. There is no loopback special case: a pattern that carries
+    a query, or that has no wildcard at all, always compares queries.
+    """
+
+    def test_pattern_without_query_rejects_added_query(self):
+        """The report from #5999: a query-less pattern accepted any query."""
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?code_to=attacker",
+            "https://app.example.com/cb",
+        )
+
+    def test_pattern_with_query_requires_exact_query(self):
+        pattern = "https://app.example.com/cb?tenant=acme"
+        assert matches_allowed_pattern(
+            "https://app.example.com/cb?tenant=acme", pattern
+        )
+        assert not matches_allowed_pattern("https://app.example.com/cb", pattern)
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?tenant=other", pattern
+        )
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?tenant=acme&extra=1", pattern
+        )
+
+    def test_query_comparison_is_exact_not_semantic(self):
+        """Parameter order is significant: matching is a string comparison."""
+        pattern = "https://app.example.com/cb?a=1&b=2"
+        assert matches_allowed_pattern("https://app.example.com/cb?a=1&b=2", pattern)
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?b=2&a=1", pattern
+        )
+
+    def test_wildcard_pattern_with_query_still_compares_query(self):
+        """A wildcard pattern that carries a query compares it exactly."""
+        assert matches_allowed_pattern(
+            "https://app.example.com/callback?tenant=acme",
+            "https://*.example.com/callback?tenant=acme",
+        )
+        assert not matches_allowed_pattern(
+            "https://app.example.com/callback?tenant=other",
+            "https://*.example.com/callback?tenant=acme",
+        )
+
+    def test_wildcard_pattern_without_query_accepts_any_query(self):
+        """A wildcard pattern with no query of its own accepts any query.
+
+        Operators using wildcard patterns (e.g. `https://*.example.com/*`)
+        would otherwise break silently when a client adds a query.
+        """
+        assert matches_allowed_pattern(
+            "https://app.example.com/callback?tenant=acme",
+            "https://*.example.com/callback",
+        )
+        assert matches_allowed_pattern(
+            "https://app.example.com/auth/callback?code_challenge=abc",
+            "https://*.example.com/auth/*",
+        )
+
+    def test_loopback_pattern_without_wildcard_compares_query(self):
+        """No loopback special case: a non-wildcard loopback pattern
+        carrying a query compares it exactly."""
+        assert not matches_allowed_pattern(
+            "http://localhost:3000/callback?x=2",
+            "http://localhost/callback?x=1",
+        )
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback?x=1",
+            "http://localhost/callback?x=1",
+        )
+
+    def test_loopback_wildcard_pattern_accepts_any_query(self):
+        """`http://localhost:*` is a wildcard pattern without a query,
+        so it still accepts any query — the RFC 8252 §7.3 port
+        flexibility for native clients is unchanged."""
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback?code_challenge=abc",
+            "http://localhost:*",
+        )
+
+    def test_validate_redirect_uri_with_query_patterns(self):
+        patterns = ["https://app.example.com/cb?tenant=acme"]
+        assert validate_redirect_uri("https://app.example.com/cb?tenant=acme", patterns)
+        assert not validate_redirect_uri(
+            "https://app.example.com/cb?tenant=other", patterns
+        )
+        assert not validate_redirect_uri("https://app.example.com/cb", patterns)
+
+
+class TestFragmentMatching:
+    """A redirect URI must not carry a fragment (RFC 6749 §3.1.2).
+
+    The redirection endpoint URI "MUST NOT include a fragment
+    component", so a registered pattern never has one and a candidate
+    that adds one is not the registered URI — the same class of gap as
+    #5999, where the query was ignored. Unlike the query check, this
+    applies to loopback patterns too: RFC 8252 §7.3 flexibility covers
+    the port, not the fragment.
+    """
+
+    def test_fragment_only_addition_rejected(self):
+        """The reviewer's repro: a fragment-only addition matched."""
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb#evil",
+            "https://app.example.com/cb",
+        )
+
+    def test_query_and_fragment_rejected(self):
+        """A fragment is rejected even when the query matches exactly."""
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb?x=1#frag",
+            "https://app.example.com/cb?x=1",
+        )
+
+    def test_empty_fragment_rejected(self):
+        """A bare trailing `#` is still a fragment component."""
+        assert not matches_allowed_pattern(
+            "https://app.example.com/cb#",
+            "https://app.example.com/cb",
+        )
+
+    def test_empty_query_matches_queryless_pattern(self):
+        """`...?` carries an empty query, equal to a query-less pattern's.
+
+        `urlparse(...).query` is `''` for both, so this is allowed and
+        pinned here to document the choice.
+        """
+        assert matches_allowed_pattern(
+            "https://app.example.com/cb?",
+            "https://app.example.com/cb",
+        )
+
+    def test_loopback_fragment_rejected(self):
+        """Loopback flexibility does not extend to fragments."""
+        assert not matches_allowed_pattern(
+            "http://localhost:3000/callback#frag",
+            "http://localhost:*",
+        )
+        assert not matches_allowed_pattern(
+            "http://localhost:3000/callback?x=1#frag",
+            "http://localhost:*",
+        )
+
+    def test_fragmentless_uri_still_matches(self):
+        assert matches_allowed_pattern(
+            "https://app.example.com/cb?x=1",
+            "https://app.example.com/cb?x=1",
+        )
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback?x=1",
+            "http://localhost:*",
+        )
+
+    def test_validate_redirect_uri_rejects_fragment(self):
+        patterns = ["https://app.example.com/cb"]
+        assert not validate_redirect_uri("https://app.example.com/cb#evil", patterns)
 
 
 class TestValidateRedirectUri:
@@ -582,4 +812,163 @@ class TestDefaultPatterns:
         )
         assert not validate_redirect_uri(
             "https://claude.ai/api/mcp/auth_callback", DEFAULT_LOCALHOST_PATTERNS
+        )
+
+
+class TestRawStringNormalization:
+    """Raw-string redirect URIs must validate identically to the AnyUrl form.
+
+    Browsers parse a 302 Location with WHATWG rules, and pydantic's AnyUrl
+    normalizes the same way (backslash becomes a path separator, dot-segments
+    are resolved, IPv4 shorthand is expanded, trailing C0 characters are
+    stripped). A plain string skips that parser, so attacker-controlled
+    spellings matched allowlist patterns that the parsed form would have
+    failed (#6295).
+    """
+
+    @pytest.mark.parametrize(
+        "uri,pattern",
+        [
+            (r"https://evil.com\.example.com/cb", "https://*.example.com/*"),
+            (r"https://app.example.com/cb/..\steal", "https://app.example.com/cb/*"),
+            ("https://app.example.com/cb/.. ", "https://app.example.com/cb/*"),
+        ],
+    )
+    def test_raw_string_rejects_whatwg_ambiguous_spellings(self, uri, pattern):
+        assert not matches_allowed_pattern(uri, pattern)
+        # The parsed (AnyUrl) form already failed the same pattern; the two
+        # input forms must agree.
+        assert not matches_allowed_pattern(str(AnyUrl(uri)), pattern)
+
+    def test_raw_string_rejected_by_validate_redirect_uri(self):
+        patterns = ["https://*.example.com/*"]
+        uri = r"https://evil.com\.example.com/cb"
+        assert not validate_redirect_uri(uri, patterns)
+        assert not validate_redirect_uri(AnyUrl(uri), patterns)
+
+    def test_web_application_type_rejects_ipv4_shorthand(self):
+        # `https://127.1/cb` normalizes to the loopback `127.0.0.1`, so a
+        # "web" client (which requires a non-loopback https host) must be
+        # rejected in both input forms.
+        assert not is_redirect_uri_allowed_for_application_type(
+            "https://127.1/cb", "web"
+        )
+        assert not is_redirect_uri_allowed_for_application_type(
+            AnyUrl("https://127.1/cb"), "web"
+        )
+
+    def test_native_application_type_rejects_backslash_localhost(self):
+        # `http://evil.com\.localhost/cb` keeps the loopback-suffix host only
+        # in the un-normalized form; normalized it is `evil.com`, not loopback.
+        assert not is_redirect_uri_allowed_for_application_type(
+            r"http://evil.com\.localhost/cb", "native"
+        )
+        assert not is_redirect_uri_allowed_for_application_type(
+            AnyUrl(r"http://evil.com\.localhost/cb"), "native"
+        )
+
+    def test_dot_segments_still_rejected_after_normalization(self):
+        # Normalization resolves dot-segments away, so the raw spelling must
+        # still be rejected: a normalized-only check would turn a rejected
+        # traversal into a matching ordinary path.
+        patterns = ["https://app.example.com/oauth/callback/*"]
+        assert not validate_redirect_uri(
+            "https://app.example.com/oauth/callback/./foo", patterns
+        )
+        assert not validate_redirect_uri(
+            "https://app.example.com/oauth/callback/foo/..", patterns
+        )
+        assert not matches_allowed_pattern(
+            "https://app.example.com/oauth/callback/./foo", patterns[0]
+        )
+
+    def test_legitimate_raw_strings_unchanged(self):
+        # Ordinary http(s) redirect URIs validate exactly as before.
+        assert validate_redirect_uri(
+            "http://localhost:3000/callback", ["http://localhost:*"]
+        )
+        assert validate_redirect_uri(
+            "https://app.example.com/cb", ["https://*.example.com/*"]
+        )
+        # Custom schemes that AnyUrl cannot express are passed through
+        # unchanged and keep their previous classification.
+        assert is_redirect_uri_allowed_for_application_type(
+            "com.example.app:/callback", "native"
+        )
+        assert is_redirect_uri_allowed_for_application_type(
+            "urn:ietf:wg:oauth:2.0:oob", "native"
+        )
+        assert is_redirect_uri_allowed_for_application_type(
+            "myapp://callback", "native"
+        )
+
+
+class TestBackslashAuthorityRejects:
+    r"""A backslash in the raw authority must be rejected outright.
+
+    WHATWG parsing (pydantic's AnyUrl, and any browser reading a 302
+    Location) ends the authority at a backslash, so
+    ``https://trusted.example\@attacker.example/cb`` normalizes to host
+    ``trusted.example`` with ``@attacker.example/cb`` as the path and would
+    pass the pattern check. But the raw string is what callers emit:
+    ``RedirectResponse`` percent-encodes the backslash, and a browser then
+    reads ``trusted.example%5C`` as userinfo with host ``attacker.example``
+    -- outside the allowlisted origin. Both spellings were rejected by
+    the pre-normalization implementation; keep them rejected (#6295).
+    """
+
+    @pytest.mark.parametrize(
+        "uri,pattern",
+        [
+            (
+                "https://trusted.example\\@attacker.example/cb",
+                "https://trusted.example/*",
+            ),
+            ("http://localhost\\@attacker.example/cb", "http://localhost:*"),
+        ],
+    )
+    def test_backslash_authority_pattern_rejected(self, uri, pattern):
+        assert not matches_allowed_pattern(uri, pattern)
+
+    @pytest.mark.parametrize(
+        "uri,application_type",
+        [
+            ("http://localhost\\@attacker.example/cb", "native"),
+            ("https://trusted.example\\@attacker.example/cb", "web"),
+        ],
+    )
+    def test_backslash_authority_application_type_rejected(self, uri, application_type):
+        assert not is_redirect_uri_allowed_for_application_type(uri, application_type)
+
+    def test_legitimate_uris_still_allowed(self):
+        # No backslash in the authority: ordinary behavior is intact.
+        assert matches_allowed_pattern(
+            "https://trusted.example/cb", "https://trusted.example/*"
+        )
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback", "http://localhost:*"
+        )
+        assert is_redirect_uri_allowed_for_application_type(
+            "http://localhost:8123/callback", "native"
+        )
+
+
+class TestExactRootPathPattern:
+    """A pattern with no wildcard is a registered URI, compared exactly."""
+
+    def test_root_pattern_matches_only_root(self):
+        assert matches_allowed_pattern("https://a.example/", "https://a.example/")
+        assert matches_allowed_pattern("https://a.example", "https://a.example/")
+        assert not matches_allowed_pattern("https://a.example/x", "https://a.example/")
+
+    def test_empty_path_pattern_matches_only_root(self):
+        assert matches_allowed_pattern("https://a.example/", "https://a.example")
+        assert not matches_allowed_pattern("https://a.example/x", "https://a.example")
+
+    def test_wildcard_root_pattern_still_matches_any_path(self):
+        assert matches_allowed_pattern(
+            "http://localhost:3000/callback", "http://localhost:*"
+        )
+        assert matches_allowed_pattern(
+            "https://app.example.com/cb", "https://*.example.com"
         )

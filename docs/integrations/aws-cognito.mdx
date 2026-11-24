@@ -9,7 +9,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.12.4" />
 
-This guide shows you how to secure your FastMCP server using **AWS Cognito user pools**. Since AWS Cognito doesn't support Dynamic Client Registration, this integration uses the [**OAuth Proxy**](/servers/auth/oauth-proxy) pattern to bridge AWS Cognito's traditional OAuth with MCP's authentication requirements. It also includes robust JWT token validation, ensuring enterprise-grade authentication.
+This guide shows you how to secure your FastMCP server using **AWS Cognito user pools**. Since AWS Cognito doesn't support Dynamic Client Registration, this integration uses the [**OIDC Proxy**](/servers/auth/oidc-proxy) pattern to bridge AWS Cognito's traditional OAuth with MCP's authentication requirements, and validates Cognito's JWTs on every request.
 
 ## Configuration
 
@@ -106,7 +106,7 @@ Set up AWS Cognito user pool with an app client to get the credentials needed fo
     - **User Pool ID**: Format like `eu-central-1_XXXXXXXXX`
     - **Client ID**: Your application's client identifier
     - **Client Secret**: Generated client secret (keep secure)
-    - **AWS Region**: Where Your AWS Cognito user pool is located
+    - **AWS Region**: Where your AWS Cognito user pool is located
 
     <Tip>
     Store these credentials securely. Never commit them to version control. Use environment variables or AWS Secrets Manager in production.
@@ -161,7 +161,7 @@ Your server is now running and protected by AWS Cognito OAuth authentication.
 
 ### Testing with a Client
 
-Create a test client that authenticates with Your AWS Cognito-protected server:
+Create a test client that authenticates with your AWS Cognito-protected server:
 
 ```python test_client.py
 from fastmcp import Client
@@ -199,7 +199,7 @@ The client caches tokens locally, so you won't need to re-authenticate for subse
 
 <VersionBadge version="2.13.0" />
 
-For production deployments with persistent token management across server restarts, configure `jwt_signing_key`, and `client_storage`:
+For production deployments with persistent token management across server restarts, configure `jwt_signing_key` and `client_storage`:
 
 ```python server.py
 import os
@@ -241,38 +241,50 @@ For complete details on these parameters, see the [OAuth Proxy documentation](/s
 
 ### JWT Token Validation
 
-The AWS Cognito provider includes robust JWT token validation:
+The AWS Cognito provider validates every token it receives:
 
 - **Signature Verification**: Validates tokens against AWS Cognito's public keys (JWKS)
 - **Expiration Checking**: Automatically rejects expired tokens
 - **Issuer Validation**: Ensures tokens come from your specific AWS Cognito user pool
+- **Client Validation**: Ensures the token's `client_id` claim matches your app client
 - **Scope Enforcement**: Verifies required OAuth scopes are present
 
 ### User Claims and Groups
 
-Access rich user information from AWS Cognito JWT tokens:
+The provider exposes three claims from the Cognito access token on `token.claims`: `sub`, `username`, and `cognito:groups`. Other claims are dropped.
+
+To restrict a tool to members of a Cognito group, use [`require_roles`](/servers/authorization#require_roles) with an extractor that reads `cognito:groups`:
 
 ```python
-from fastmcp.server.dependencies import get_access_token
+from fastmcp import FastMCP
+from fastmcp.server.auth import require_roles
+from fastmcp.server.auth.providers.aws import AWSCognitoProvider
 
-@mcp.tool
+auth_provider = AWSCognitoProvider(
+    user_pool_id="eu-central-1_XXXXXXXXX",
+    aws_region="eu-central-1",
+    client_id="your-app-client-id",
+    client_secret="your-app-client-secret",
+    base_url="http://localhost:8000",
+)
+
+mcp = FastMCP(name="AWS Cognito Secured App", auth=auth_provider)
+
+
+def cognito_groups(claims: dict) -> list[str]:
+    return claims["cognito:groups"]
+
+
+@mcp.tool(auth=require_roles("admin", extract=cognito_groups))
 async def admin_only_tool() -> str:
-    """A tool only available to admin users."""
-    token = get_access_token()
-    user_groups = token.claims.get("cognito:groups", [])
-
-    if "admin" not in user_groups:
-        raise ValueError("This tool requires admin access")
-
+    """A tool only available to members of the admin group."""
     return "Admin access granted!"
 ```
 
-### Enterprise Integration
+### Identity Features
 
-Perfect for enterprise environments with:
+Because Cognito handles sign-in, its user pool features apply without changes on the FastMCP side:
 
-- **Single Sign-On (SSO)**: Integrate with corporate identity providers
-- **Multi-Factor Authentication (MFA)**: Leverage AWS Cognito's built-in MFA
-- **User Groups**: Role-based access control through AWS Cognito groups
-- **Custom Attributes**: Access custom user attributes defined in your AWS Cognito user pool
-- **Compliance**: Meet enterprise security and compliance requirements
+- **Single Sign-On (SSO)**: Federate with corporate identity providers
+- **Multi-Factor Authentication (MFA)**: Use AWS Cognito's built-in MFA
+- **User Groups**: Gate tools on Cognito groups, as shown above

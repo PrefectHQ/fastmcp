@@ -17,7 +17,7 @@ Requires ``fastmcp[apps]`` (prefab-ui).
 Usage::
 
     from fastmcp import FastMCP
-    from fastmcp.apps import FileUpload
+    from fastmcp.apps.file_upload import FileUpload
 
     mcp = FastMCP("My Server")
     mcp.add_provider(FileUpload())
@@ -109,7 +109,7 @@ when its final contents would exceed the limit, including replacements.
 - ``size_display``, ``uploaded_at``).
 
 
-#### `on_list` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L294" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L292" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_list(self, ctx: Context) -> list[dict[str, Any]]
@@ -127,7 +127,7 @@ implementation returns files from the current scope.
 - List of file summary dicts.
 
 
-#### `on_read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L312" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/apps/file_upload.py#L310" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_read(self, name: str, ctx: Context) -> dict[str, Any]

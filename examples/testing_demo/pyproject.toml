@@ -5,7 +5,7 @@ description = "FastMCP testing example demonstrating pytest-asyncio patterns"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "fastmcp>=2.0.0",
+    "fastmcp>=3.4.8",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.2.0",
     "dirty-equals>=0.9.0",

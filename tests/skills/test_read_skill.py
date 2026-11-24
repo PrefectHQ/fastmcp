@@ -14,12 +14,11 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import INTERNAL_ERROR
 
 from fastmcp import Client, ClientGroup, FastMCP
-from fastmcp.server.providers.skills import SkillProvider, SkillsDirectoryProvider
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills._constants import MAX_SKILL_BYTES, MAX_SKILL_FILES
 from fastmcp.skills.extension import SkillsExtension
 from fastmcp.skills.models import MCPSkill, SkillFrontmatter, SkillResource
-from fastmcp.skills.provider import SkillCatalogProvider
+from fastmcp.skills.provider import SkillCatalogProvider, SkillsDirectoryProvider
 
 REVIEW = Skill(
     name="review",
@@ -103,7 +102,7 @@ async def test_read_skill_handles_nested_paths_and_encoded_names():
         assert skill == quoted
 
 
-async def test_read_skill_reads_from_a_legacy_folder_provider(tmp_path: Path):
+async def test_read_skill_reads_from_a_folder_provider(tmp_path: Path):
     folder = tmp_path / "review"
     folder.mkdir()
     (folder / "SKILL.md").write_bytes(REVIEW.files["SKILL.md"])
@@ -111,16 +110,11 @@ async def test_read_skill_reads_from_a_legacy_folder_provider(tmp_path: Path):
     (folder / "refs").mkdir()
     (folder / "refs" / "logo.bin").write_bytes(b"\x00\xff\r\n")
 
-    for provider in (
-        SkillProvider(folder),
-        SkillProvider(folder, supporting_files="resources"),
-        SkillsDirectoryProvider(tmp_path),
-        SkillsDirectoryProvider(tmp_path, experimental_skills=True),
-    ):
-        server = FastMCP("Skills", providers=[provider])
-        async with Client(server) as client:
+    server = FastMCP("Skills", providers=[SkillsDirectoryProvider(tmp_path)])
+    for client in (skills_client(server), Client(server)):
+        async with client:
             skill = await client.read_skill("skill://review/SKILL.md")
-        assert skill == REVIEW, provider
+        assert skill == REVIEW
 
 
 async def test_read_skill_rejects_a_file_that_does_not_match_its_digest():

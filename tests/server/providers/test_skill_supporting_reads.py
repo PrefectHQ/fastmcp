@@ -10,6 +10,12 @@ from mcp_types import BlobResourceContents, TextResourceContents
 from fastmcp import Client, FastMCP
 from fastmcp.server.providers.skills import SkillProvider
 
+# These providers are deprecated; tests/skills/test_deprecated_paths.py checks
+# the warnings.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::fastmcp._warnings.FastMCPDeprecationWarning"
+)
+
 
 @pytest.mark.parametrize("supporting_files", ["template", "resources"])
 @pytest.mark.parametrize(

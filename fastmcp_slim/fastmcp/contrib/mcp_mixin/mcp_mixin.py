@@ -6,6 +6,12 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp.prompts.base import Prompt
 from fastmcp.resources.base import Resource
+from fastmcp.resources.security import (
+    INHERIT_SECURITY,
+    InheritSecurity,
+    ResourceSecurity,
+)
+from fastmcp.resources.template import ResourceTemplate
 from fastmcp.tools.base import Tool
 from fastmcp.utilities.types import get_fn_name
 
@@ -85,18 +91,21 @@ def mcp_resource(
     *,
     name: str | None = None,
     enabled: bool | None = None,
+    security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY,
     **kwargs: Any,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to mark a method as an MCP resource for later registration.
 
-    Accepts all parameters supported by ``Resource.from_function``.  Any new
-    parameters added to ``Resource.from_function`` are automatically forwarded
-    without requiring changes here.
+    Accepts all parameters supported by ``Resource.from_function`` plus the
+    ``security`` policy supported by templated resources. Any new parameters
+    added to ``Resource.from_function`` are automatically forwarded without
+    requiring changes here.
 
     Args:
         uri: Resource URI (required).
         name: Resource name.  Defaults to the decorated method name.
         enabled: If ``False``, the resource is skipped during registration.
+        security: Path-safety policy for templated resource parameters.
         **kwargs: Additional keyword arguments forwarded verbatim to
             ``Resource.from_function`` (e.g. ``description``, ``tags``,
             ``mime_type``, ``auth``, ``version``, …).
@@ -116,6 +125,7 @@ def mcp_resource(
         call_args: dict[str, Any] = {
             "uri": uri,
             "name": name or get_fn_name(func),
+            "security": security,
             **kwargs,
         }
         if enabled is not None:
@@ -229,6 +239,9 @@ class MCPMixin:
     ) -> None:
         """Registers all methods marked with @mcp_resource with the FastMCP server.
 
+        A method whose URI contains `{param}` placeholders is registered as a
+        resource template; any other method is registered as a static resource.
+
         Args:
             mcp_server: The FastMCP server instance to register resources with.
             prefix: Optional prefix to prepend to resource names and URIs.  If
@@ -253,8 +266,21 @@ class MCPMixin:
             if enabled is False:
                 continue
 
-            resource = Resource.from_function(fn=method, **registration_info)
-            mcp_server.add_resource(resource)
+            uri = registration_info.pop("uri")
+            security = registration_info.pop("security", INHERIT_SECURITY)
+            if "{" in uri and "}" in uri:
+                template = ResourceTemplate.from_function(
+                    fn=method,
+                    uri_template=uri,
+                    security=security,
+                    **registration_info,
+                )
+                mcp_server.add_template(template)
+            else:
+                resource = Resource.from_function(
+                    fn=method, uri=uri, **registration_info
+                )
+                mcp_server.add_resource(resource)
 
     def register_prompts(
         self,

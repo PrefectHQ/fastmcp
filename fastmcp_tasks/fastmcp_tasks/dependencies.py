@@ -18,7 +18,7 @@ from contextvars import ContextVar
 from types import TracebackType
 from typing import TYPE_CHECKING, cast
 
-from uncalled_for import Dependency
+from uncalled_for import Provider
 
 from fastmcp.server.dependencies import (
     _MIN_DOCKET_VERSION,
@@ -72,7 +72,7 @@ def require_docket(feature: str) -> None:
     raise ImportError(f"{detail} (Triggered by {feature})")
 
 
-class _CurrentDocket(Dependency["Docket"]):
+class _CurrentDocket(Provider["Docket"]):
     """Async context manager for Docket dependency."""
 
     async def __aenter__(self) -> Docket:
@@ -129,7 +129,7 @@ def CurrentDocket() -> Docket:
     return cast("Docket", _CurrentDocket())
 
 
-class _CurrentWorker(Dependency["Worker"]):
+class _CurrentWorker(Provider["Worker"]):
     """Async context manager for Worker dependency."""
 
     async def __aenter__(self) -> Worker:

@@ -125,6 +125,27 @@ class TestCIMDDocument:
                 redirect_uris=["http://"],
             )
 
+    @pytest.mark.parametrize("uri", ["http://", "https:///callback"])
+    def test_http_redirect_uri_without_host_rejected(self, uri):
+        """http(s) redirect_uris must still name a host."""
+        with pytest.raises(ValidationError, match="must have a host"):
+            CIMDDocument(
+                client_id=AnyHttpUrl("https://example.com/client.json"),
+                redirect_uris=[uri],
+            )
+
+    @pytest.mark.parametrize(
+        "uri",
+        ["com.example.app:/oauth", "myapp://callback", "urn:ietf:wg:oauth:2.0:oob"],
+    )
+    def test_non_http_redirect_uri_accepted(self, uri):
+        """Private-use schemes (RFC 8252 section 7.1) have no host."""
+        doc = CIMDDocument(
+            client_id=AnyHttpUrl("https://example.com/client.json"),
+            redirect_uris=[uri],
+        )
+        assert doc.redirect_uris == [uri]
+
     def test_redirect_uri_whitespace_only_rejected(self):
         """Test that whitespace-only redirect_uris are rejected."""
         with pytest.raises(ValidationError, match="non-empty"):

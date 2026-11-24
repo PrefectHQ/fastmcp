@@ -16,6 +16,12 @@ from fastmcp.server.providers.skills import (
 from fastmcp.server.providers.skills._common import parse_frontmatter
 from fastmcp.server.providers.skills.skill_provider import SkillFileResource
 
+# These providers are deprecated; tests/skills/test_deprecated_paths.py checks
+# the warnings.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::fastmcp._warnings.FastMCPDeprecationWarning"
+)
+
 
 class TestParseFrontmatter:
     def test_no_frontmatter(self):

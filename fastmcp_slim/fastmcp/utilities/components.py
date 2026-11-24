@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Annotated, Any, ClassVar, TypedDict, cast
+from typing import Annotated, Any, ClassVar, Self, TypedDict, cast
 
 from mcp_types import Icon
 from pydantic import BeforeValidator, Field
-from typing_extensions import Self, TypeVar
+from typing_extensions import TypeVar
 
 from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import FastMCPBaseModel
@@ -249,7 +249,7 @@ class FastMCPComponent(FastMCPBaseModel):
             f"Use server.disable(keys=['{self.key}']) instead."
         )
 
-    def copy(self) -> Self:  # type: ignore[override]  # ty:ignore[invalid-method-override]
+    def copy(self) -> Self:  # type: ignore[override]  # ty:ignore[incompatible-method-override]
         """Create a copy of the component."""
         return self.model_copy()
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-  "entrypoint": "memory.py",
+  "source": { "path": "memory.py" },
   "environment": {
     "dependencies": ["pydantic-ai-slim[openai]", "asyncpg", "numpy", "pgvector"]
   }

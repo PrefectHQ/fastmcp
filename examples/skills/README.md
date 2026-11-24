@@ -1,8 +1,8 @@
 # Skills over MCP
 
-The server loads the two sample folders into `Skill` values and publishes them
-through `SkillCatalogProvider`. Each `SKILL.md` declares its name and description;
-supporting files retain their exact bytes.
+The server publishes the two sample folders with `SkillsDirectoryProvider`. Each
+`SKILL.md` declares its name and description; supporting files retain their
+exact bytes.
 
 Run the client from the repository root:
 
@@ -15,9 +15,8 @@ Skills extension, verifies each complete skill and exports it to a temporary
 directory. The temporary copies are removed when the example exits. No local
 agent's skills folder is changed.
 
-The last connection uses resource-only discovery with `list_skill_summaries()`.
-`read_skill()` downloads the same content through the `_manifest` fallback, so
-this also works when the connection does not negotiate Skills.
+The last connection doesn't negotiate Skills. `read_skill()` downloads the same
+content through the `_manifest` resource instead.
 
 To launch the server over stdio for another MCP client:
 
@@ -25,10 +24,8 @@ To launch the server over stdio for another MCP client:
 uv run python -m examples.skills.server
 ```
 
-For live recursive folder discovery, use
-`SkillsDirectoryProvider(root, experimental_skills=True)`. The catalog in this
-example holds snapshots: changing a source file does not mutate an existing
-`Skill`.
+The provider reads the folders once at startup. Pass `reload=True` to pick up
+edits on every request while you're writing a skill.
 
 See [Skills over MCP](https://gofastmcp.com/servers/skills) for custom loaders,
 access control, mounts and installing skills into a local agent.

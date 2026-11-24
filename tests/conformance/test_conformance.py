@@ -28,7 +28,7 @@ EXPECTED_FAILURES = CONFORMANCE_DIR / "expected-failures.yml"
 HOST = "127.0.0.1"
 
 #: Pinned version of `@modelcontextprotocol/conformance`. Bump deliberately.
-CONFORMANCE_VERSION = "0.2.0-alpha.10"
+CONFORMANCE_VERSION = "0.2.0-alpha.12"
 
 
 def _get_free_port() -> int:

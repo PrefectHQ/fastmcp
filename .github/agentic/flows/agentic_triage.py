@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import subprocess
 import tempfile
 import time
 from collections.abc import Callable
@@ -8,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
-from prefect import flow, task
+from prefect import flow, get_run_logger, task
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.actions import ArtifactCreate
 from prefect.client.schemas.filters import (
@@ -19,13 +21,36 @@ from prefect.client.schemas.filters import (
 from prefect.client.schemas.objects import State
 from prefect.client.schemas.sorting import ArtifactSort
 from prefect.context import FlowRunContext
+from prefect.events import emit_event
 from prefect.states import Completed
+from prefect.variables import Variable
 
 from flows.agentic_artifacts import plain, published_reviews, retain_markdown
-from flows.agentic_backlog import Intake, due, inventory, settle
+from flows.agentic_backlog import (
+    Intake,
+    due,
+    handled_key,
+    handoffs,
+    inventory,
+    settle,
+)
+from flows.agentic_burst import burst, burst_config, burst_line
 from flows.agentic_claims import claim_work
+from flows.agentic_digest import record_next_step
 from flows.agentic_freshness import revalidate
+from flows.agentic_github import can_write
 from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
+from flows.agentic_labels import (
+    CONFIG_VARIABLE,
+    apply_writes,
+    cleared_by_person,
+    mode,
+    summary,
+    triage_labels,
+)
+from flows.agentic_outcome import next_steps, subjects
+from flows.agentic_review_app import LABEL_PERMISSIONS, review_client
+from flows.agentic_stack import same_json
 from flows.agentic_stack_policy import Batch
 from flows.agentic_stack_runtime import (
     Runtime,
@@ -34,6 +59,7 @@ from flows.agentic_stack_runtime import (
     intake_tools,
     secret_sync,
 )
+from flows.agentic_vouch import load_standing
 
 
 def latest(key: str, owner: UUID | None = None) -> dict | None:
@@ -50,7 +76,7 @@ def latest(key: str, owner: UUID | None = None) -> dict | None:
 def retain(owner: UUID, key: str, data: dict) -> None:
     previous = latest(key, owner)
     if previous is not None:
-        if previous != data:
+        if not same_json(previous, data):
             raise ValueError("Conflicting intake progress record")
         return
     with get_client(sync_client=True) as client:
@@ -90,6 +116,41 @@ def github(endpoint: str) -> object:
     }
     environment["GH_TOKEN"] = secret_sync("fastmcp-triage-gh-token")
     return gh_api(endpoint, environment, 60)
+
+
+def maintainer(sender: str, read: Callable[[str], object] = github) -> bool:
+    """Whether the event sender can write to the repository.
+
+    A failed lookup counts as not a maintainer, so an API error never drops an event.
+    """
+    try:
+        return can_write(read, sender)
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
+        return False
+
+
+def vouched(sender: str, lookup=None) -> bool:
+    """Whether the contributor graph vouches for `sender` (and nobody denounced
+    them). Vouched people skip the burst guard. Off or unreachable: False."""
+    lookup = lookup if lookup is not None else load_standing()
+    return bool(lookup) and lookup(sender)["standing"] == "vouched"
+
+
+def sender_burst(config: Intake, read: Callable[[str], object] = github) -> dict | None:
+    """The sender's burst, if this event's item is past their limit.
+
+    A failed lookup counts as no burst, so an API error never drops an event.
+    """
+    trigger = max([*config.issues, *config.pull_requests], default=0)
+    if not config.sender or not trigger:
+        return None
+    if vouched(config.sender):
+        return None
+    try:
+        limits = burst_config(Variable.get(CONFIG_VARIABLE, default={}))
+        return burst(read, config.sender, trigger, limits, datetime.now(UTC))
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError, KeyError):
+        return None
 
 
 def admit(
@@ -137,7 +198,15 @@ def admit(
         ]
     selected = pending[: config.max_items]
     batch = None
+    handoff: dict[str, str] = {}
     if selected:
+        try:
+            handoff = handoffs(read, [row["issue_number"] for row in selected])
+        except Exception as error:  # noqa: BLE001 - best effort, never blocks intake
+            # Without it the follow-through pass just looks at these issues again.
+            logging.getLogger(__name__).warning(
+                "Hand-off revisions unavailable: %s", error
+            )
         base = read(f"repos/PrefectHQ/fastmcp/commits/{config.branch}")
         if not isinstance(base, dict):
             raise ValueError("Missing release target")
@@ -169,6 +238,7 @@ def admit(
         "next_page": page,
         "coverage": coverage,
         "batch": batch,
+        "handoff": handoff,
         "runtime": runtime.model_dump(mode="json"),
         "controller_id": str(controller_id),
     }
@@ -194,7 +264,7 @@ def dispatch(plan: dict) -> UUID:
             if (
                 len(matches) != 1
                 or matches[0].idempotency_key != name
-                or matches[0].parameters != parameters
+                or not same_json(matches[0].parameters, parameters)
                 or matches[0].deployment_version != runtime.source_sha
             ):
                 raise ValueError("Controller identity or inputs changed")
@@ -229,6 +299,7 @@ def finish(
     completed = []
     pending = plan["pending"]
     receipts = []
+    issues = []
     if plan["batch"]:
         timestamp = plan["batch"]["started_at"]
         if run_id:
@@ -303,6 +374,10 @@ def finish(
             {number: plan["batch"]["groups"][0]["branch"] for number in selected},
             read_evidence,
         )
+        issues = subjects(
+            originals,
+            [item for item in plan["pending"] if item["issue_number"] in selected],
+        )
         pending, completed = settle(pending, selected, result)
         exhausted = [row["issue_number"] for row in pending if row["attempts"] >= 3]
         for item in plan["pending"]:
@@ -319,6 +394,7 @@ def finish(
                 if number in originals
                 else None,
                 "baseline_sha": originals.get(number, {}).get("base_sha"),
+                "handoff_revision": plan.get("handoff", {}).get(str(number)),
             }
             receipts.append(receipt)
         pending = [row for row in pending if row["issue_number"] not in exhausted]
@@ -331,6 +407,7 @@ def finish(
         "completed": completed,
         "receipts": receipts,
         "review": result,
+        "issues": issues,
     }
     metrics = {
         "published_reviews": len(published_reviews(result)) if result else 0,
@@ -354,6 +431,10 @@ def finish(
 def commit(owner: UUID, scope: str, state: dict) -> dict:
     for receipt in state["receipts"]:
         retain(owner, f"{scope}-issue-{receipt['issue_number']}", receipt)
+        # One record per issue across every intake (event, follow-through, backlog),
+        # so the follow-through pass knows what triage last saw.
+        if receipt.get("handoff_revision"):
+            retain(owner, handled_key(receipt["issue_number"]), receipt)
     lines = ["# FastMCP intake coverage", "", "| Measure | Observed |", "| --- | --- |"]
     lines.extend(
         f"| {plain(name)} | {plain(value)} |"
@@ -402,43 +483,161 @@ def triage_intake(
     ):
         raise ValueError("Intake requires a bounded managed deployment")
     deadline = datetime.now(UTC) + timedelta(hours=2)
-    with (
-        claim_work([config.scope()], current.id, deadline),
-        tempfile.TemporaryDirectory(prefix="fastmcp-intake-") as temporary,
-    ):
+    with tempfile.TemporaryDirectory(prefix="fastmcp-intake-") as temporary:
         intake_tools(Path(temporary))
-        plan = admit(config, runtime, controller_id, current.id)
-        if plan["phase"] == "committed":
-            return plan
-        try:
-            run_id = dispatch(plan) if plan["batch"] else None
-        except ValueError as error:
-            result = finish(plan, current.id, config.scope(), None, str(error))
-            return Completed(name="Degraded", data=result, message=str(error))
-        while run_id:
-            with get_client(sync_client=True) as client:
-                child = client.read_flow_run(run_id)
-            if child.state is not None and child.state.is_final():
-                break
-            time.sleep(5)
-        result = finish(plan, current.id, config.scope(), run_id)
-        reasons = attention(result["review"]) if result["review"] else []
-        if reasons:
+        # A maintainer's own PR needs no triage, but an issue they file (often
+        # through an agent) still gets assessed and labeled like anyone's.
+        if config.sender and config.pull_requests and maintainer(config.sender):
             return Completed(
-                name="Degraded", data=result, message="; ".join(reasons)[:2000]
+                data={"skipped": "maintainer_sender", "sender": config.sender},
+                message=f"Skipped: {config.sender} is a maintainer",
             )
-        return result
+        if config.sender and (found := sender_burst(config)):
+            # Edits and pushes to the crossing item rerun intake; announce once.
+            claim = f"fastmcp-burst-{config.sender.lower()}-{found['crossing']}"
+            if found["announce"] and latest(claim) is None:
+                with get_client(sync_client=True) as client:
+                    client.create_artifact(
+                        ArtifactCreate(
+                            key=claim,
+                            flow_run_id=current.id,
+                            type="fastmcp-triage-intake",
+                            data=found,
+                        )
+                    )
+                emit_event(
+                    event="fastmcp.triage.outcome",
+                    resource={
+                        "prefect.resource.id": f"fastmcp.triage.intake.{current.id}"
+                    },
+                    payload={"text": burst_line(found)},
+                )
+            return Completed(
+                data={"skipped": "burst", **found},
+                message=f"Skipped: {config.sender} opened {found['count']} items",
+            )
+        with claim_work([config.scope()], current.id, deadline):
+            return triage(config, runtime, controller_id, current.id)
 
 
-# Evidence that moved during the run is requeued by `settle`, and the GitHub
-# event for the change starts a fresh triage, so it is not worth an alert.
+def triage(
+    config: Intake, runtime: Runtime, controller_id: UUID, owner: UUID
+) -> dict | State:
+    plan = admit(config, runtime, controller_id, owner)
+    if plan["phase"] == "committed":
+        return plan
+    try:
+        run_id = dispatch(plan) if plan["batch"] else None
+    except ValueError as error:
+        result = finish(plan, owner, config.scope(), None, str(error))
+        return Completed(name="Degraded", data=result, message=str(error))
+    while run_id:
+        with get_client(sync_client=True) as client:
+            child = client.read_flow_run(run_id)
+        if child.state is not None and child.state.is_final():
+            break
+        time.sleep(5)
+    result = finish(plan, owner, config.scope(), run_id)
+    announce(owner, result)
+    write_labels(owner, config.scope(), runtime, result)
+    # Retries are quiet; the run is Degraded (and alerts) only for issues that
+    # used their last try.
+    exhausted = {
+        receipt["issue_number"]
+        for receipt in result["receipts"]
+        if receipt["status"] == "operational"
+    }
+    reasons = attention(result["review"], exhausted) if result["review"] else []
+    if reasons:
+        return Completed(
+            name="Degraded", data=result, message="; ".join(reasons)[:2000]
+        )
+    return result
+
+
+def announce(owner: UUID, state: dict) -> None:
+    """Record the next step for each issue now waiting on a maintainer.
+
+    Nothing is posted here: the digest agent reads these and decides what to say.
+    """
+    if not state["review"]:
+        return
+    for number, line in next_steps(
+        state["review"], state.get("issues", []), live_item
+    ).items():
+        record_next_step(owner, number, line)
+
+
+def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None:
+    """Label assessed issues with their area and the maintainer queue.
+
+    A failure here is reported on the run but never fails the intake: the
+    outcome is already retained and announced.
+    """
+    if not state["review"]:
+        return
+    try:
+        current_mode = mode(Variable.get(CONFIG_VARIABLE, default={}))
+        if current_mode == "off":
+            return
+        writes = triage_labels(state["review"], live_item, cleared)
+        if writes and current_mode == "on":
+            app = runtime.reviewer_app
+            if app is None:
+                raise ValueError("Label writes require the triage GitHub App")
+            with review_client(
+                app, secret_sync(app.private_key_block), permissions=LABEL_PERMISSIONS
+            ) as client:
+                apply_writes(writes, client.request)
+        if writes:
+            retain_markdown(
+                owner, scope + "-github-writes", summary(writes, current_mode)
+            )
+    except Exception as error:  # noqa: BLE001 - reported, never fatal to intake
+        get_run_logger().warning("Label writes failed: %s", error)
+
+
+def cleared(number: int) -> bool:
+    """Whether a person removed `needs:triage`; unreadable history counts as yes."""
+    try:
+        events = []
+        for page in range(1, 6):
+            batch = github(
+                f"repos/PrefectHQ/fastmcp/issues/{number}/events?per_page=100&page={page}"
+            )
+            if not isinstance(batch, list):
+                return True
+            events.extend(batch)
+            if len(batch) < 100:
+                return cleared_by_person(events)
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
+        return True
+    return True
+
+
+def live_item(number: int) -> dict | None:
+    """Current GitHub state of an issue or PR; None when it can't be read."""
+    try:
+        current = github(f"repos/PrefectHQ/fastmcp/issues/{number}")
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
+        return None
+    return current if isinstance(current, dict) else None
+
+
+# Evidence that moved during the run is requeued by `settle`, and the hourly
+# follow-through pass sees the change and starts a fresh triage, so it is not
+# worth an alert.
 REQUEUED = frozenset({"stale", "baseline_changed"})
 
 
-def attention(review: dict) -> list[str]:
+def attention(review: dict, exhausted: set[int]) -> list[str]:
     reasons = []
     for item in review["bins"]["operational"]:
-        if item.get("status") in REQUEUED:
+        number = item.get("issue_number")
+        # A controller-wide failure has no issue number and fails every selected issue.
+        if item.get("status") in REQUEUED or not (
+            number in exhausted or (number is None and exhausted)
+        ):
             continue
         detail = str(item.get("detail") or "")[:300]
         reason = item.get("reason") or detail or item.get("status")

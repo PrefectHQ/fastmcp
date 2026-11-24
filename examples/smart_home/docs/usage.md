@@ -83,6 +83,23 @@ installed package ID; YouTube playback requires an 11-character video ID. Comman
 return acceptance receipts, not proof that navigation completed. The constrained
 surface deliberately exposes neither arbitrary URLs nor raw ADB shell commands.
 
+If an app is stuck on a blank screen, explicitly call `fire_tv_restart_app`
+with its installed package ID. For example, YouTube TV is
+`com.amazon.firetv.youtube.tv`, distinct from regular YouTube. Restarting
+interrupts playback by force-stopping and relaunching that app, without clearing
+data or sign-in. Read status afterward and confirm the picture recovered;
+foreground state alone cannot establish that the app rendered successfully.
+
+An opt-in device test verifies rejection of an invalid target, a changed process
+ID, and return to the foreground. With `FIRE_TV_HOST` and `FIRE_TV_ADB_KEY`
+configured and the selected app already open, run from this example directory:
+
+```bash
+FIRE_TV_TEST_RESTART_PACKAGE=com.amazon.firetv.youtube.tv uv run pytest tests/test_fire_tv_device.py
+```
+
+This test interrupts the selected app; ordinary test runs skip it.
+
 For a request such as "play a live bird camera where it is daylight": find a
 current feed, check the camera's location and local time, verify that the video
 is live and playable, then call `fire_tv_play_youtube_video` with its video ID.

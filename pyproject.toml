@@ -3,7 +3,7 @@ name = "fastmcp"
 dynamic = ["version", "dependencies", "optional-dependencies"]
 description = "The fast, Pythonic way to build MCP servers and clients."
 authors = [{ name = "Jeremiah Lowin" }, { name = "Nate Nowack" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 license = "Apache-2.0"
 keywords = [
@@ -19,7 +19,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -80,7 +79,8 @@ exclude-newer = "1 week"
 # MCP SDK, where a new major is the only version satisfying our floor and so
 # has nothing older to fall back to, and uncalled-for, the DI engine whose
 # releases we adopt deliberately. Monty 1.1.0 supplies Python 3.15 wheels.
-exclude-newer-package = { certifi = false, fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false, pydantic-monty = false, pydantic-monty-client = false, pydantic-monty-runtime = false }
+# Authlib is exempt so security fixes can bypass the cooldown.
+exclude-newer-package = { authlib = false, certifi = false, fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false, pydantic-monty = false, pydantic-monty-client = false, pydantic-monty-runtime = false }
 
 [dependency-groups]
 dev = [
@@ -88,6 +88,12 @@ dev = [
     "fastmcp[anthropic,apps,azure,code-mode,gemini,jev,openai,tasks]",
     "fastapi>=0.115.12",
     "fastmcp-remote",
+    # FastMCP itself is httpx2-only, but the PEP 723 scripts in scripts/ (and
+    # their tests), the Anthropic 0.x compatibility test, and the upgrade guide's
+    # httpx examples use plain httpx.
+    # Declare it: SDKs that used to pull it in (openai, google-genai) moved to
+    # httpx2.
+    "httpx>=0.28.1",
     "opentelemetry-sdk>=1.20.0",
     "inline-snapshot[dirty-equals]>=0.27.2",
     "ipython>=8.12.3",
@@ -105,11 +111,12 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff>=0.12.8",
-    "ty>=0.0.89",
+    "ty>=0.0.104",
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
     "pytest-examples>=0.0.18",
+    "hypothesis>=6.170.15",
 ]
 
 [tool.uv.sources]
@@ -137,6 +144,8 @@ markers = [
     "client_process: marks tests that spawn client processes via stdio transport. These can create issues when run in the same CI environment as other subprocess-based tests.",
     "subprocess_heavy: marks tests that spawn a fresh Python interpreter which imports FastMCP. Each one costs a full interpreter's memory and startup, so they run serially alongside client_process tests rather than competing with parallel xdist workers.",
     "conformance: marks MCP conformance tests (require Node.js/npx)",
+    "pbt: property-based tests (select with -m pbt; HYPOTHESIS_PROFILE=campaign for long runs)",
+    "pbt_smoke: a property-based test that checks the harness itself, so a time-boxed campaign runs it once",
 ]
 pythonpath = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks"]
 testpaths = ["tests"]
@@ -169,7 +178,7 @@ exclude = [
 ]
 
 [tool.ty.environment]
-python-version = "3.10"
+python-version = "3.11"
 # Pin the platform ty checks against to the one CI uses. Without it ty uses the
 # host platform, and on Windows typeshed's fcntl has no flock/LOCK_EX/LOCK_UN,
 # so tests/utilities/json_schema_type/test_real_world_schemas.py fails the ty

@@ -262,7 +262,7 @@ class TestScalekitProviderIntegration:
         real_httpx_client = httpx2.AsyncClient
 
         monkeypatch.setattr(
-            "fastmcp.server.auth.providers.scalekit.httpx2.AsyncClient",
+            "fastmcp.server.auth.auth.httpx2.AsyncClient",
             DummyAsyncClient,
         )
 
