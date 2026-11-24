@@ -6,21 +6,21 @@ from unittest.mock import patch
 
 import anyio
 import pytest
+from fastmcp_events._constants import FORBIDDEN
+from fastmcp_events.cli import _describe, list_events_command, watch_command
+from fastmcp_events.models import EventType
 from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
 from fastmcp.cli import client as client_module
-from fastmcp.cli.events import _describe, list_events_command, watch_command
-from fastmcp.experimental.events import (
+from fastmcp_events import (
     Event,
     EventBatch,
     EventPoll,
     EventsClientExtension,
     EventsExtension,
 )
-from fastmcp.experimental.events._constants import FORBIDDEN
-from fastmcp.experimental.events.models import EventType
 
 
 class AlertFired(BaseModel):
@@ -217,8 +217,9 @@ async def test_watch_escapes_markup_in_a_server_error(
 
 
 def test_events_command_lives_under_experimental():
+    from fastmcp_events.cli import list_events_command
+
     from fastmcp.cli.cli import app
-    from fastmcp.cli.events import list_events_command
 
     command, _, _ = app.parse_args(
         ["experimental", "events", "list", "server.py"], exit_on_error=False

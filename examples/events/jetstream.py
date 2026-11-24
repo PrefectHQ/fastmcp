@@ -33,7 +33,7 @@ import websockets
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
-from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
+from fastmcp_events import Event, EventBatch, EventPoll, EventsExtension
 
 JETSTREAM_URL = os.environ.get(
     "JETSTREAM_URL", "wss://jetstream2.us-east.bsky.network/subscribe"

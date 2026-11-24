@@ -6,13 +6,16 @@ from typing import Annotated, Any, Literal
 
 import anyio
 import pytest
+from fastmcp_events._constants import EVENTS_EXTENSION_ID
 from mcp.shared.exceptions import MCPError
 from mcp_types import HEADER_MISMATCH
 from pydantic import BaseModel, Field
 from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
-from fastmcp.experimental.events import (
+from fastmcp.server.dependencies import get_http_headers
+from fastmcp.utilities.tests import run_server_async
+from fastmcp_events import (
     Event,
     EventBatch,
     EventPoll,
@@ -22,10 +25,7 @@ from fastmcp.experimental.events import (
     poll_events_mcp,
     subscribe_events,
 )
-from fastmcp.experimental.events import subscription as subscription_module
-from fastmcp.experimental.events._constants import EVENTS_EXTENSION_ID
-from fastmcp.server.dependencies import get_http_headers
-from fastmcp.utilities.tests import run_server_async
+from fastmcp_events import subscription as subscription_module
 
 Region = Annotated[str, Field(json_schema_extra={"x-mcp-header": "Region"})]
 
