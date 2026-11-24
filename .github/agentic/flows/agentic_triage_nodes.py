@@ -9,6 +9,7 @@ from prefect.client.orchestration import get_client
 from prefect.context import FlowRunContext
 from prefect.events import emit_event
 
+from flows import agentic_telemetry  # noqa: F401 - sends spans to Logfire
 from flows.agentic_existing_review import verify_existing
 from flows.agentic_stack_plans import Reproduction
 from flows.agentic_stack_runtime import intake_tools, record, saved

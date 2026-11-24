@@ -13,6 +13,7 @@ from prefect.context import FlowRunContext
 from prefect.states import Completed
 from prefect.variables import Variable
 
+from flows import agentic_telemetry  # noqa: F401 - sends spans to Logfire
 from flows.agentic_claims import claim_issues, claim_work
 from flows.agentic_freshness import revalidate
 from flows.agentic_intake import policy_outcome, route_intake

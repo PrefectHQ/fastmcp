@@ -22,6 +22,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - logfire==6.0.1
         compute_profile: medium
         timeout: 7200
   - name: cloud-triage-finalize
@@ -37,6 +38,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - logfire==6.0.1
         compute_profile: small
         timeout: 600
   - name: cloud-triage-intake
@@ -52,6 +54,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - logfire==6.0.1
           - PyJWT[crypto]==2.15.1
         compute_profile: medium
         timeout: 7800
@@ -68,6 +71,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - logfire==6.0.1
         compute_profile: medium
         timeout: 3300
   - name: cloud-stack-batch
@@ -83,6 +87,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - logfire==6.0.1
           - PyJWT[crypto]==2.15.1
           - turbopuffer==3.1.0
           - fastmcp==4.2.4
@@ -115,6 +120,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - logfire==6.0.1
           - PyJWT[crypto]==2.15.1
         compute_profile: small
         timeout: 1200
@@ -140,6 +146,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - logfire==6.0.1
           - PyJWT[crypto]==2.15.1
         compute_profile: small
         timeout: 1200
@@ -158,6 +165,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - logfire==6.0.1
           - PyJWT[crypto]==2.15.1
         compute_profile: small
         timeout: 1200
@@ -178,6 +186,7 @@ deployments:
         pip_packages:
           - prefect==3.8.2
           - fastapi==0.141.1
+          - logfire==6.0.1
           - turbopuffer==3.1.0
         compute_profile: small
         timeout: 1800

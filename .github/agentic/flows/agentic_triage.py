@@ -24,6 +24,7 @@ from prefect.events import emit_event
 from prefect.states import Completed
 from prefect.variables import Variable
 
+from flows import agentic_telemetry  # noqa: F401 - sends spans to Logfire
 from flows.agentic_artifacts import plain, published_reviews, retain_markdown
 from flows.agentic_backlog import Intake, due, inventory, settle
 from flows.agentic_burst import burst, burst_config, burst_line

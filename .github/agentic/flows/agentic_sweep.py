@@ -23,6 +23,7 @@ from prefect.events import emit_event
 from prefect.variables import Variable
 from pydantic import BaseModel, ConfigDict, Field
 
+from flows import agentic_telemetry  # noqa: F401 - sends spans to Logfire
 from flows.agentic_github import GitHub, can_write
 from flows.agentic_labels import CONFIG_VARIABLE, mode
 from flows.agentic_review_app import ReviewApp, review_client

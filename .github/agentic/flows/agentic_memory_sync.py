@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from prefect import flow, get_run_logger
 from prefect.variables import Variable
 
+from flows import agentic_telemetry  # noqa: F401 - sends spans to Logfire
 from flows.agentic_github import GitHub
 from flows.agentic_labels import CONFIG_VARIABLE
 from flows.agentic_memory import (

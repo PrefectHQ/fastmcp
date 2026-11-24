@@ -17,6 +17,7 @@ from prefect.client.schemas.actions import ArtifactCreate
 from prefect.runtime import flow_run
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from flows import agentic_telemetry  # noqa: F401 - sends spans to Logfire
 from flows.agentic_stack import digest
 from flows.agentic_validate_patch import install_tools
 from flows.agentic_verification_inputs import VerificationInputs, reject_mutations

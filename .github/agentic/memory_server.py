@@ -12,6 +12,8 @@ Environment:
                           (see flows/agentic_work.py); without it the claim
                           tools answer that claims are off
     GITHUB_TOKEN          optional, raises GitHub's rate limit for `read`
+    LOGFIRE_TOKEN         optional, sends traces to Logfire (with
+                          LOGFIRE_SERVICE_NAME=fastmcp-triage-memory)
 
 Run locally with `uv run fastmcp run memory_server.py --transport http`.
 """
@@ -30,6 +32,7 @@ from pydantic import Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from flows import agentic_telemetry  # noqa: E402, F401 - sends spans to Logfire
 from flows.agentic_memory import (  # noqa: E402
     REPOSITORY,
     Index,
