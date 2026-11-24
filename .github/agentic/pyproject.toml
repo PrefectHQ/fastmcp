@@ -16,7 +16,11 @@ dev = [
     "ty>=0.0.1",
     { include-group = "memory-server" },
 ]
-memory-server = ["fastmcp>=4.2,<5"]
+# Pinned to the events stack (#6762) until a release has its API.
+memory-server = [
+    "fastmcp @ git+https://github.com/PrefectHQ/fastmcp.git@f5c60aeac593960900345f6122563fa950cc43aa",
+    "fastmcp-slim @ git+https://github.com/PrefectHQ/fastmcp.git@f5c60aeac593960900345f6122563fa950cc43aa#subdirectory=fastmcp_slim",
+]
 
 [tool.uv]
 package = false

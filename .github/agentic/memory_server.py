@@ -21,12 +21,14 @@ from __future__ import annotations
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
 import httpx
 from fastmcp import FastMCP
-from pydantic import Field
+from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
+from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -360,61 +362,62 @@ def active_work() -> list[dict]:
     return [claim.public() for claim in work.claims()] if work else []
 
 
-try:
-    from fastmcp.experimental.events import (
-        Event,
-        EventBatch,
-        EventPoll,
-        EventsExtension,
-    )
-except ImportError:  # fastmcp without the events extension (#6489)
-    EventsExtension = None
+ActivityKind = Literal["claimed", "progress", "released", "expired"]
 
-if EventsExtension is not None:
-    events = EventsExtension(poll_interval_ms=10_000)
-    mcp.add_extension(events)
+events = EventsExtension(poll_interval_ms=10_000)
+mcp.add_extension(events)
 
-    @events.event(
-        name="work.activity",
-        description=(
-            "Someone claimed, reported progress on, released, or let lapse a claim "
-            "on fastmcp work. Events are notices, not authority: call claim_work "
-            "before acting on one."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "target": {"type": "string", "pattern": TARGET_PATTERN},
-                "kinds": {
-                    "type": "array",
-                    "items": {"enum": ["claimed", "progress", "released", "expired"]},
-                },
-            },
-            "additionalProperties": False,
-        },
+
+@events.event("work.activity")
+class WorkActivity(BaseModel):
+    """Someone claimed, reported progress on, released, or let lapse a claim
+    on fastmcp work. Events are notices, not authority: call claim_work
+    before acting on one."""
+
+    kind: ActivityKind
+    target: str
+    createdAt: str
+    holder: str | None = None
+    agent: str | None = None
+    phase: str | None = None
+    fence: int | None = None
+    pr: int | None = None
+    outcome: str | None = None
+    reason: str | None = None
+    usedRelated: list[int] | None = None
+
+    def for_subscription(
+        self,
+        target: Annotated[str | None, Field(pattern=TARGET_PATTERN)] = None,
+        kinds: list[ActivityKind] | None = None,
+    ) -> WorkActivity | None:
+        if target is not None and self.target != target:
+            return None
+        if kinds is not None and self.kind not in kinds:
+            return None
+        return self
+
+
+@events.reader(WorkActivity)
+def work_activity(poll: EventPoll) -> EventBatch:
+    work = board()
+    if work is None:
+        return EventBatch(cursor=poll.cursor or "")
+    limit = min(poll.max_events or 100, 100)
+    entries, cursor = work.activity(poll.cursor, limit)
+    return EventBatch(
+        events=[
+            Event(
+                data=entry,
+                event_id=entry["id"],
+                timestamp=datetime.fromisoformat(entry["createdAt"]),
+            )
+            for entry in entries
+        ],
+        cursor=cursor,
+        # the log page held nothing older than the cursor: some may be missing
+        truncated=len(entries) >= limit,
     )
-    def work_activity(poll: EventPoll) -> EventBatch:
-        work = board()
-        if work is None:
-            return EventBatch(cursor=poll.cursor or "")
-        limit = min(poll.max_events or 100, 100)
-        entries, cursor = work.activity(poll.cursor, limit)
-        target = poll.arguments.get("target")
-        kinds = set(poll.arguments.get("kinds") or ())
-        return EventBatch(
-            events=[
-                Event(
-                    data={k: v for k, v in entry.items() if k != "id"},
-                    event_id=entry["id"],
-                )
-                for entry in entries
-                if (not target or entry.get("target") == target)
-                and (not kinds or entry.get("kind") in kinds)
-            ],
-            cursor=cursor,
-            # the log page held nothing older than the cursor: some may be missing
-            truncated=len(entries) >= limit,
-        )
 
 
 if __name__ == "__main__":

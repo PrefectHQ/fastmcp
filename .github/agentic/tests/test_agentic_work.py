@@ -392,19 +392,38 @@ def test_tools_are_off_without_the_credential(monkeypatch):
     assert result["claimed"] is False
 
 
-def test_work_activity_event_if_the_extension_is_available(server):
+def test_work_activity_event(server):
     module, pds = server
-    if module.EventsExtension is None:
-        pytest.skip("fastmcp without the events extension")
-    from fastmcp.experimental.events import EventPoll
+    from fastmcp import Client
+    from fastmcp.experimental.events import EventsClientExtension, poll_events_mcp
+    from mcp.shared.exceptions import MCPError
 
-    first = module.work_activity(EventPoll())
-    call(module, [("claim_work", {"target": "issue:6627", "worker": "s1"})])
-    batch = module.work_activity(
-        EventPoll(cursor=first.cursor, arguments={"kinds": ["claimed"]})
-    )
-    assert [e.data["target"] for e in batch.events] == ["issue:6627"]
-    assert batch.events[0].event_id == batch.cursor
+    async def run():
+        extensions = [EventsClientExtension()]
+        async with Client(module.mcp, extensions=extensions) as client:
+            first = await poll_events_mcp(client, "work.activity")
+            await client.call_tool(
+                "claim_work", {"target": "issue:6627", "worker": "s1"}
+            )
+            await client.call_tool(
+                "claim_work", {"target": "issue:6680", "worker": "s2"}
+            )
+            claimed = await poll_events_mcp(
+                client,
+                "work.activity",
+                {"target": "issue:6627", "kinds": ["claimed"]},
+                cursor=first.cursor,
+            )
+            with pytest.raises(MCPError, match="target"):
+                await poll_events_mcp(client, "work.activity", {"target": "nope"})
+            return claimed
+
+    claimed = asyncio.run(run())
+    (event,) = claimed.events
+    assert event.data["target"] == "issue:6627"
+    assert event.data["kind"] == "claimed"
+    assert "id" not in event.data
+    assert event.timestamp.startswith(event.data["createdAt"][:19])
 
 
 # ---------- the triage workflow's side ----------

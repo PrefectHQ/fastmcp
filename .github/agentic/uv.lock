@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -884,14 +884,10 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "4.2.4"
-source = { registry = "https://pypi.org/simple" }
+version = "4.2.6.dev49+f5c60aea"
+source = { git = "https://github.com/PrefectHQ/fastmcp.git?rev=f5c60aeac593960900345f6122563fa950cc43aa#f5c60aeac593960900345f6122563fa950cc43aa" }
 dependencies = [
     { name = "fastmcp-slim", extra = ["client", "server"] },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/af/1d/dde86c523e3242e7d143e75478dc1604046da57665cf615f58d197e529f2/fastmcp-4.2.4.tar.gz", hash = "sha256:9039b0eb7cde12353ae60396015e9bf8bedd278ed7b6196ee4a8eb4b63d84b06", size = 41568706, upload-time = "2026-11-21T05:29:57.495Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ab/ee/c3b56ee38fbdcfc82976e3cbeaf9b9f70ac3ab03375532447386e4bb9066/fastmcp-4.2.4-py3-none-any.whl", hash = "sha256:fddc1fe906ad0c202862469ecc5b8bf69dbc81a1ea8141112399c72449527cd4", size = 8248, upload-time = "2026-11-21T05:29:54.96Z" },
 ]
 
 [[package]]
@@ -908,12 +904,14 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "fastmcp" },
+    { name = "fastmcp-slim" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "ty" },
 ]
 memory-server = [
     { name = "fastmcp" },
+    { name = "fastmcp-slim" },
 ]
 
 [package.metadata]
@@ -926,17 +924,21 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "fastmcp", specifier = ">=4.2,<5" },
+    { name = "fastmcp", git = "https://github.com/PrefectHQ/fastmcp.git?rev=f5c60aeac593960900345f6122563fa950cc43aa" },
+    { name = "fastmcp-slim", git = "https://github.com/PrefectHQ/fastmcp.git?subdirectory=fastmcp_slim&rev=f5c60aeac593960900345f6122563fa950cc43aa" },
     { name = "pytest", specifier = ">=8,<10" },
     { name = "ruff", specifier = "==0.17.5" },
     { name = "ty", specifier = ">=0.0.1" },
 ]
-memory-server = [{ name = "fastmcp", specifier = ">=4.2,<5" }]
+memory-server = [
+    { name = "fastmcp", git = "https://github.com/PrefectHQ/fastmcp.git?rev=f5c60aeac593960900345f6122563fa950cc43aa" },
+    { name = "fastmcp-slim", git = "https://github.com/PrefectHQ/fastmcp.git?subdirectory=fastmcp_slim&rev=f5c60aeac593960900345f6122563fa950cc43aa" },
+]
 
 [[package]]
 name = "fastmcp-slim"
-version = "4.2.4"
-source = { registry = "https://pypi.org/simple" }
+version = "4.2.6.dev49+f5c60aea"
+source = { git = "https://github.com/PrefectHQ/fastmcp.git?subdirectory=fastmcp_slim&rev=f5c60aeac593960900345f6122563fa950cc43aa#f5c60aeac593960900345f6122563fa950cc43aa" }
 dependencies = [
     { name = "mcp-types" },
     { name = "platformdirs" },
@@ -945,10 +947,6 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/80/a6/bcea2e1e7ca3e60030e6f23170e5013feb9b6c6a9f541316b8596b4eeb8a/fastmcp_slim-4.2.4.tar.gz", hash = "sha256:2aa508dace0e5d9176fe116077cdbf22a18c62f97ddd1decf5625b9f4faf55df", size = 812850, upload-time = "2026-11-21T05:28:25.868Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/d0/186f85d2ab0c22c9a565faebfefa9d9294afbb114eee31e98b44d21725ae/fastmcp_slim-4.2.4-py3-none-any.whl", hash = "sha256:d8c4ecad3b7ad6cb4c0a26c0d05c66af74033753d39601bee5290a10cf102a24", size = 1000669, upload-time = "2026-11-21T05:28:24.188Z" },
 ]
 
 [package.optional-dependencies]
