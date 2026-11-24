@@ -190,3 +190,46 @@ class TestHiddenParentComponentDoesNotShadowMounted:
         parent.enable(tags={"x"}, only=True)
 
         assert await parent.get_tool("t") is None
+
+    async def test_versionless_lookup_falls_back_when_child_middleware_filters_list(
+        self,
+    ):
+        """Versionless lookup falls back to v1 even when child middleware hides listings (#6301)."""
+        from fastmcp.server.middleware import Middleware
+
+        class HideListMiddleware(Middleware):
+            async def on_list_prompts(self, context, call_next):
+                return []
+
+            async def on_list_tools(self, context, call_next):
+                return []
+
+        child = FastMCP("Child", middleware=[HideListMiddleware()])
+
+        @child.prompt(name="greet", version="1")
+        def greet_v1() -> str:
+            return "hello from v1"
+
+        @child.prompt(name="greet", version="2", tags={"beta"})
+        def greet_v2() -> str:
+            return "hello from v2"
+
+        @child.tool(name="calc", version="1")
+        def calc_v1() -> str:
+            return "v1"
+
+        @child.tool(name="calc", version="2", tags={"beta"})
+        def calc_v2() -> str:
+            return "v2"
+
+        parent = FastMCP("Parent")
+        parent.mount(child)
+        parent.disable(tags={"beta"})
+
+        prompt = await parent.get_prompt("greet")
+        assert prompt is not None
+        assert prompt.version == "1"
+
+        tool = await parent.get_tool("calc")
+        assert tool is not None
+        assert tool.version == "1"

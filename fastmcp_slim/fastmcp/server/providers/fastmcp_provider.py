@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from pydantic import AnyUrl
@@ -28,6 +29,21 @@ from fastmcp.utilities.versions import VersionSpec
 if TYPE_CHECKING:
     from fastmcp.server.extensions import ServerExtension
     from fastmcp.server.server import FastMCP
+
+
+_skip_list_middleware: ContextVar[bool] = ContextVar(
+    "_skip_list_middleware", default=False
+)
+
+
+@contextmanager
+def skip_list_middleware() -> Generator[None, None, None]:
+    """Bypass child list middleware when enumerating versions for get_* fallback."""
+    token = _skip_list_middleware.set(True)
+    try:
+        yield
+    finally:
+        _skip_list_middleware.reset(token)
 
 
 # -----------------------------------------------------------------------------
@@ -440,7 +456,9 @@ class FastMCPProvider(Provider):
         Wraps each tool as a FastMCPProviderTool that delegates execution to
         the nested server's middleware.
         """
-        raw_tools = await self.server.list_tools()
+        raw_tools = await self.server.list_tools(
+            run_middleware=not _skip_list_middleware.get()
+        )
         return [FastMCPProviderTool.wrap(self.server, t) for t in raw_tools]
 
     async def _get_tool(
@@ -505,7 +523,9 @@ class FastMCPProvider(Provider):
         Wraps each resource as a FastMCPProviderResource that delegates reading
         to the nested server's middleware.
         """
-        raw_resources = await self.server.list_resources()
+        raw_resources = await self.server.list_resources(
+            run_middleware=not _skip_list_middleware.get()
+        )
         return [FastMCPProviderResource.wrap(self.server, r) for r in raw_resources]
 
     async def _get_resource(
@@ -536,7 +556,9 @@ class FastMCPProvider(Provider):
         Returns FastMCPProviderResourceTemplate instances that create
         FastMCPProviderResources when materialized.
         """
-        raw_templates = await self.server.list_resource_templates()
+        raw_templates = await self.server.list_resource_templates(
+            run_middleware=not _skip_list_middleware.get()
+        )
         return [
             FastMCPProviderResourceTemplate.wrap(self.server, t) for t in raw_templates
         ]
@@ -569,7 +591,9 @@ class FastMCPProvider(Provider):
         Returns FastMCPProviderPrompt instances that delegate rendering to the
         wrapped server's middleware.
         """
-        raw_prompts = await self.server.list_prompts()
+        raw_prompts = await self.server.list_prompts(
+            run_middleware=not _skip_list_middleware.get()
+        )
         return [FastMCPProviderPrompt.wrap(self.server, p) for p in raw_prompts]
 
     async def _get_prompt(

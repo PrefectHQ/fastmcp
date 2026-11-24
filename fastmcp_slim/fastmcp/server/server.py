@@ -106,6 +106,7 @@ from fastmcp.server.providers.addressing import (
 )
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.providers.base import hashed_lookup_target
+from fastmcp.server.providers.fastmcp_provider import skip_list_middleware
 from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
     ToolTransform,
@@ -1166,7 +1167,8 @@ class FastMCP(
         # found a hidden component that may have a shown twin; skip listing.
         if version is not None and tool is None:
             return None
-        candidates = [t for t in await super().list_tools() if t.name == name]
+        with skip_list_middleware():
+            candidates = [t for t in await super().list_tools() if t.name == name]
         # During a hashed lookup, only versions of the identity being looked
         # up qualify; another tool listed under the same name does not.
         found = hashed_lookup_target(self)
@@ -1323,7 +1325,10 @@ class FastMCP(
         # found a hidden component that may have a shown twin; skip listing.
         if version is not None and hidden is None:
             return None, True
-        candidates = [r for r in await super().list_resources() if str(r.uri) == uri]
+        with skip_list_middleware():
+            candidates = [
+                r for r in await super().list_resources() if str(r.uri) == uri
+            ]
         if hidden is not None and (twin := await _shown_twin(hidden, candidates)):
             return twin, True
         if version is not None:
@@ -1461,11 +1466,12 @@ class FastMCP(
         # found a hidden component that may have a shown twin; skip listing.
         if version is not None and template is None:
             return None
-        candidates = [
-            t
-            for t in await super().list_resource_templates()
-            if t.matches(uri) is not None
-        ]
+        with skip_list_middleware():
+            candidates = [
+                t
+                for t in await super().list_resource_templates()
+                if t.matches(uri) is not None
+            ]
         if template is not None and (twin := await _shown_twin(template, candidates)):
             return twin
         if version is not None:
@@ -1590,7 +1596,8 @@ class FastMCP(
         # found a hidden component that may have a shown twin; skip listing.
         if version is not None and prompt is None:
             return None
-        candidates = [p for p in await super().list_prompts() if p.name == name]
+        with skip_list_middleware():
+            candidates = [p for p in await super().list_prompts() if p.name == name]
         if prompt is not None and (twin := await _shown_twin(prompt, candidates)):
             return twin
         if version is not None:
