@@ -46,7 +46,14 @@ from pathlib import Path
 
 # In the image the feed script sits next to this file; in the repo, one level up.
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from triage_floor_feed import NSID, REPO, to_ci, to_event, to_run  # noqa: E402
+from triage_floor_feed import (  # noqa: E402
+    NSID,
+    REPO,
+    to_ci,
+    to_event,
+    to_run,
+    to_stage,
+)
 
 MAX_BODY = 5 * 1024 * 1024  # GitHub caps webhook payloads at 25MB; ours are small
 # GitHub event names the feed script knows how to turn into records
@@ -222,7 +229,12 @@ def publish(name: str, delivery: str, payload: dict) -> str:
     if name == "workflow_run":
         ci = to_ci(payload)
         if ci is None:
-            return "nothing to show"
+            # a run on a PR branch becomes a "checks" event for that PR
+            event = to_event(name, payload, datetime.now(UTC))
+            if event is None:
+                return "nothing to show"
+            write(f"{NSID}.event", rkey_for(delivery), event)
+            return f"checks #{event.get('number', '')} {event.get('conclusion', '')}"
         rkey, record = ci
         if not write(f"{NSID}.ci", rkey, record, newer_only=True):
             return "older than what is stored"
@@ -235,7 +247,15 @@ def publish(name: str, delivery: str, payload: dict) -> str:
 
 
 def publish_run(body: dict) -> str:
-    """Write the floor.run record for one Prefect flow-run state change."""
+    """Write the floor record for one Prefect call: a flow-run state change, or a
+    triage stage outcome."""
+    if body.get("event") == "fastmcp.triage.stage":
+        stage = to_stage(body)
+        if stage is None:
+            return "nothing to show"
+        rkey, record = stage
+        write(f"{NSID}.event", rkey, record)
+        return f"stage {record['stage']} #{record['number']}"
     run = to_run(body)
     if run is None:
         return "nothing to show"

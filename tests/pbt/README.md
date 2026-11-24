@@ -19,8 +19,10 @@ bugs (mutants) show it can fail.
 | `test_openapi.py` | an OpenAPI tool sends the method, path, query, headers and body its spec describes, and returns the response |
 | `test_oauth_proxy_machine.py` | state machine over the OAuth proxy against a fake upstream: codes are single use, refresh tokens are client-bound, revoked tokens stay dead |
 | `test_auth_url_guards.py` | the URL guards in front of the OAuth proxy: an IPv6 spelling never unblocks a blocked IPv4, a validated URL dials where it was validated, a redirect pattern match lands on the pattern's host by every parser, an exact pattern matches only itself, client redirects carry each parameter once, CIMD scopes never widen the server's |
+| `test_middleware.py` | `AuthMiddleware` lists only what a caller can call and names every scope a denial still needs; `ResponseCachingMiddleware` answers like no cache for every caller, version and argument; both rate limiters admit no more than their limit under a fake clock |
+| `test_elicitation.py` | a form `ctx.elicit()` requests is one the MCP spec's primitive shapes describe, and what the user fills in reaches the server as the value they chose |
+| `test_openapi_params.py` | path, header, cookie and object query parameters, under drawn `style`/`explode`, read back as sent by a decoder written from the OpenAPI rules |
 | `mutants.py` | planted bugs and their catch rate across seeds (not collected by pytest) |
-| `FINDINGS.md` | every finding, written before it is fixed: property, minimal case, reachability, cross-SDK case table |
 
 ## profiles
 
@@ -69,7 +71,7 @@ uv run python -m tests.pbt.mutants uri_template
 ```
 
 `mutants.py` takes target names (`uri_template`, `resource_read`,
-`schema_fixes`, `components`, `auth_guards`, …), applies each exact string swap to the source,
+`schema_fixes`, `components`, `auth_guards`, `middleware`, `elicitation`, `openapi_params`, …), applies each exact string swap to the source,
 counts how many of ten seeds fail, and restores the file. A mutant whose
 anchor is not in the tree (one that undoes a fix not yet merged) is skipped;
 if every requested mutant is skipped the run exits non-zero, since nothing was
@@ -77,8 +79,12 @@ measured.
 
 ## known findings
 
-Open findings are skipped by name so a run still stops on anything new. The
-JSON Schema ones (`F1`, `F2`, `F3`, `F5`) are skipped only while a probe still
-reproduces them, so the same harness checks a fix as soon as it lands; a
-mutant that undoes a fix sets `PBT_ASSUME_FIXED` so the probe does not mistake
-it for the open bug. Each name points to an entry in `FINDINGS.md`.
+Every new bug a property finds is a GitHub issue that says "Found by
+property-based testing", with the minimal case and a cross-SDK check. Bugs
+found before that were fixed directly, and their fix PR carries the record.
+There is no findings file. A shape with a known finding is skipped by its issue or
+fix number (`still_open("#6690", probe)`, `event("known: #6690")`), only
+while the probe still reproduces it, so the same harness checks a fix as soon
+as it lands and a run still stops on anything new. A mutant that undoes a fix
+sets `PBT_ASSUME_FIXED` to that number so the probe does not mistake it for
+the open bug.

@@ -48,6 +48,30 @@ def excerpt(body: str | None) -> str | None:
     return text if len(text) <= 160 else text[:159].rstrip() + "…"
 
 
+CLOSING_REF = re.compile(
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?:\s*:\s*|\s+)#(\d+)", re.IGNORECASE
+)
+
+
+def linked_issues(body: str | None) -> list[int]:
+    """Issue numbers a PR body closes with a GitHub closing keyword."""
+    return sorted({int(n) for n in CLOSING_REF.findall(body or "")})
+
+
+def size(pull: dict) -> dict:
+    """A pull request's diff size, from the fields GitHub sends on PR events."""
+    fields = {
+        "additions": "additions",
+        "deletions": "deletions",
+        "files": "changed_files",
+    }
+    return {
+        key: pull[name]
+        for key, name in fields.items()
+        if isinstance(pull.get(name), int)
+    }
+
+
 def to_event(name: str, payload: dict, now: datetime) -> dict | None:
     """One GitHub webhook event -> one floor event record, or None to skip it."""
     action = payload.get("action", "")
@@ -67,16 +91,36 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
     if name in {"issues", "pull_request", "pull_request_target"}:
         if action == "closed":
             kind = "merged" if thing.get("merged") else "closed"
+            base["reason"] = thing.get("state_reason")
         elif action in {"opened", "reopened"}:
-            kind = "opened"
+            kind = action
+            base["association"] = thing.get("author_association")
+            if base["pr"]:
+                base["links"] = linked_issues(thing.get("body")) or None
+                base.update(size(thing))
         elif action == "labeled":
             label = (payload.get("label") or {}).get("name", "")
             kind = "gated" if label == GATE_LABEL else "labeled"
             base["label"] = label
+        elif action == "unlabeled":
+            label = (payload.get("label") or {}).get("name", "")
+            kind = "ungated" if label == GATE_LABEL else "unlabeled"
+            base["label"] = label
         elif action == "ready_for_review":
             kind = "updated"
+        elif action == "converted_to_draft":
+            kind = "drafted"
         elif action == "synchronize":
             kind = "pushed"
+            base.update(size(thing))
+        elif action == "review_requested":
+            kind = "review_requested"
+            reviewer = payload.get("requested_reviewer") or {}
+            team = payload.get("requested_team") or {}
+            base["reviewer"] = reviewer.get("login") or team.get("slug")
+        elif action in {"assigned", "unassigned"}:
+            kind = action
+            base["assignee"] = (payload.get("assignee") or {}).get("login")
     elif name == "issue_comment" and action == "created":
         kind = "botcomment" if base["bot"] else "comment"
         base["excerpt"] = excerpt((payload.get("comment") or {}).get("body"))
@@ -89,6 +133,21 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
         base["author"] = (thing.get("user") or {}).get("login", "")
         if review.get("state"):
             base["state"] = review["state"].lower()
+    elif name == "workflow_run" and action == "completed":
+        run = payload.get("workflow_run") or {}
+        # fork PRs arrive with an empty pull_requests list, so only same-repo
+        # PRs get a checks event
+        pulls = run.get("pull_requests") or []
+        if run.get("event") in {"pull_request", "pull_request_target"} and pulls:
+            kind = "checks"
+            base.update(
+                number=pulls[0].get("number"),
+                title=(run.get("display_title") or "")[:300],
+                pr=True,
+                url=run.get("html_url", ""),
+                workflow=(run.get("name") or "")[:100],
+                conclusion=run.get("conclusion"),
+            )
     elif name == "release" and action == "published":
         release = payload.get("release") or {}
         kind = "release"
@@ -217,6 +276,43 @@ def to_run(body: dict) -> tuple[str, dict] | None:
     return rkey, {k: v for k, v in record.items() if v is not None}
 
 
+TRIAGE_STAGES = {"assess", "reproduce", "verify"}
+STAGE_VALUE = re.compile(r"[a-z][a-z0-9_]{0,39}")
+
+
+def to_stage(body: dict) -> tuple[str, dict] | None:
+    """A fastmcp.triage.stage Prefect event -> (rkey, floor.event of kind "stage").
+
+    The event fires once per item when finalize records its outcome. Only the
+    number and the enum fields go out; anything that is not a short lowercase
+    token is dropped, so no free text reaches the public record.
+    """
+    payload = body.get("payload")
+    event_id = str(body.get("id") or "")
+    at = stamp(body.get("occurred"))
+    if body.get("event") != "fastmcp.triage.stage" or not isinstance(payload, dict):
+        return None
+    number = payload.get("number")
+    if not isinstance(number, int) or not 0 < number < 10**6:
+        return None
+    if payload.get("stage") not in TRIAGE_STAGES or not at:
+        return None
+    if not re.fullmatch(r"[0-9a-f-]{36}", event_id):
+        return None
+    record = {
+        "$type": f"{NSID}.event",
+        "kind": "stage",
+        "number": number,
+        "stage": payload["stage"],
+        "createdAt": at,
+    }
+    for key in ("decision", "outcome", "destination"):
+        value = payload.get(key)
+        if isinstance(value, str) and STAGE_VALUE.fullmatch(value):
+            record[key] = value
+    return "st" + event_id.replace("-", ""), record
+
+
 def gh(path: str, *, paginate: bool = False, timeout: int = 60):
     command = ["gh", "api", path]
     if paginate:
@@ -237,6 +333,7 @@ def slim(item: dict) -> dict:
         "draft": bool(item.get("draft")),
         "bot": is_bot(item.get("user")),
         "a": (item.get("user") or {}).get("login", ""),
+        "as": item.get("author_association", ""),
         "labels": labels[:8],
         "created": item["created_at"],
         "updated": item["updated_at"],

@@ -191,13 +191,30 @@ def test_ci_run_on_main_is_one_record_that_only_moves_forward(receiver):
     assert len(pds.puts()) == 1
 
 
-def test_ci_off_main_or_from_prs_is_ignored(receiver):
+def test_ci_off_main_without_a_pr_is_ignored(receiver):
     post, pds = receiver
     branch = ci_run("completed", "2026-11-23T07:09:00Z", head_branch="fix")
-    pr = ci_run("completed", "2026-11-23T07:09:00Z", event="pull_request")
+    fork = ci_run("completed", "2026-11-23T07:09:00Z", event="pull_request")
     assert post("workflow_run", branch)[1] == "nothing to show"
-    assert post("workflow_run", pr)[1] == "nothing to show"
+    assert post("workflow_run", fork)[1] == "nothing to show"
     assert pds.puts() == []
+
+
+def test_finished_ci_on_a_pr_is_a_checks_event(receiver):
+    post, pds = receiver
+    run = ci_run(
+        "completed",
+        "2026-11-23T07:09:00Z",
+        head_branch="fix",
+        event="pull_request",
+        pull_requests=[{"number": 42}],
+    )
+    assert post("workflow_run", run, delivery="p1") == (202, "checks #42 failure")
+    (put,) = pds.puts()
+    assert put["collection"] == "io.prefect.fastmcp.floor.event"
+    assert put["record"]["kind"] == "checks"
+    assert put["record"]["workflow"] == "Tests"
+    assert put["record"]["pr"] is True
 
 
 RUN = {
@@ -247,6 +264,41 @@ def test_prefect_run_needs_the_token_and_publishes_only_safe_fields(
     assert post_prefect(post, plan, token="tok")[0] == 202
     other = {**RUN, "flow": "someone-elses-flow"}
     assert post_prefect(post, other, token="tok")[1] == "nothing to show"
+
+
+STAGE_PAYLOAD = {
+    "number": 6712,
+    "stage": "reproduce",
+    "decision": "bug",
+    "outcome": "not_reproduced",
+    "destination": "Evidence needed: see the log",
+}
+STAGE = {
+    "event": "fastmcp.triage.stage",
+    "id": "1c2d3e4f-1111-4222-8333-444455556666",
+    "occurred": "2026-11-24T06:00:00+00:00",
+    "payload": STAGE_PAYLOAD,
+}
+
+
+def test_triage_stage_outcome_is_a_stage_event_with_enum_fields_only(
+    receiver, monkeypatch
+):
+    post, pds = receiver
+    monkeypatch.setenv("PREFECT_TOKEN", "tok")
+    assert post_prefect(post, STAGE, token="tok") == (202, "stage reproduce #6712")
+    (put,) = pds.puts()
+    assert put["collection"] == "io.prefect.fastmcp.floor.event"
+    assert put["rkey"] == "st1c2d3e4f111142228333444455556666"
+    record = put["record"]
+    assert (record["kind"], record["outcome"], record["decision"]) == (
+        "stage",
+        "not_reproduced",
+        "bug",
+    )
+    assert "destination" not in record  # free text is dropped
+    unknown = {**STAGE, "payload": {**STAGE_PAYLOAD, "stage": "deploy"}}
+    assert post_prefect(post, unknown, token="tok")[1] == "nothing to show"
 
 
 def post_prefect(post, payload: dict, token: str | None):

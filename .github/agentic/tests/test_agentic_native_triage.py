@@ -310,3 +310,65 @@ class SimpleNamespaceArtifact:
     def __init__(self, data):
         self.data = data
         self.id = "stored-id"
+
+
+def test_finalize_announces_the_stage_its_branch_handled(monkeypatch):
+    from types import SimpleNamespace
+
+    from flows import agentic_triage_nodes as nodes
+
+    announced = []
+    monkeypatch.setattr(nodes, "redirect_unadmitted", lambda _, output: output)
+    monkeypatch.setattr(nodes, "assessed_item", lambda *_: None)
+    monkeypatch.setattr(nodes, "record", lambda *_: None)
+    monkeypatch.setattr(nodes, "current_run", lambda: None)
+    monkeypatch.setattr(nodes, "announce_stage", lambda *args: announced.append(args))
+    ref = SimpleNamespace(owner=uuid4(), key="item")
+    admission = SimpleNamespace(
+        requested=SimpleNamespace(issue_number=6692),
+        group=SimpleNamespace(base_sha="base"),
+    )
+
+    def finalize(output, **kwargs):
+        monkeypatch.setattr(nodes, "resolve_assessment", lambda *_: output)
+        nodes.finalize(ref, admission, uuid4(), None, **kwargs)
+        return announced.pop()
+
+    reproduced = {"decision": "reproduced", "base_sha": "base"}
+    monkeypatch.setattr(nodes, "selected_output", lambda *_: ("reproduce", reproduced))
+    monkeypatch.setattr(
+        nodes.Reproduction,
+        "model_validate",
+        classmethod(lambda cls, value: SimpleNamespace(model_dump=lambda **_: value)),
+    )
+    assert finalize(("reproduce", {"decision": "reproduce"})) == (
+        6692,
+        {
+            "stage": "reproduce",
+            "decision": "reproduce",
+            "outcome": "reproduced",
+            "destination": "evidence",
+        },
+    )
+    review = {"status": "verification_recorded", "verification": []}
+    assert finalize(
+        ("verify", {"decision": "existing_review"}),
+        verification={"review": review},
+    )[1] == {
+        "stage": "verify",
+        "decision": "existing_review",
+        "outcome": "verification_recorded",
+        "destination": "existing_review",
+    }
+    assert finalize(("record", {"decision": "maintainer"}))[1] == {
+        "stage": "assess",
+        "decision": "maintainer",
+        "outcome": None,
+        "destination": "decisions",
+    }
+    assert finalize(None)[1] == {
+        "stage": "assess",
+        "decision": None,
+        "outcome": None,
+        "destination": "operational",
+    }
