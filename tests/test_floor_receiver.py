@@ -266,17 +266,18 @@ def test_prefect_run_needs_the_token_and_publishes_only_safe_fields(
     assert post_prefect(post, other, token="tok")[1] == "nothing to show"
 
 
+STAGE_PAYLOAD = {
+    "number": 6712,
+    "stage": "reproduce",
+    "decision": "bug",
+    "outcome": "not_reproduced",
+    "destination": "Evidence needed: see the log",
+}
 STAGE = {
     "event": "fastmcp.triage.stage",
     "id": "1c2d3e4f-1111-4222-8333-444455556666",
     "occurred": "2026-11-24T06:00:00+00:00",
-    "payload": {
-        "number": 6712,
-        "stage": "reproduce",
-        "decision": "bug",
-        "outcome": "not_reproduced",
-        "destination": "Evidence needed: see the log",
-    },
+    "payload": STAGE_PAYLOAD,
 }
 
 
@@ -296,7 +297,7 @@ def test_triage_stage_outcome_is_a_stage_event_with_enum_fields_only(
         "bug",
     )
     assert "destination" not in record  # free text is dropped
-    unknown = {**STAGE, "payload": {**STAGE["payload"], "stage": "deploy"}}
+    unknown = {**STAGE, "payload": {**STAGE_PAYLOAD, "stage": "deploy"}}
     assert post_prefect(post, unknown, token="tok")[1] == "nothing to show"
 
 
