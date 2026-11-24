@@ -75,7 +75,10 @@ class EmittedEvents:
             timestamp=timestamp or datetime.now(UTC),
             meta=meta,
         )
-        await self.log.append(self.name, LoggedEvent(event, payload))
+        # A copy, so `matches` sees the payload as emitted even if the caller
+        # changes its instance afterwards, the same as the `data` delivered.
+        snapshot = payload.model_copy(deep=True)
+        await self.log.append(self.name, LoggedEvent(event, snapshot))
 
     async def wait(self, cursor: str | None, timeout: float) -> bool:
         """Wait up to `timeout` seconds for an emit after `cursor`."""
