@@ -90,6 +90,7 @@ def finalize(
     number = admission.requested.issue_number
     output = resolve_assessment(admission, parent_id)
     destination = "operational"
+    stage, outcome, decision = "assess", None, None
     result: dict = {
         "issue_number": number,
         "reason": "Assessment did not produce a usable decision",
@@ -99,6 +100,7 @@ def finalize(
         output = redirect_unadmitted(admission, output)
         assessed_item(admission, output)
         branch, assessment = output
+        decision = assessment.get("decision")
         if branch in {"record", "blocked"}:
             destination = {
                 "prune": "pruning",
@@ -108,6 +110,7 @@ def finalize(
             }.get(assessment["decision"], "decisions")
             result = {"issue_number": number, **assessment}
         elif branch == "reproduce":
+            stage = "reproduce"
             reproduced = selected_output(parent_id, observation, "reproduce")
             if reproduced is None:
                 result["reason"] = "Reproduction node did not produce evidence"
@@ -119,15 +122,19 @@ def finalize(
                 if reproduction["base_sha"] != admission.group.base_sha:
                     raise ValueError("Reproduction used a different baseline")
                 destination = reproduction_destination(reproduction["decision"])
+                outcome = reproduction["decision"]
                 result = {
                     "issue_number": number,
                     "assessment": assessment,
                     **reproduction,
                 }
         elif branch == "verify" and verification is not None:
+            stage = "verify"
             result = verification["review"]
             destination = verified_destination(result)
+            outcome = result.get("status")
         elif branch == "verify":
+            stage = "verify"
             verified = selected_output(parent_id, observation, "verify")
             if verified is None or verified[0] != "completed":
                 result["reason"] = "Contribution verification did not complete"
@@ -153,6 +160,7 @@ def finalize(
                     )
                 result = retained["result"]["review"]
                 destination = verified_destination(result)
+                outcome = result.get("status")
     final = {
         "destination": destination,
         "result": result,
@@ -161,40 +169,25 @@ def finalize(
     }
     record(ref.owner, ref.key + "-outcome", final)
     record(parent_id, ref.key + "-outcome", final)
-    announce_stage(number, stage_summary(output, result, destination))
+    announce_stage(
+        number,
+        {
+            "stage": stage,
+            "decision": decision,
+            "outcome": outcome if isinstance(outcome, str) else None,
+            "destination": destination,
+        },
+    )
     return final
 
 
-STAGES = {
-    "record": "assess",
-    "blocked": "assess",
-    "reproduce": "reproduce",
-    "verify": "verify",
-}
-
-
-def stage_summary(
-    output: tuple[str, dict] | None, result: dict, destination: str
-) -> dict:
-    """Which stage an item last went through and how it came out, for the floor.
+def announce_stage(number: int, summary: dict) -> None:
+    """Tell the floor which stage an item last went through and how it came out.
 
     Reproduce runs as a node inside the plan and verify runs inside intake, so
-    neither shows up as its own flow run; this is the only record that they ran.
-    Only stage names and enum outcomes leave: no free text from the issue.
+    neither shows up as its own flow run; finalize sets the stage in the same
+    branch that handles it. Only enum values leave: no free text from the issue.
     """
-    branch, assessment = output if output is not None else ("record", {})
-    outcome = result.get("decision") if branch == "reproduce" else None
-    if branch == "verify":
-        outcome = result.get("status")
-    return {
-        "stage": STAGES.get(branch, "assess"),
-        "decision": assessment.get("decision"),
-        "outcome": outcome if isinstance(outcome, str) else None,
-        "destination": destination,
-    }
-
-
-def announce_stage(number: int, summary: dict) -> None:
     try:
         emit_event(
             event="fastmcp.triage.stage",

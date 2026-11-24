@@ -312,31 +312,63 @@ class SimpleNamespaceArtifact:
         self.id = "stored-id"
 
 
-def test_stage_summary_says_which_stage_ran_and_how_it_came_out():
-    from flows.agentic_triage_nodes import stage_summary
+def test_finalize_announces_the_stage_its_branch_handled(monkeypatch):
+    from types import SimpleNamespace
 
-    assert stage_summary(
-        ("reproduce", {"decision": "reproduce"}), {"decision": "reproduced"}, "evidence"
-    ) == {
-        "stage": "reproduce",
-        "decision": "reproduce",
-        "outcome": "reproduced",
-        "destination": "evidence",
-    }
-    assert (
-        stage_summary(
-            ("verify", {"decision": "existing_review"}),
-            {"status": "verification_recorded"},
-            "existing_review",
-        )["outcome"]
-        == "verification_recorded"
+    from flows import agentic_triage_nodes as nodes
+
+    announced = []
+    monkeypatch.setattr(nodes, "redirect_unadmitted", lambda _, output: output)
+    monkeypatch.setattr(nodes, "assessed_item", lambda *_: None)
+    monkeypatch.setattr(nodes, "record", lambda *_: None)
+    monkeypatch.setattr(nodes, "current_run", lambda: None)
+    monkeypatch.setattr(nodes, "announce_stage", lambda *args: announced.append(args))
+    ref = SimpleNamespace(owner=uuid4(), key="item")
+    admission = SimpleNamespace(
+        requested=SimpleNamespace(issue_number=6692),
+        group=SimpleNamespace(base_sha="base"),
     )
-    assert stage_summary(
-        ("record", {"decision": "maintainer"}), {"decision": "maintainer"}, "decisions"
-    ) == {
+
+    def finalize(output, **kwargs):
+        monkeypatch.setattr(nodes, "resolve_assessment", lambda *_: output)
+        nodes.finalize(ref, admission, uuid4(), None, **kwargs)
+        return announced.pop()
+
+    reproduced = {"decision": "reproduced", "base_sha": "base"}
+    monkeypatch.setattr(nodes, "selected_output", lambda *_: ("reproduce", reproduced))
+    monkeypatch.setattr(
+        nodes.Reproduction,
+        "model_validate",
+        classmethod(lambda cls, value: SimpleNamespace(model_dump=lambda **_: value)),
+    )
+    assert finalize(("reproduce", {"decision": "reproduce"})) == (
+        6692,
+        {
+            "stage": "reproduce",
+            "decision": "reproduce",
+            "outcome": "reproduced",
+            "destination": "evidence",
+        },
+    )
+    review = {"status": "verification_recorded", "verification": []}
+    assert finalize(
+        ("verify", {"decision": "existing_review"}),
+        verification={"review": review},
+    )[1] == {
+        "stage": "verify",
+        "decision": "existing_review",
+        "outcome": "verification_recorded",
+        "destination": "existing_review",
+    }
+    assert finalize(("record", {"decision": "maintainer"}))[1] == {
         "stage": "assess",
         "decision": "maintainer",
         "outcome": None,
         "destination": "decisions",
     }
-    assert stage_summary(None, {}, "operational")["stage"] == "assess"
+    assert finalize(None)[1] == {
+        "stage": "assess",
+        "decision": None,
+        "outcome": None,
+        "destination": "operational",
+    }
