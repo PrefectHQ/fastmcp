@@ -42,6 +42,7 @@ from prefect.client.schemas.filters import (
 from prefect.client.schemas.objects import StateType
 from prefect.client.schemas.sorting import ArtifactSort
 from prefect.context import FlowRunContext
+from prefect.events.actions import RunDeployment
 
 from flows.agentic_backlog import addressed, handled_key, handoff_revision, open_pulls
 from flows.agentic_github import GitHub
@@ -128,7 +129,7 @@ def plan(
     records: Callable[[int], dict | None],
     source_sha: str,
     limit: int,
-    running: set[int] = frozenset(),
+    running: frozenset[int] | set[int] = frozenset(),
     tries: Callable[[int, str], int] = lambda number, revision: 0,
 ) -> dict:
     """Which issues to send back through intake this pass, oldest first."""
@@ -172,9 +173,9 @@ def intake_target() -> tuple[UUID, dict]:
     if len(automations) != 1 or not automations[0].enabled:
         raise ValueError(f"Expected one enabled {ISSUE_AUTOMATION} automation")
     actions = automations[0].actions
-    if len(actions) != 1 or getattr(actions[0], "type", None) != "run-deployment":
+    action = actions[0] if len(actions) == 1 else None
+    if not isinstance(action, RunDeployment) or action.deployment_id is None:
         raise ValueError(f"{ISSUE_AUTOMATION} no longer runs one deployment")
-    action = actions[0]
     parameters = action.parameters or {}
     if not {"controller_id", "runtime"} <= set(parameters):
         raise ValueError(f"{ISSUE_AUTOMATION} lost its pinned intake parameters")
