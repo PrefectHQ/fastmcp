@@ -27,9 +27,9 @@ Area = Literal[
 
 
 def _require_area(schema: dict) -> None:
-    # Retained assessments from before areas existed still validate, but the
-    # assessor must always name one: an optional or blank field is one it skips.
-    schema["required"] = [*schema.get("required", []), "area"]
+    # Retained assessments from before these fields existed still validate, but
+    # the assessor must always fill them: an optional field is one it skips.
+    schema["required"] = [*schema.get("required", []), "area", "fix_offered_by"]
     schema["properties"]["area"] = {
         "enum": list(get_args(Area)),
         "type": "string",
@@ -54,6 +54,9 @@ class Assessment(BaseModel):
     question: str = Field(max_length=2000)
     verification_prs: list[int] = Field(default_factory=list, max_length=3)
     area: Area | Literal[""] = ""
+    # Who said they have or will write a fix without a PR yet. It names who is
+    # waiting; it never changes the decision.
+    fix_offered_by: str = Field(default="", max_length=100)
 
 
 class Reproduction(BaseModel):
@@ -268,10 +271,12 @@ assigned is a separate person with no card here; never give them the reporter's 
 first claim.
 
 Check docs, history and maintainer comments before calling something a bug or an open
-question; it may already be fixed, reverted or decided. Labels and confident diagnoses are
-claims. A correct fix for a problem nobody has is not worth merging. Read later commits in
-revision_evidence before repeating an old review finding, and don't treat a diff as tests
-that ran.
+question; it may already be fixed, reverted or decided. Labels, confident diagnoses and
+proposed fixes are claims. Take the contract from the protocol, the specs FastMCP implements,
+docs and history, never from the fix the reporter proposes. When a report covers several
+cases, say for each what the contract defines and what it leaves open. A correct fix for a
+problem nobody has is not worth merging. Read later commits in revision_evidence before
+repeating an old review finding, and don't treat a diff as tests that ran.
 
 Return one decision:
 - reproduce: a credible defect in a supported contract with no existing contribution. State
@@ -282,10 +287,14 @@ Return one decision:
   Closed gate-rejected PRs are still contributions.
 - evidence_needed: one precise request that would let someone reproduce it.
 - prune: the problem may be real but isn't worth carrying; say what it would cost.
-- maintainer: a concrete product decision that docs and history don't settle, stated in
-  question. Also use it when a contributor says a fix is ready and waiting for assignment,
-  naming them, so nobody starts a competing fix.
+- maintainer: a concrete product decision that the contract, docs and history don't settle,
+  stated in question. Ask what they leave open, never whether to accept someone's proposed
+  fix.
 - skip or environment_failure, with the reason.
+
+Who will fix it never changes the decision. When someone says they have or will write a fix
+but there is no PR yet, decide as if they hadn't, and put their GitHub login in
+fix_offered_by so nobody starts a competing fix. Otherwise leave it empty.
 
 Set area to the one label that names the part of FastMCP the issue is about: auth, cli,
 client, contrib, fastmcp.json, http, mcp apps, openapi, provider, server or tasks. When
@@ -297,8 +306,10 @@ and labels owned by other workflows. Nothing you return is acted on automaticall
 uv sync, inspect the causal code and nearby tests, and run a minimal real probe. Prefer an
 existing focused test when it directly demonstrates the report. Return reproduced only
 after observing the reported failure on unchanged source for the stated supported contract.
-Supply an uncommitted regression-only git diff including new tests (git add --intent-to-add),
-the exact command, observed output and paths. For configuration/docs, execute the supported
+In contract, say for each case you ran what the spec or docs define and what they leave open;
+a fix proposed in the issue is not the contract. Supply an uncommitted regression-only git
+diff including new tests (git add --intent-to-add), the exact command, observed output and
+paths. For configuration/docs, execute the supported
 setup and include its complete probe in observed; an empty regression_patch is then allowed.
 Do not fix source yet. Installation/import/tool failures are environment_failure. If not
 reproduced, make at most one focused version/config/history check before returning evidence.

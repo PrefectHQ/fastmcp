@@ -106,6 +106,9 @@ def evidence_action(item: dict) -> str:
         prefix = "could not reproduce"
     else:
         prefix = "needs repro info"
+    offered = (item.get("assessment") or {}).get("fix_offered_by")
+    if offered:
+        prefix += f", @{offered} offered a fix"
     if not detail:
         return prefix
     return f"{prefix}: " + clip(first_sentence(detail), 70)
