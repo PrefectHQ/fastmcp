@@ -702,3 +702,49 @@ class TestParsedFunctionIntegration:
         p = ParsedFunction.from_function(MyTool())
         assert p.description == "Call-level description."
         assert p.input_schema["properties"]["x"]["description"] == "From call."
+
+
+def test_google_keyword_args():
+    def fn(query: str, *, limit: int = 10) -> str:
+        """Search the catalog.
+
+        Args:
+            query: Text to search for.
+
+        Keyword Args:
+            limit: Maximum number of results.
+        """
+        return query
+
+    parsed = parse_docstring(fn)
+
+    assert parsed.description == "Search the catalog."
+    assert parsed.parameters == {
+        "query": "Text to search for.",
+        "limit": "Maximum number of results.",
+    }
+
+
+def test_numpy_other_parameters():
+    def fn(query: str, *, timeout: int = 30) -> str:
+        """Search the catalog.
+
+        Parameters
+        ----------
+        query : str
+            Text to search for.
+
+        Other Parameters
+        ----------------
+        timeout : int
+            Maximum time to wait.
+        """
+        return query
+
+    parsed = parse_docstring(fn)
+
+    assert parsed.description == "Search the catalog."
+    assert parsed.parameters == {
+        "query": "Text to search for.",
+        "timeout": "Maximum time to wait.",
+    }

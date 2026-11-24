@@ -90,7 +90,10 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
         for section in sections:
             if section.kind == DocstringSectionKind.text and description is None:
                 description = section.value
-            elif section.kind == DocstringSectionKind.parameters:
+            elif section.kind in (
+                DocstringSectionKind.parameters,
+                DocstringSectionKind.other_parameters,
+            ):
                 for param in section.value:
                     parameters[param.name] = param.description
                 found_structured_section = True
