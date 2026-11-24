@@ -294,3 +294,45 @@ def test_an_older_run_keeps_the_newer_counts(monkeypatch):
     feed.put_day("https://pds", "did:plc:x", "t", older, {"ready": {"in": 1, "out": 0}})
     assert bodies[0]["record"]["ready"] == 9
     assert bodies[0]["record"]["flow"]["ready"] == {"in": 1, "out": 0}
+
+
+def test_pr_events_carry_size_reviewer_assignee_and_draft():
+    pull = {
+        "number": 4,
+        "title": "x",
+        "additions": 10,
+        "deletions": 2,
+        "changed_files": 3,
+    }
+    sender = {"login": "jane", "type": "User"}
+    reopened = feed.to_event(
+        "pull_request_target",
+        {"action": "reopened", "pull_request": pull, "sender": sender},
+        NOW,
+    )
+    assert reopened["kind"] == "reopened"
+    assert (reopened["additions"], reopened["deletions"], reopened["files"]) == (
+        10,
+        2,
+        3,
+    )
+    requested = {
+        "action": "review_requested",
+        "pull_request": pull,
+        "requested_team": {"slug": "maintainers"},
+        "sender": sender,
+    }
+    assert (
+        feed.to_event("pull_request_target", requested, NOW)["reviewer"]
+        == "maintainers"
+    )
+    assigned = {
+        "action": "assigned",
+        "issue": {"number": 5},
+        "assignee": {"login": "nate"},
+        "sender": sender,
+    }
+    event = feed.to_event("issues", assigned, NOW)
+    assert (event["kind"], event["assignee"]) == ("assigned", "nate")
+    drafted = {"action": "converted_to_draft", "pull_request": pull, "sender": sender}
+    assert feed.to_event("pull_request_target", drafted, NOW)["kind"] == "drafted"

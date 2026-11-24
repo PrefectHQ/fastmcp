@@ -222,7 +222,12 @@ def publish(name: str, delivery: str, payload: dict) -> str:
     if name == "workflow_run":
         ci = to_ci(payload)
         if ci is None:
-            return "nothing to show"
+            # a run on a PR branch becomes a "checks" event for that PR
+            event = to_event(name, payload, datetime.now(UTC))
+            if event is None:
+                return "nothing to show"
+            write(f"{NSID}.event", rkey_for(delivery), event)
+            return f"checks #{event.get('number', '')} {event.get('conclusion', '')}"
         rkey, record = ci
         if not write(f"{NSID}.ci", rkey, record, newer_only=True):
             return "older than what is stored"

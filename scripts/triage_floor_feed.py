@@ -58,6 +58,20 @@ def linked_issues(body: str | None) -> list[int]:
     return sorted({int(n) for n in CLOSING_REF.findall(body or "")})
 
 
+def size(pull: dict) -> dict:
+    """A pull request's diff size, from the fields GitHub sends on PR events."""
+    fields = {
+        "additions": "additions",
+        "deletions": "deletions",
+        "files": "changed_files",
+    }
+    return {
+        key: pull[name]
+        for key, name in fields.items()
+        if isinstance(pull.get(name), int)
+    }
+
+
 def to_event(name: str, payload: dict, now: datetime) -> dict | None:
     """One GitHub webhook event -> one floor event record, or None to skip it."""
     action = payload.get("action", "")
@@ -79,10 +93,11 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
             kind = "merged" if thing.get("merged") else "closed"
             base["reason"] = thing.get("state_reason")
         elif action in {"opened", "reopened"}:
-            kind = "opened"
+            kind = action
             base["association"] = thing.get("author_association")
             if base["pr"]:
                 base["links"] = linked_issues(thing.get("body")) or None
+                base.update(size(thing))
         elif action == "labeled":
             label = (payload.get("label") or {}).get("name", "")
             kind = "gated" if label == GATE_LABEL else "labeled"
@@ -93,8 +108,19 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
             base["label"] = label
         elif action == "ready_for_review":
             kind = "updated"
+        elif action == "converted_to_draft":
+            kind = "drafted"
         elif action == "synchronize":
             kind = "pushed"
+            base.update(size(thing))
+        elif action == "review_requested":
+            kind = "review_requested"
+            reviewer = payload.get("requested_reviewer") or {}
+            team = payload.get("requested_team") or {}
+            base["reviewer"] = reviewer.get("login") or team.get("slug")
+        elif action in {"assigned", "unassigned"}:
+            kind = action
+            base["assignee"] = (payload.get("assignee") or {}).get("login")
     elif name == "issue_comment" and action == "created":
         kind = "botcomment" if base["bot"] else "comment"
         base["excerpt"] = excerpt((payload.get("comment") or {}).get("body"))
@@ -107,6 +133,21 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
         base["author"] = (thing.get("user") or {}).get("login", "")
         if review.get("state"):
             base["state"] = review["state"].lower()
+    elif name == "workflow_run" and action == "completed":
+        run = payload.get("workflow_run") or {}
+        # fork PRs arrive with an empty pull_requests list, so only same-repo
+        # PRs get a checks event
+        pulls = run.get("pull_requests") or []
+        if run.get("event") in {"pull_request", "pull_request_target"} and pulls:
+            kind = "checks"
+            base.update(
+                number=pulls[0].get("number"),
+                title=(run.get("display_title") or "")[:300],
+                pr=True,
+                url=run.get("html_url", ""),
+                workflow=(run.get("name") or "")[:100],
+                conclusion=run.get("conclusion"),
+            )
     elif name == "release" and action == "published":
         release = payload.get("release") or {}
         kind = "release"
