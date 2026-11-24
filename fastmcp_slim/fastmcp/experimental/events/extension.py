@@ -5,30 +5,28 @@ Experimental: this API may change in any release without a deprecation period.
 
 from __future__ import annotations
 
-import inspect
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar, cast
 
 import anyio
 import anyio.lowlevel
 import mcp_types
-from jsonschema import Draft202012Validator
-from jsonschema.protocols import Validator
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
 from mcp.shared.inbound import (
     MCP_NAME_HEADER,
     decode_header_value,
-    find_invalid_x_mcp_header,
     validate_mcp_param_headers,
 )
 from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
-from mcp_types import HEADER_MISMATCH, INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST
+from mcp_types import HEADER_MISMATCH, INTERNAL_ERROR, INVALID_REQUEST
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
+from pydantic import BaseModel
 
 from fastmcp.experimental.events._constants import (
     EVENTS_EXTENSION_ID,
@@ -38,7 +36,6 @@ from fastmcp.experimental.events._constants import (
 )
 from fastmcp.experimental.events.models import (
     EventOccurrence,
-    EventType,
     ListEventsParams,
     ListEventsResult,
     PollEventsParams,
@@ -51,25 +48,25 @@ from fastmcp.experimental.events.models import (
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.extensions import MethodBinding, ServerExtension
 from fastmcp.server.mixins.mcp_operations import _apply_pagination
-from fastmcp.utilities.async_utils import (
-    call_sync_fn_in_threadpool,
-    is_coroutine_function,
-)
 from fastmcp.utilities.logging import get_logger
+
+if TYPE_CHECKING:
+    from fastmcp.experimental.events.log import EventLog
+    from fastmcp.experimental.events.registration import EventRegistration
 
 logger = get_logger(__name__)
 
 _EVENTS_METHOD_VERSIONS = frozenset(MODERN_PROTOCOL_VERSIONS)
 _MIN_HEARTBEAT_MS = 1_000
 _MAX_HEARTBEAT_MS = 60_000
-# A check that fails with one of these mid-stream has ended the subscription
+# A reader that fails with one of these mid-stream has ended the subscription
 # (access revoked, event type gone), so the stream is terminated, not retried.
 _TERMINAL_CODES = frozenset({NOT_FOUND, FORBIDDEN, UNSUPPORTED})
 
 
 @dataclass
 class Event:
-    """An event a check function reports.
+    """One occurrence of an event, as a reader reports it.
 
     Set `event_id` to the upstream's stable identifier whenever it has one:
     clients deduplicate on it, and a generated ID differs on every poll.
@@ -83,7 +80,7 @@ class Event:
 
 @dataclass
 class EventBatch:
-    """What a check function returns for one poll.
+    """What a reader returns for one poll.
 
     `cursor` is the position after `events`, returned to the client and passed
     back on its next poll. Leave it `None` for an event type with no replay.
@@ -98,7 +95,7 @@ class EventBatch:
 
 @dataclass(frozen=True)
 class EventPoll:
-    """One `events/poll` request, as a check function receives it.
+    """One `events/poll` request, as a reader receives it.
 
     A `cursor` of `None` means "start from now": return no events and the
     current position.
@@ -110,14 +107,9 @@ class EventPoll:
     max_events: int | None = None
 
 
-EventCheck: TypeAlias = Callable[[EventPoll], EventBatch | Awaitable[EventBatch]]
-
-
-@dataclass(frozen=True)
-class _Registration:
-    descriptor: EventType
-    check: EventCheck
-    validator: Validator | None
+EventReader: TypeAlias = Callable[[EventPoll], EventBatch | Awaitable[EventBatch]]
+EventReaderT = TypeVar("EventReaderT", bound=EventReader)
+ModelT = TypeVar("ModelT", bound=type[BaseModel])
 
 
 class EventsExtension(ServerExtension):
@@ -126,86 +118,182 @@ class EventsExtension(ServerExtension):
     Experimental: this API may change in any release without a deprecation
     period.
 
-    Each event type is one check function that reports what happened since a
-    cursor. `events/poll` calls it once per request, so the server keeps no
-    subscription state. `events/stream` calls it on a loop for as long as the
-    client holds the request open; pass `push=False` on a host that cannot
-    keep a response stream open.
+    Each event type is a Pydantic model: its fields are the payload, its
+    docstring the description, and the keyword parameters of its optional
+    `for_subscription` method the subscription arguments. Its events come
+    from `emit()`, kept in a log that poll and push read from, or from a
+    reader that reads an upstream's history from a cursor. `events/poll`
+    answers each request on its own, so the server keeps no subscription
+    state; `events/stream` holds the request open and sends events as they
+    arrive. Pass `push=False` on a host that cannot keep a response stream
+    open.
 
     ```python
-    from fastmcp import FastMCP
-    from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
+    from pydantic import BaseModel
 
-    mcp = FastMCP("alerts")
+    from fastmcp import FastMCP
+    from fastmcp.experimental.events import EventsExtension
+
+    mcp = FastMCP("ci")
     events = EventsExtension()
     mcp.add_extension(events)
 
 
-    @events.event(name="alert.fired", description="An alert fired")
-    async def alert_fired(poll: EventPoll) -> EventBatch:
-        if poll.cursor is None:
-            return EventBatch(cursor=await newest_alert_id())
-        alerts = await alerts_after(poll.cursor)
-        return EventBatch(
-            events=[Event(data=a.payload, event_id=a.id) for a in alerts],
-            cursor=alerts[-1].id if alerts else poll.cursor,
-        )
+    @events.event("build.finished")
+    class BuildFinished(BaseModel):
+        "A CI build finished."
+
+        repo: str
+        status: str
+
+        def for_subscription(self, repo: str | None = None) -> "BuildFinished | None":
+            return self if repo is None or self.repo == repo else None
+
+
+    async def on_build_done(repo: str, status: str) -> None:
+        await events.emit(BuildFinished(repo=repo, status=status))
     ```
     """
 
     identifier = EVENTS_EXTENSION_ID
 
-    def __init__(self, *, poll_interval_ms: int = 30_000, push: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        poll_interval_ms: int = 30_000,
+        push: bool = True,
+        emit_buffer: int = 1_000,
+        log: EventLog | None = None,
+    ) -> None:
+        """
+        Args:
+            poll_interval_ms: How long clients wait between polls, and how
+                often a push stream re-runs a reader.
+            push: Whether to offer `events/stream`.
+            emit_buffer: How many emitted events per type the default
+                in-memory log keeps. Ignored when `log` is given.
+            log: Where emitted events are kept. Defaults to an
+                `InMemoryEventLog`.
+        """
+        from fastmcp.experimental.events.log import InMemoryEventLog
+
         if poll_interval_ms < 0:
             raise ValueError("poll_interval_ms must not be negative")
         self._poll_interval_ms = poll_interval_ms
         self._push = push
-        self._registrations: dict[str, _Registration] = {}
+        self._log = log if log is not None else InMemoryEventLog(emit_buffer)
+        self._registrations: dict[str, EventRegistration] = {}
+        self._models: dict[type[BaseModel], EventRegistration] = {}
 
     def event(
         self,
-        *,
         name: str,
+        *,
         description: str | None = None,
-        input_schema: dict[str, Any] | None = None,
-        payload_schema: dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
-    ) -> Callable[[EventCheck], EventCheck]:
-        """Register a check function as an event type.
+    ) -> Callable[[ModelT], ModelT]:
+        """Declare an event type from a Pydantic model.
+
+        The model's fields are the payload schema, its docstring the
+        description, and the keyword parameters of its optional
+        `for_subscription` method the subscription arguments, validated
+        before anything is read. `for_subscription` runs for each event and
+        subscription, and returns the event as is, a changed copy, or `None`
+        to skip it.
+
+        Emit instances with `emit()`, or register a `reader()` to serve the
+        type from an upstream's history instead.
 
         Args:
             name: Event type name clients subscribe to.
-            description: What the event means and when it fires.
-            input_schema: JSON Schema for subscription arguments. Polls whose
-                arguments do not match are rejected before the check runs.
-            payload_schema: JSON Schema for each event's `data`.
+            description: What the event means and when it fires. Defaults to
+                the model's docstring.
             meta: Optional `_meta` for the listing.
         """
         if name in self._registrations:
             raise ValueError(f"An event named {name!r} is already registered.")
-        validator = None
-        if input_schema is not None:
-            Draft202012Validator.check_schema(input_schema)
-            validator = Draft202012Validator(input_schema)
-            reason = find_invalid_x_mcp_header(input_schema)
-            if reason is not None:
-                raise ValueError(
-                    f"Event {name!r} has an invalid x-mcp-header: {reason}"
-                )
-        descriptor = EventType(
-            name=name,
-            description=description,
-            delivery=["poll", "push"] if self._push else ["poll"],
-            input_schema=input_schema,
-            payload_schema=payload_schema,
-            meta=meta,
-        )
 
-        def register(check: EventCheck) -> EventCheck:
-            self._registrations[name] = _Registration(descriptor, check, validator)
-            return check
+        def register(model: ModelT) -> ModelT:
+            from fastmcp.experimental.events.registration import EventRegistration
+
+            if name in self._registrations:
+                raise ValueError(f"An event named {name!r} is already registered.")
+            if model in self._models:
+                raise ValueError(
+                    f"{model.__name__} is already the event "
+                    f"{self._models[model].name!r}."
+                )
+            registration = EventRegistration(
+                name, model, self._log, description=description, meta=meta
+            )
+            self._registrations[name] = self._models[model] = registration
+            return model
 
         return register
+
+    def reader(self, model: type[BaseModel]) -> Callable[[EventReaderT], EventReaderT]:
+        """Serve a model's event type from an upstream's history.
+
+        The decorated function receives an `EventPoll` and returns an
+        `EventBatch` of the events after the poll's cursor, with each event's
+        `data` shaped like the model. A `cursor` of `None` asks for no events,
+        only the current position. FastMCP validates the subscription
+        arguments first and passes them in `poll.arguments`, so the reader can
+        narrow an expensive upstream query; it then checks every event against
+        the model and applies `for_subscription`, so the reader only reads.
+
+        A type with a reader is not emitted into: its history is the
+        upstream's.
+        """
+        registration = self._registration_for(model)
+
+        def register(read: EventReaderT) -> EventReaderT:
+            if registration.reader is not None:
+                raise ValueError(
+                    f"The event {registration.name!r} already has a reader."
+                )
+            registration.reader = read
+            return read
+
+        return register
+
+    async def emit(
+        self,
+        payload: BaseModel,
+        *,
+        event_id: str | None = None,
+        timestamp: datetime | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        """Record that an event happened, for every subscription that wants it.
+
+        `payload` is an instance of a model registered with `event()`. Pass the
+        upstream's stable identifier as `event_id` when there is one, so a
+        client that sees the same occurrence twice can drop the repeat.
+        Open push streams for the event type wake at once; polls see it on
+        their next request.
+        """
+        registration = self._registration_for(type(payload))
+        if registration.reader is not None:
+            raise ValueError(
+                f"The event {registration.name!r} is read from an upstream; "
+                "emit() is for event types without a reader."
+            )
+        await registration.emit(
+            payload, event_id=event_id, timestamp=timestamp, meta=meta
+        )
+
+    def _registration_for(self, model: type[BaseModel]) -> EventRegistration:
+        registration = self._models.get(model)
+        if registration is None:
+            raise ValueError(
+                f"{model.__name__} is not a registered event model; "
+                "decorate it with events.event() first."
+            )
+        return registration
+
+    def lifespan(self) -> AbstractAsyncContextManager[None]:
+        return self._log.lifespan()
 
     def methods(self) -> Sequence[MethodBinding]:
         return (
@@ -235,7 +323,7 @@ class EventsExtension(ServerExtension):
         params: ListEventsParams,
     ) -> ListEventsResult:
         descriptors = sorted(
-            (r.descriptor for r in self._registrations.values()),
+            (r.descriptor(push=self._push) for r in self._registrations.values()),
             key=lambda descriptor: descriptor.name,
         )
         page, next_cursor = _apply_pagination(
@@ -245,7 +333,7 @@ class EventsExtension(ServerExtension):
 
     def _subscription(
         self, name: str, arguments: dict[str, Any] | None
-    ) -> tuple[_Registration, dict[str, Any]]:
+    ) -> tuple[EventRegistration, dict[str, Any]]:
         """The event type and arguments a poll or stream request names."""
         # The SDK checks Mcp-Name only for the core protocol's named methods.
         headers = get_http_headers(include_all=True)
@@ -262,30 +350,12 @@ class EventsExtension(ServerExtension):
                 data={"kind": "event"},
             )
         arguments = arguments or {}
-        schema = registration.descriptor.input_schema
+        schema = registration.input_schema
         if headers and schema is not None:
             rejection = validate_mcp_param_headers(schema, arguments, headers)
             if rejection is not None:
                 raise MCPError(code=HEADER_MISMATCH, message=rejection.message)
-        if registration.validator is not None:
-            error = next(iter(registration.validator.iter_errors(arguments)), None)
-            if error is not None:
-                raise MCPError(
-                    code=INVALID_PARAMS,
-                    message=f"Invalid arguments for {name}: {error.message}",
-                )
         return registration, arguments
-
-    async def _check(self, registration: _Registration, poll: EventPoll) -> EventBatch:
-        if is_coroutine_function(registration.check):
-            batch = registration.check(poll)
-        else:
-            # Like sync tools, a sync check runs off the event loop so that
-            # blocking I/O in it does not stall every other request.
-            batch = await call_sync_fn_in_threadpool(registration.check, poll)
-        if inspect.isawaitable(batch):
-            batch = await batch
-        return batch
 
     def _occurrence(self, name: str, event: Event) -> EventOccurrence:
         return EventOccurrence(
@@ -302,14 +372,13 @@ class EventsExtension(ServerExtension):
         params: PollEventsParams,
     ) -> PollEventsResult:
         registration, arguments = self._subscription(params.name, params.arguments)
-        batch = await self._check(
-            registration,
+        batch = await registration.poll(
             EventPoll(
                 arguments=arguments,
                 cursor=params.cursor,
                 max_age_ms=params.max_age_ms,
                 max_events=params.max_events,
-            ),
+            )
         )
         return PollEventsResult(
             events=[self._occurrence(params.name, event) for event in batch.events],
@@ -328,12 +397,13 @@ class EventsExtension(ServerExtension):
         context: ServerRequestContext[Any, Any],
         params: StreamEventsParams,
     ) -> StreamEventsResult:
-        """Serve one push subscription by running its check function on a loop.
+        """Serve one push subscription until the client goes away.
 
-        The request stays open until the client goes away, which cancels this
-        handler, or until a check fails with an error that ends the
+        After each batch the stream waits for an emit or the poll interval,
+        then reads again. It ends when the client goes away, which cancels
+        this handler, or when a read fails with an error that ends the
         subscription (`NotFound`, `Forbidden`, `Unsupported`), which is sent as
-        `notifications/events/terminated`. Between checks the stream carries a
+        `notifications/events/terminated`. Between reads the stream carries a
         heartbeat whenever the granted interval passes with nothing else sent.
         """
         if not self._push:
@@ -380,11 +450,10 @@ class EventsExtension(ServerExtension):
             )
             last_sent = time.monotonic()
 
-        batch = await self._check(
-            registration,
+        batch = await registration.poll(
             EventPoll(
                 arguments=arguments, cursor=params.cursor, max_age_ms=params.max_age_ms
-            ),
+            )
         )
         # A backlog's cursor is the position after all of it, so a client that
         # stops partway must still hold the position it asked from.
@@ -397,7 +466,7 @@ class EventsExtension(ServerExtension):
             heartbeat_ms=heartbeat_ms,
         )
         while True:
-            # A check that never awaits must still let cancellation and other
+            # A reader that never awaits must still let cancellation and other
             # requests in, whatever interval it asks for.
             await anyio.lowlevel.checkpoint()
             for position, event in enumerate(batch.events, start=1):
@@ -426,10 +495,11 @@ class EventsExtension(ServerExtension):
                     if until_heartbeat <= 0:
                         await send("heartbeat", cursor=cursor)
                         continue
-                    await anyio.sleep(min(remaining, until_heartbeat))
+                    if await registration.wait(cursor, min(remaining, until_heartbeat)):
+                        break
             try:
-                batch = await self._check(
-                    registration, EventPoll(arguments=arguments, cursor=cursor)
+                batch = await registration.poll(
+                    EventPoll(arguments=arguments, cursor=cursor)
                 )
             except MCPError as error:
                 payload = error.error.model_dump(exclude_none=True)
@@ -439,7 +509,7 @@ class EventsExtension(ServerExtension):
                 await send("error", error=payload)
                 batch = EventBatch(cursor=cursor)
             except Exception:
-                logger.exception("Check for event %r failed", params.name)
+                logger.exception("Reading event %r failed", params.name)
                 await send(
                     "error", error={"code": INTERNAL_ERROR, "message": "Internal error"}
                 )

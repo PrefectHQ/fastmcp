@@ -7,6 +7,7 @@ import anyio
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types import HEADER_MISMATCH, INVALID_PARAMS, METHOD_NOT_FOUND
+from pydantic import BaseModel
 from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
@@ -42,8 +43,22 @@ from fastmcp.utilities.tests import run_server_async
 FIRED_AT = datetime(2026, 11, 14, 2, 17, 30, tzinfo=UTC)
 
 
+class AlertFired(BaseModel):
+    """An alert fired"""
+
+    key: str
+    severity: str
+
+    def for_subscription(self, severity: str | None = None) -> AlertFired | None:
+        return self if severity is None or self.severity == severity else None
+
+
+class Tick(BaseModel):
+    """A tick"""
+
+
 def make_server(log: list[dict] | None = None, **extension_kwargs) -> FastMCP:
-    """A server with one event type backed by an append-only log.
+    """A server with one event type read from an append-only log.
 
     The cursor is the number of log entries the client has seen.
     """
@@ -51,34 +66,33 @@ def make_server(log: list[dict] | None = None, **extension_kwargs) -> FastMCP:
     server = FastMCP("alerts")
     events = EventsExtension(**extension_kwargs)
     server.add_extension(events)
+    events.event("alert.fired")(AlertFired)
 
-    @events.event(
-        name="alert.fired",
-        description="An alert fired",
-        input_schema={
-            "type": "object",
-            "properties": {"severity": {"type": "string"}},
-            "additionalProperties": False,
-        },
-        payload_schema={"type": "object", "properties": {"key": {"type": "string"}}},
-    )
-    async def alert_fired(poll: EventPoll) -> EventBatch:
+    @events.reader(AlertFired)
+    async def read_alerts(poll: EventPoll) -> EventBatch:
         if poll.cursor is None:
             return EventBatch(cursor=str(len(log)))
         start = int(poll.cursor)
-        severity = poll.arguments.get("severity")
         end = len(log) if poll.max_events is None else start + poll.max_events
         return EventBatch(
             events=[
                 Event(data=entry, event_id=entry["key"], timestamp=FIRED_AT)
                 for entry in log[start:end]
-                if severity is None or entry["severity"] == severity
             ],
             cursor=str(min(end, len(log))),
             has_more=end < len(log),
         )
 
     return server
+
+
+def tick_server(**extension_kwargs) -> tuple[FastMCP, EventsExtension]:
+    """A server with a `tick` event type, for a test to give a reader."""
+    server = FastMCP("ticks")
+    events = EventsExtension(**extension_kwargs)
+    server.add_extension(events)
+    events.event("tick")(Tick)
+    return server, events
 
 
 def events_client(server: FastMCP) -> Client:
@@ -100,8 +114,10 @@ async def test_list_events_describes_delivery_and_schemas() -> None:
     assert event.description == "An alert fired"
     assert event.delivery == ["poll", "push"]
     assert event.input_schema is not None
-    assert event.input_schema["properties"] == {"severity": {"type": "string"}}
+    assert set(event.input_schema["properties"]) == {"severity"}
+    assert event.input_schema["additionalProperties"] is False
     assert event.payload_schema is not None
+    assert set(event.payload_schema["properties"]) == {"key", "severity"}
 
 
 async def test_list_events_paginates() -> None:
@@ -109,7 +125,7 @@ async def test_list_events_paginates() -> None:
     events = EventsExtension()
     server.add_extension(events)
     for name in ("c", "a", "b"):
-        events.event(name=name)(lambda poll: EventBatch())
+        events.event(name)(type(name.upper(), (BaseModel,), {}))
 
     async with events_client(server) as client:
         first = await list_events_mcp(client)
@@ -169,11 +185,9 @@ async def test_max_events_leaves_a_backlog_to_drain() -> None:
 
 
 async def test_events_without_an_id_or_timestamp_get_generated_ones() -> None:
-    server = FastMCP("bare")
-    events = EventsExtension()
-    server.add_extension(events)
+    server, events = tick_server()
 
-    @events.event(name="tick")
+    @events.reader(Tick)
     def tick(poll: EventPoll) -> EventBatch:
         return EventBatch(events=[Event(data={}), Event(data={})])
 
@@ -280,11 +294,9 @@ async def test_iterating_again_after_stopping_partway_yields_the_rest(
 
 @pytest.mark.parametrize("delivery", ["poll", "push"])
 async def test_an_events_own_meta_reaches_the_client(delivery: Delivery) -> None:
-    server = FastMCP("meta")
-    events = EventsExtension(poll_interval_ms=10)
-    server.add_extension(events)
+    server, events = tick_server(poll_interval_ms=10)
 
-    @events.event(name="tick")
+    @events.reader(Tick)
     async def tick(poll: EventPoll) -> EventBatch:
         if poll.cursor == "0":
             return EventBatch(
@@ -302,11 +314,9 @@ async def test_an_events_own_meta_reaches_the_client(delivery: Delivery) -> None
 
 
 async def test_subscription_reports_a_gap() -> None:
-    server = FastMCP("gap")
-    events = EventsExtension(poll_interval_ms=0)
-    server.add_extension(events)
+    server, events = tick_server(poll_interval_ms=0)
 
-    @events.event(name="tick")
+    @events.reader(Tick)
     def tick(poll: EventPoll) -> EventBatch:
         return EventBatch(
             events=[Event(data={}, event_id="after-gap")],
@@ -386,19 +396,17 @@ async def test_stopping_partway_through_a_pushed_backlog_keeps_the_rest() -> Non
     assert subscription.cursor == "0"
 
 
-async def test_push_reports_a_gap_and_keeps_the_stream_through_a_failed_check() -> None:
-    server = FastMCP("flaky")
-    events = EventsExtension(poll_interval_ms=10)
-    server.add_extension(events)
-    checks = 0
+async def test_push_reports_a_gap_and_keeps_the_stream_through_a_failed_read() -> None:
+    server, events = tick_server(poll_interval_ms=10)
+    reads = 0
 
-    @events.event(name="tick")
+    @events.reader(Tick)
     def tick(poll: EventPoll) -> EventBatch:
-        nonlocal checks
-        checks += 1
-        if checks == 1:
+        nonlocal reads
+        reads += 1
+        if reads == 1:
             return EventBatch(cursor="fresh", truncated=True)
-        if checks == 2:
+        if reads == 2:
             raise RuntimeError("upstream is down")
         return EventBatch(events=[Event(data={}, event_id="recovered")], cursor="next")
 
@@ -412,17 +420,21 @@ async def test_push_reports_a_gap_and_keeps_the_stream_through_a_failed_check() 
     assert subscription.cursor == "next"
 
 
-async def test_push_terminates_when_a_check_reports_access_revoked() -> None:
+async def test_push_terminates_when_a_reader_reports_access_revoked() -> None:
     server = FastMCP("channels")
     events = EventsExtension(poll_interval_ms=10)
     server.add_extension(events)
-    checks = 0
+    reads = 0
 
-    @events.event(name="message.posted")
+    @events.event("message.posted")
+    class MessagePosted(BaseModel):
+        """A message was posted"""
+
+    @events.reader(MessagePosted)
     def message_posted(poll: EventPoll) -> EventBatch:
-        nonlocal checks
-        checks += 1
-        if checks > 1:
+        nonlocal reads
+        reads += 1
+        if reads > 1:
             raise MCPError(code=FORBIDDEN, message="Forbidden")
         return EventBatch(cursor="0")
 
@@ -432,32 +444,28 @@ async def test_push_terminates_when_a_check_reports_access_revoked() -> None:
                 pass
 
     assert exc_info.value.error.code == FORBIDDEN
-    assert checks == 2
+    assert reads == 2
 
 
-async def test_a_sync_check_runs_off_the_event_loop() -> None:
-    server = FastMCP("threads")
-    events = EventsExtension()
-    server.add_extension(events)
-    check_threads: list[int] = []
+async def test_a_sync_reader_runs_off_the_event_loop() -> None:
+    server, events = tick_server()
+    reader_threads: list[int] = []
 
-    @events.event(name="tick")
+    @events.reader(Tick)
     def tick(poll: EventPoll) -> EventBatch:
-        check_threads.append(threading.get_ident())
+        reader_threads.append(threading.get_ident())
         return EventBatch(cursor="0")
 
     async with events_client(server) as client:
         await poll_events_mcp(client, "tick")
 
-    assert check_threads and check_threads[0] != threading.get_ident()
+    assert reader_threads and reader_threads[0] != threading.get_ident()
 
 
 async def test_a_push_stream_with_no_interval_still_lets_other_tasks_run() -> None:
-    server = FastMCP("busy")
-    events = EventsExtension(poll_interval_ms=0)
-    server.add_extension(events)
+    server, events = tick_server(poll_interval_ms=0)
 
-    @events.event(name="tick")
+    @events.reader(Tick)
     async def tick(poll: EventPoll) -> EventBatch:
         return EventBatch(cursor="0")
 
@@ -493,15 +501,13 @@ async def test_a_push_consumer_that_falls_behind_ends_with_an_error(
 
 
 async def test_a_terminated_push_subscription_does_not_fall_back_to_poll() -> None:
-    server = FastMCP("ticks")
-    events = EventsExtension(poll_interval_ms=10)
-    server.add_extension(events)
-    checks: list[str | None] = []
+    server, events = tick_server(poll_interval_ms=10)
+    reads: list[str | None] = []
 
-    @events.event(name="tick")
+    @events.reader(Tick)
     async def tick(poll: EventPoll) -> EventBatch:
-        checks.append(poll.cursor)
-        if len(checks) > 1:
+        reads.append(poll.cursor)
+        if len(reads) > 1:
             raise MCPError(code=UNSUPPORTED, message="Schema changed")
         return EventBatch(cursor="0")
 
@@ -511,7 +517,7 @@ async def test_a_terminated_push_subscription_does_not_fall_back_to_poll() -> No
                 pass
 
     assert exc_info.value.error.code == UNSUPPORTED
-    assert checks == [None, "0"]
+    assert reads == [None, "0"]
 
 
 async def test_push_rejects_an_unknown_event_before_any_stream_opens() -> None:
@@ -595,10 +601,10 @@ async def test_a_refused_stream_falls_back_to_poll_unless_push_was_asked_for(
 
 async def test_duplicate_event_name_is_rejected() -> None:
     events = EventsExtension()
-    events.event(name="tick")(lambda poll: EventBatch())
+    events.event("tick")(Tick)
 
     with pytest.raises(ValueError, match="already registered"):
-        events.event(name="tick")
+        events.event("tick")
 
 
 async def test_client_requires_explicit_opt_in() -> None:
