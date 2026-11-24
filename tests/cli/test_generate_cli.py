@@ -2,7 +2,6 @@
 
 import ast
 import sys
-from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -953,49 +952,6 @@ class TestGenerateSkillContent:
         content = generate_skill_content("test", "cli.py", tools)
         # Pipes in type label must be escaped so markdown table renders correctly
         assert "string \\| null" in content
-
-    async def test_any_of_types_in_table_and_list_tools(
-        self, capsys: pytest.CaptureFixture[str]
-    ):
-        server = FastMCP("Search")
-
-        @server.tool
-        def search(
-            query: str,
-            key: str | int,
-            when: date | datetime,
-            limit: int | None = None,
-            ids: list[int] | None = None,
-        ) -> None:
-            """Search things."""
-
-        async with Client(server) as client:
-            tools = await client.list_tools()
-
-        content = generate_skill_content("search", "cli.py", tools)
-        assert "| `--key` | string \\| integer | yes |" in content
-        assert "| `--when` | string | yes |" in content
-        assert "| `--limit` | integer \\| null | no |" in content
-        assert "| `--ids` | array[integer] \\| null | no |" in content
-
-        script = generate_cli_script(
-            server_name="search",
-            server_spec="search",
-            transport_code=repr("http://unused/mcp"),
-            extra_imports=set(),
-            tools=tools,
-        )
-        namespace: dict[str, Any] = {"__name__": "generated_cli"}
-        exec(compile(script, "<generated>", "exec"), namespace)
-        namespace["CLIENT_SPEC"] = server
-        await namespace["app"].run_async(["list-tools"], result_action="return_value")
-
-        # Rich wraps long lines, so compare with whitespace collapsed.
-        listed = " ".join(capsys.readouterr().out.split())
-        assert (
-            "search(query: string, key: string | integer, when: string, "
-            "limit: integer | null = ..., ids: array | null = ...)"
-        ) in listed
 
     def test_boolean_param_no_value_placeholder(self):
         tools = [

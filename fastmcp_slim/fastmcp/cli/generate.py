@@ -499,8 +499,8 @@ def generate_cli_script(
                 return " | ".join(dict.fromkeys(_type_label(b) for b in branches))
             schema_type = schema.get("type", "string")
             if isinstance(schema_type, list):
-                return " | ".join(schema_type)
-            return schema_type
+                return " | ".join(t for t in schema_type if isinstance(t, str)) or "any"
+            return schema_type if isinstance(schema_type, str) else "any"
 
 
         def _print_tool_result(result):
@@ -734,7 +734,7 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
     # For arrays, include item type if simple
     if schema_type == "array":
         items = prop_schema.get("items", {})
-        item_type = items.get("type", "")
+        item_type = items.get("type", "") if isinstance(items, dict) else ""
         if isinstance(item_type, str) and item_type in _JSON_SCHEMA_TYPE_LABELS:
             return f"array[{item_type}]"
 

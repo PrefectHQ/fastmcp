@@ -1,5 +1,6 @@
 """Behavioral tests for arguments passed by generated CLI commands."""
 
+from datetime import date, datetime
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -381,3 +382,35 @@ def test_skill_documents_optional_strings_as_plain_flags() -> None:
 
     assert "| `--greeting` | string \\| null | no |  |" in content
     assert "| `--count` | integer \\| null | no | JSON string |" in content
+
+
+async def test_skill_and_list_tools_label_unions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    server = FastMCP("Search")
+
+    @server.tool
+    def search(
+        key: str | int,
+        when: date | datetime,
+        limit: int | None = None,
+        ids: list[int] | None = None,
+    ) -> None:
+        pass
+
+    async with Client(server) as client:
+        content = generate_skill_content("search", "cli.py", await client.list_tools())
+    assert "| `--key` | string \\| integer | yes |" in content
+    assert "| `--when` | string | yes |" in content
+    assert "| `--limit` | integer \\| null | no |" in content
+    assert "| `--ids` | array[integer] \\| null | no |" in content
+
+    namespace = await generated_cli(server)
+    await namespace["app"].run_async(["list-tools"], result_action="return_value")
+
+    # Rich wraps long lines, so compare with whitespace collapsed.
+    listed = " ".join(capsys.readouterr().out.split())
+    assert (
+        "search(key: string | integer, when: string, "
+        "limit: integer | null = ..., ids: array | null = ...)"
+    ) in listed
