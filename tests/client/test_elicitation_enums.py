@@ -636,3 +636,18 @@ def test_scalar_elicitation_schema_omits_wrapper_title() -> None:
 
     assert "title" not in schema
     assert schema["properties"]["value"]["enum"] == ["yes", "no"]
+
+
+def test_single_option_literal_and_multi_select_use_enum() -> None:
+    """Single-value Literal choices and multi-selects emit `enum` rather than `const`."""
+    from typing import Literal
+
+    from fastmcp.server.elicitation import parse_elicit_response_type
+
+    single = parse_elicit_response_type(["a"]).schema["properties"]["value"]
+    assert "const" not in single
+    assert single["enum"] == ["a"]
+    assert single["type"] == "string"
+
+    multi = parse_elicit_response_type(list[Literal["a"]]).schema["properties"]["value"]
+    assert multi == {"type": "array", "items": {"type": "string", "enum": ["a"]}, "title": "Value"}
