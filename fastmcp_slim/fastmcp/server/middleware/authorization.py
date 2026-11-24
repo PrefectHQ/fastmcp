@@ -48,7 +48,7 @@ from fastmcp.utilities.authorization import (
     run_auth_checks_with_shortfall,
     scope_requirements,
 )
-from fastmcp.utilities.versions import VersionSpec
+from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,18 @@ def _requested_version(meta: Mapping[str, Any] | None) -> VersionSpec | None:
         return VersionSpec(gte=gte, lt=lt, eq=eq)
 
     return None
+
+
+def _pin_version(
+    context: MiddlewareContext[Any], version: str
+) -> MiddlewareContext[Any]:
+    """Return a copy of context with the fallback version pinned in request meta."""
+    meta = dict(context.message.meta) if context.message.meta else {}
+    raw_fastmcp = meta.get("fastmcp")
+    fastmcp_meta = dict(raw_fastmcp) if isinstance(raw_fastmcp, Mapping) else {}
+    fastmcp_meta["version"] = version
+    meta["fastmcp"] = fastmcp_meta
+    return context.copy(message=context.message.model_copy(update={"meta": meta}))
 
 
 class AuthMiddleware(Middleware):
@@ -122,6 +134,7 @@ class AuthMiddleware(Middleware):
         """Answer completion for a denied reference like an unknown one."""
         if context.method != "completion/complete" or await self._may_complete(context):
             return await call_next(context)
+
         # The result envelope differs by protocol era, so keep the one the
         # server builds and drop only the suggestions.
         result = await call_next(context)
@@ -289,6 +302,18 @@ class AuthMiddleware(Middleware):
         token = get_access_token()
         ctx = AuthContext(token=token, component=tool)
         authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
+        if not authorized and version is None:
+            candidates = [
+                t
+                for t in await fastmcp.fastmcp.list_tools(run_middleware=False)
+                if t.name == tool_name
+            ]
+            fallback = await self._find_authorized_fallback(
+                candidates, tool.version, token
+            )
+            if fallback is not None and fallback.version is not None:
+                context = _pin_version(context, fallback.version)
+                authorized = True
         if not authorized:
             if missing:
                 missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)
@@ -332,15 +357,28 @@ class AuthMiddleware(Middleware):
 
         return authorized_resources
 
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[mt.ReadResourceRequestParams],
+        call_next: CallNext[mt.ReadResourceRequestParams, Any],
+    ) -> Any:
+        context = await self._check_resource_access(context)
+        return await call_next(context)
+
     async def check_resource_access(
         self, context: MiddlewareContext[mt.ReadResourceRequestParams]
     ) -> None:
         """Apply the resource policy shared by reads and extension discovery."""
+        await self._check_resource_access(context)
+
+    async def _check_resource_access(
+        self, context: MiddlewareContext[mt.ReadResourceRequestParams]
+    ) -> MiddlewareContext[mt.ReadResourceRequestParams]:
         # STDIO has no auth concept, skip enforcement
         from fastmcp.server.context import _current_transport
 
         if _current_transport.get() == "stdio":
-            return
+            return context
 
         # Get the resource being read
         uri = context.message.uri
@@ -389,6 +427,25 @@ class AuthMiddleware(Middleware):
         token = get_access_token()
         ctx = AuthContext(token=token, component=component)
         authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
+        if not authorized and version is None:
+            uri_str = str(uri)
+            candidates: list[Any] = [
+                r
+                for r in await fastmcp.fastmcp.list_resources(run_middleware=False)
+                if str(r.uri) == uri_str
+            ] + [
+                t
+                for t in await fastmcp.fastmcp.list_resource_templates(
+                    run_middleware=False
+                )
+                if t.matches(uri_str) is not None
+            ]
+            fallback = await self._find_authorized_fallback(
+                candidates, component.version, token
+            )
+            if fallback is not None and fallback.version is not None:
+                context = _pin_version(context, fallback.version)
+                authorized = True
         if not authorized:
             if missing:
                 missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)
@@ -402,6 +459,7 @@ class AuthMiddleware(Middleware):
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': insufficient permissions"
             )
+        return context
 
     async def on_list_resource_templates(
         self,
@@ -499,6 +557,18 @@ class AuthMiddleware(Middleware):
         token = get_access_token()
         ctx = AuthContext(token=token, component=prompt)
         authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
+        if not authorized and version is None:
+            candidates = [
+                p
+                for p in await fastmcp.fastmcp.list_prompts(run_middleware=False)
+                if p.name == prompt_name
+            ]
+            fallback = await self._find_authorized_fallback(
+                candidates, prompt.version, token
+            )
+            if fallback is not None and fallback.version is not None:
+                context = _pin_version(context, fallback.version)
+                authorized = True
         if not authorized:
             if missing:
                 missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)
@@ -514,3 +584,22 @@ class AuthMiddleware(Middleware):
             )
 
         return await call_next(context)
+
+    async def _find_authorized_fallback(
+        self,
+        candidates: Sequence[Any],
+        denied_version: str | None,
+        token: Any,
+    ) -> Any | None:
+        tried: set[str] = set()
+        if denied_version is not None:
+            tried.add(denied_version)
+        for candidate in sorted(candidates, key=version_sort_key, reverse=True):
+            if candidate.version is None or candidate.version in tried:
+                continue
+            tried.add(candidate.version)
+            if await run_auth_checks(
+                self.auth, AuthContext(token=token, component=candidate)
+            ):
+                return candidate
+        return None

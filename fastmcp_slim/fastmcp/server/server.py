@@ -161,6 +161,16 @@ def _validation_error_summary(error: PydanticValidationError) -> dict[str, Any]:
     return {"error_count": error.error_count(), "error_types": sorted(error_types)}
 
 
+def _version_from_meta(meta: Any) -> VersionSpec | None:
+    if not isinstance(meta, dict):
+        return None
+    fastmcp_meta = meta.get("fastmcp")
+    if not isinstance(fastmcp_meta, dict):
+        return None
+    v = fastmcp_meta.get("version")
+    return VersionSpec(eq=v) if isinstance(v, str) else None
+
+
 def _version_request_meta(
     version: VersionSpec | None,
 ) -> mcp_types.RequestParamsMeta | None:
@@ -1676,7 +1686,9 @@ class FastMCP(
                             lambda context: self.call_tool(
                                 context.message.name,
                                 context.message.arguments or {},
-                                version=version,
+                                version=version
+                                if version is not None
+                                else _version_from_meta(context.message.meta),
                                 run_middleware=False,
                             )
                         ),
@@ -1833,7 +1845,9 @@ class FastMCP(
                     context=mw_context,
                     call_next=lambda context: self.read_resource(
                         str(context.message.uri),
-                        version=version,
+                        version=version
+                        if version is not None
+                        else _version_from_meta(context.message.meta),
                         run_middleware=False,
                     ),
                 )
@@ -2010,7 +2024,9 @@ class FastMCP(
                     call_next=lambda context: self.render_prompt(
                         context.message.name,
                         context.message.arguments,
-                        version=version,
+                        version=version
+                        if version is not None
+                        else _version_from_meta(context.message.meta),
                         run_middleware=False,
                     ),
                 )
