@@ -437,6 +437,21 @@ def test_choice_shorthand_rejects_values_not_offered(response_type, valid, inval
         handle_elicit_accept(config, {"value": invalid})
 
 
+def test_single_option_choice_uses_enum_not_const():
+    from typing import Literal
+
+    single = parse_elicit_response_type(["a"]).schema["properties"]["value"]
+    assert single == {"enum": ["a"], "title": "Value", "type": "string"}
+    assert "const" not in single
+
+    multi = parse_elicit_response_type(list[Literal["a"]]).schema["properties"]["value"]
+    assert multi == {
+        "items": {"enum": ["a"], "type": "string"},
+        "title": "Value",
+        "type": "array",
+    }
+
+
 async def test_validation_allows_enum_arrays():
     """Test validation accepts arrays with enum items."""
     schema = {

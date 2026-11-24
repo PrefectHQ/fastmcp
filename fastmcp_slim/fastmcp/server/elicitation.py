@@ -141,6 +141,13 @@ class ElicitationJsonSchema(GenerateJsonSchema):
         # Get the base schema from parent - always use simple enum pattern
         return super().enum_schema(schema)
 
+    def literal_schema(self, schema: core_schema.LiteralSchema) -> JsonSchemaValue:
+        """Normalize single-value Literal schemas from `const` to `enum`."""
+        json_schema = super().literal_schema(schema)
+        if "const" in json_schema:
+            json_schema["enum"] = [json_schema.pop("const")]
+        return json_schema
+
 
 # we can't use the low-level AcceptedElicitation because it only works with BaseModels
 class AcceptedElicitation(BaseModel, Generic[T]):
