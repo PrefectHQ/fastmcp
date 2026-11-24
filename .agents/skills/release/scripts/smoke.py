@@ -820,6 +820,19 @@ record(
     ),
 )
 
+
+# ---- PROBES added for 4.2.6 -------------------------------------------------
+def authlib_probe():
+    import importlib.util
+
+    from fastmcp.server.auth.oauth_proxy import OAuthProxy  # noqa: F401
+
+    found = importlib.util.find_spec("authlib") is not None
+    return f"authlib installed: {found}; OAuthProxy imports"
+
+
+record("PROBE", "#6794 authlib no longer a dependency", authlib_probe)
+
 print(f"fastmcp {FASTMCP_VERSION}")
 for kind, name, outcome in results:
     print(f"{kind:5} {name}: {outcome}")
