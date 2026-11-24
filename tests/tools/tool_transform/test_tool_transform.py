@@ -1228,3 +1228,31 @@ async def test_transform_fn_generators_with_context_injection():
         assert async_res.structured_content == {"result": [10, 15]}
         assert isinstance(async_res.content[0], TextContent)
         assert async_res.content[0].text == "[10,15]"
+
+
+async def test_from_tool_preserves_secret_str_default():
+    """Tool.from_tool must not pass masked JSON schema default '**********' (#6499)."""
+    from pydantic import SecretStr
+
+    mcp = FastMCP("secret-default")
+
+    @mcp.tool
+    def connect(token: SecretStr = SecretStr("s3cr3t")) -> str:
+        return token.get_secret_value()
+
+    def custom_connect(token: SecretStr = SecretStr("custom-s3cr3t")) -> str:
+        return token.get_secret_value()
+
+    mcp.add_tool(Tool.from_tool(connect, name="connect_renamed"))
+    mcp.add_tool(
+        Tool.from_tool(connect, name="connect_custom", transform_fn=custom_connect)
+    )
+
+    async with Client(mcp) as client:
+        orig_res = await client.call_tool("connect", {})
+        copy_res = await client.call_tool("connect_renamed", {})
+        custom_res = await client.call_tool("connect_custom", {})
+
+    assert orig_res.data == "s3cr3t"
+    assert copy_res.data == "s3cr3t"
+    assert custom_res.data == "custom-s3cr3t"
