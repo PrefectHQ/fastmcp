@@ -1130,11 +1130,9 @@ experimental_app = cyclopts.App(
     help="Experimental commands that may change in any release",
 )
 if importlib.util.find_spec("fastmcp_events") is not None:
-    experimental_app.command(
-        "fastmcp_events.cli:events_app",
-        name="events",
-        help="Subscribe to a server's events (the MCP Events extension, SEP-3415)",
-    )
+    # Lazy, so `fastmcp` startup does not import the events package; cyclopts
+    # 4.0 refuses extra settings such as `help=` on a lazily imported App.
+    experimental_app.command("fastmcp_events.cli:events_app", name="events")
 else:
 
     @experimental_app.command(name="events")
