@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import functools
 import inspect
+import logging
 from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
@@ -9,7 +11,7 @@ from typing import Annotated, Any, Literal, LiteralString, cast
 
 import mcp_types
 from mcp_types import ToolAnnotations
-from pydantic import ConfigDict
+from pydantic import ConfigDict, TypeAdapter
 from pydantic import ValidationError as PydanticValidationError
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
@@ -23,7 +25,12 @@ from fastmcp.tools.base import (
     ToolResult,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _strip_input_required
-from fastmcp.tools.function_tool import FunctionTool, _ToolBodyError, _wrap_body_errors
+from fastmcp.tools.function_tool import (
+    FunctionTool,
+    _strict_input_validation,
+    _validate_input,
+    _wrap_body_errors,
+)
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -397,6 +404,32 @@ def _apply_meta_override(
     return merged
 
 
+def _make_type_override_wrapper(
+    fn: Callable[..., Any],
+    type_overrides: dict[str, Any],
+) -> Callable[..., Any]:
+    """Build a wrapper whose signature reflects ArgTransform(type=...) overrides."""
+    sig = inspect.signature(fn)
+    params = [
+        p.replace(annotation=type_overrides[p.name])
+        if p.name in type_overrides
+        else p
+        for p in sig.parameters.values()
+    ]
+
+    @functools.wraps(fn)
+    def _validated(*args: Any, **kwargs: Any) -> Any:
+        return fn(*args, **kwargs)
+
+    _validated.__signature__ = sig.replace(parameters=params)  # type: ignore[attr-defined]
+    annotations = dict(getattr(fn, "__annotations__", {}))
+    for name in sig.parameters:
+        if name in type_overrides:
+            annotations[name] = type_overrides[name]
+    _validated.__annotations__ = annotations
+    return _validated
+
+
 class TransformedTool(Tool):
     """A tool that is transformed from another tool.
 
@@ -483,7 +516,26 @@ class TransformedTool(Tool):
             body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
             fn = without_injected_parameters(body_fn)
             try:
-                if is_coroutine_function(fn):
+                if self.fn is not self.forwarding_fn:
+                    exec_fn = _wrap_body_errors(fn)
+                    type_overrides = self._arg_transform_type_overrides()
+                    if type_overrides:
+                        type_adapter = TypeAdapter(
+                            _make_type_override_wrapper(exec_fn, type_overrides)
+                        )
+                    else:
+                        type_adapter = get_cached_typeadapter(exec_fn)
+                    strict = _strict_input_validation()
+                    if is_coroutine_function(fn):
+                        result = _validate_input(type_adapter, arguments, strict=strict)
+                        result = await result
+                    else:
+                        result = await call_sync_fn_in_threadpool(
+                            _validate_input, type_adapter, arguments, strict=strict
+                        )
+                        if inspect.isawaitable(result):
+                            result = await result
+                elif is_coroutine_function(fn):
                     result = await fn(**arguments)
                 else:
                     result = await call_sync_fn_in_threadpool(fn, **arguments)
@@ -491,7 +543,7 @@ class TransformedTool(Tool):
                         result = await result
                 result = await FunctionTool._materialize_generator(result)
             except PydanticValidationError as exc:
-                raise _ToolBodyError(str(exc)) from exc
+                raise ValidationError(str(exc), log_level=logging.WARNING) from exc
 
             # A multi-round-trip ask (SEP-2322) is not output data: it must
             # reach the wire handler intact, never reshaped by output_schema
@@ -1005,6 +1057,21 @@ class TransformedTool(Tool):
             new_schema["examples"] = transform.examples
 
         return new_name, new_schema, is_required, extracted_defs
+
+    def _arg_transform_type_overrides(self) -> dict[str, Any]:
+        if not self.transform_args:
+            return {}
+        overrides: dict[str, Any] = {}
+        for old_name, transform in self.transform_args.items():
+            if transform.hide or transform.type is NotSet:
+                continue
+            new_name = (
+                transform.name
+                if transform.name is not NotSet and transform.name is not None
+                else old_name
+            )
+            overrides[new_name] = transform.type
+        return overrides
 
     @staticmethod
     def _arg_transform_type_override_names(

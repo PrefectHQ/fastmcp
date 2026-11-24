@@ -1,6 +1,7 @@
 """Core tool transform functionality."""
 
 import asyncio
+import datetime
 import json
 import re
 import time
@@ -1228,3 +1229,52 @@ async def test_transform_fn_generators_with_context_injection():
         assert async_res.structured_content == {"result": [10, 15]}
         assert isinstance(async_res.content[0], TextContent)
         assert async_res.content[0].text == "[10,15]"
+
+
+async def test_transform_fn_validates_and_coerces_arguments():
+    """transform_fn should receive arguments coerced to its type annotations (#6796)."""
+
+    class Point(BaseModel):
+        x: int
+        y: int
+
+    def base(when: datetime.date, p: Point) -> str:
+        return "ok"
+
+    async def custom(when: datetime.date, p: Point) -> str:
+        return f"when={type(when).__name__} p={type(p).__name__}"
+
+    async def guard(when: datetime.date, p: Point) -> str:
+        if p.x < 0:
+            raise ValueError("x must be non-negative")
+        return await forward(when=when, p=p)
+
+    def sync_custom(when: datetime.date, p: Point) -> str:
+        return f"sync:{when.isoformat()}:{p.x},{p.y}"
+
+    mcp = FastMCP()
+    parent = Tool.from_function(base)
+    mcp.add_tool(Tool.from_tool(parent, name="transformed", transform_fn=custom))
+    mcp.add_tool(Tool.from_tool(parent, name="guarded", transform_fn=guard))
+    mcp.add_tool(Tool.from_tool(parent, name="sync_transformed", transform_fn=sync_custom))
+
+    async with Client(mcp) as client:
+        args = {"when": "2024-03-01", "p": {"x": 1, "y": 2}}
+        res = await client.call_tool("transformed", args)
+        assert isinstance(res.content[0], TextContent)
+        assert res.content[0].text == "when=date p=Point"
+
+        guarded_res = await client.call_tool("guarded", args)
+        assert isinstance(guarded_res.content[0], TextContent)
+        assert guarded_res.content[0].text == "ok"
+
+        sync_res = await client.call_tool("sync_transformed", args)
+        assert isinstance(sync_res.content[0], TextContent)
+        assert sync_res.content[0].text == "sync:2024-03-01:1,2"
+
+        bad_res = await client.call_tool(
+            "transformed",
+            {"when": "not-a-date", "p": {"x": 1, "y": 2}},
+            raise_on_error=False,
+        )
+        assert bad_res.is_error is True
