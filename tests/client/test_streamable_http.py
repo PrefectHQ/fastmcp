@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, call
 import httpx2
 import pytest
 from mcp import MCPError
+from mcp.server.transport_security import DEFAULT_MAX_REQUEST_BODY_SIZE
 from mcp.shared._httpx_utils import McpHttpClientFactory
 from mcp_types import TextResourceContents
 
@@ -245,6 +246,33 @@ async def test_stateless_http_still_accepts_post(
     async with streamable_http_server.client() as client:
         result = await client.call_tool("greet", {"name": "World"})
         assert result.data == "Hello, World!"
+
+
+async def test_max_request_body_size():
+    """A body over the default limit is only accepted once the limit is raised."""
+    request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "greet", "arguments": {"name": "World"}},
+    }
+    # Pad with whitespace: debug logging a 4 MiB argument takes seconds.
+    body = json.dumps(request).ljust(DEFAULT_MAX_REQUEST_BODY_SIZE + 1)
+    headers = {"accept": "application/json", "content-type": "application/json"}
+
+    async def post(**kwargs: Any) -> httpx2.Response:
+        async with asgi_server(
+            create_test_server(), stateless_http=True, json_response=True, **kwargs
+        ) as running_server:
+            async with running_server.http_client(headers=headers) as http_client:
+                return await http_client.post(running_server.url, content=body)
+
+    response = await post()
+    assert response.status_code == 413
+
+    response = await post(max_request_body_size=2 * DEFAULT_MAX_REQUEST_BODY_SIZE)
+    assert response.status_code == 200
+    assert response.json()["result"]["content"][0]["text"] == "Hello, World!"
 
 
 async def test_nested_streamable_http_server_resolves_correctly(nested_server: str):

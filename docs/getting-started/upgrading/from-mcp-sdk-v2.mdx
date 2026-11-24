@@ -243,11 +243,11 @@ Renaming `streamable_http_app()` to `http_app()` is only mechanical for a call w
 | `streamable_http_app(streamable_http_path=...)` | `http_app(path=...)` |
 | `sse_app(sse_path=...)` | `http_app(path=..., transport="sse")` |
 | `sse_app(message_path=...)` | no equivalent |
-| `max_request_body_size=`, `max_sessions=` | no equivalent |
+| `sse_app(max_request_body_size=...)`, `max_sessions=` | no equivalent |
 | `transport_security=TransportSecuritySettings(...)` | `host_origin_protection=`, `allowed_hosts=`, `allowed_origins=` |
 | `host=...` | pass to `mcp.run(host=...)` instead |
 
-`json_response`, `stateless_http`, `event_store`, `retry_interval`, and `session_idle_timeout` keep their names. See [Deploying HTTP servers](/deployment/http) for the host and origin settings.
+`json_response`, `stateless_http`, `event_store`, `retry_interval`, `session_idle_timeout`, and `max_request_body_size` keep their names. See [Deploying HTTP servers](/deployment/http) for the host and origin settings.
 
 ### Stricter Arguments
 

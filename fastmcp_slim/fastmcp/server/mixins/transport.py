@@ -377,6 +377,7 @@ class TransportMixin:
         allowed_hosts: list[str] | None = None,
         allowed_origins: list[str] | None = None,
         session_idle_timeout: float | Literal["auto"] | None = None,
+        max_request_body_size: int | None = None,
     ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
 
@@ -406,6 +407,9 @@ class TransportMixin:
                 falls back to the `http_session_idle_timeout` setting.
                 "auto" uses the MCP SDK's default. To disable the timeout,
                 set `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT=none`.
+            max_request_body_size: Maximum size in bytes of a request body. Larger
+                requests receive a 413 response. When None, uses the MCP SDK's
+                default (4 MiB). Only used with streamable-http transport.
 
         Returns:
             A Starlette application configured with the specified transport
@@ -452,6 +456,7 @@ class TransportMixin:
                     if session_idle_timeout is not None
                     else fastmcp.settings.http_session_idle_timeout
                 ),
+                max_request_body_size=max_request_body_size,
             )
         elif transport == "sse":
             return create_sse_app(

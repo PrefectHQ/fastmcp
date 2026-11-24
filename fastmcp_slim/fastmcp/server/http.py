@@ -53,11 +53,14 @@ class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
         security_settings: TransportSecuritySettings | None = None,
         retry_interval: int | None = None,
         session_idle_timeout: float | Literal["auto"] | None = "auto",
+        max_request_body_size: int | None = None,
     ) -> None:
         self._shared_event_store: EventStore | None = None
         session_options: dict[str, Any] = {}
         if session_idle_timeout != "auto":
             session_options["session_idle_timeout"] = session_idle_timeout
+        if max_request_body_size is not None:
+            session_options["max_request_body_size"] = max_request_body_size
         super().__init__(
             app=app,
             event_store=event_store,
@@ -644,6 +647,7 @@ def create_streamable_http_app(
     allowed_hosts: Sequence[str] | None = None,
     allowed_origins: Sequence[str] | None = None,
     session_idle_timeout: float | Literal["auto"] | None = "auto",
+    max_request_body_size: int | None = None,
 ) -> StarletteWithLifespan:
     """Return an instance of the StreamableHTTP server app.
 
@@ -673,6 +677,9 @@ def create_streamable_http_app(
             request. Defaults to "auto", which uses the MCP SDK's default
             (1800 seconds as of SDK 2.2). When None, sessions never expire
             from inactivity. Only applies to stateful HTTP sessions.
+        max_request_body_size: Maximum size in bytes of a request body. Larger
+            requests receive a 413 response. When None, uses the MCP SDK's
+            default (4 MiB).
 
     Returns:
         A Starlette application with StreamableHTTP support
@@ -754,6 +761,7 @@ def create_streamable_http_app(
             json_response=json_response,
             stateless=stateless_http,
             session_idle_timeout=session_idle_timeout,
+            max_request_body_size=max_request_body_size,
             # FastMCP owns DNS-rebinding protection via HostOriginGuardMiddleware,
             # which is more expressive and already the documented surface. Always
             # disable the SDK's own protection so the two layers don't
