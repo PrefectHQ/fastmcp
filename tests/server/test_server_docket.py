@@ -224,3 +224,37 @@ async def test_provider_and_url_credentials_are_rejected():
     with pytest.raises(ValueError, match="not both"):
         async with mcp._lifespan_manager():
             pytest.fail("Conflicting credentials must not start the task backend")
+
+
+async def test_tasks_extension_uses_custom_worker_factory():
+    """TasksExtension delegates worker creation to worker_factory when provided (#6316)."""
+    created_workers: list[dict[str, object]] = []
+
+    class CustomWorker:
+        def __init__(self, docket, *, dependencies=None, **kwargs):
+            created_workers.append(
+                {"docket": docket, "dependencies": dependencies, **kwargs}
+            )
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+        async def run_forever(self):
+            import asyncio
+
+            await asyncio.sleep(60)
+
+    mcp = FastMCP("custom-worker")
+    mcp.add_extension(TasksExtension(worker_factory=CustomWorker))
+
+    @mcp.tool(task=True)
+    async def double(value: int) -> int:
+        return value * 2
+
+    async with mcp._lifespan_manager():
+        assert len(created_workers) == 1
+        assert isinstance(mcp._worker, CustomWorker)
+    assert mcp._worker is None

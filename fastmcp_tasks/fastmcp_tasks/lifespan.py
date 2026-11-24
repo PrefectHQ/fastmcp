@@ -12,7 +12,7 @@ and runs the worker (with the snapshot-restore dependency) until shutdown.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager, suppress
 from typing import TYPE_CHECKING, Any
 
@@ -33,6 +33,7 @@ async def docket_lifespan(
     settings: DocketSettings,
     *,
     credential_provider: CredentialProvider | None = None,
+    worker_factory: Callable[..., Any] | None = None,
 ) -> AsyncGenerator[None, None]:
     """Manage the Docket instance and Worker for background task execution.
 
@@ -93,7 +94,7 @@ async def docket_lifespan(
             if settings.worker_name:
                 worker_kwargs["name"] = settings.worker_name
 
-            async with Worker(
+            async with (worker_factory or Worker)(
                 docket,
                 dependencies=[Depends(restore_task_snapshot)],
                 **worker_kwargs,

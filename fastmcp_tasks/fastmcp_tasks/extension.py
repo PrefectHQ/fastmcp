@@ -26,7 +26,7 @@ Docket backend/worker and installs the worker-side `Context` hooks core exposes.
 from __future__ import annotations
 
 import copy
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
@@ -108,6 +108,7 @@ class TasksExtension(ServerExtension):
         minimum_check_interval: timedelta | None = None,
         execution_ttl: timedelta | None = None,
         parent_task_spans: bool | None = None,
+        worker_factory: Callable[..., Any] | None = None,
     ) -> None:
         if credential_provider is not None:
             from redis.credentials import StreamingCredentialProvider
@@ -120,6 +121,7 @@ class TasksExtension(ServerExtension):
                     "current credentials for each new connection."
                 )
         self._credential_provider = credential_provider
+        self._worker_factory = worker_factory
         overrides: dict[str, Any] = {
             "url": url,
             "name": name,
@@ -342,6 +344,7 @@ class TasksExtension(ServerExtension):
                 self.server,
                 self._settings,
                 credential_provider=self._credential_provider,
+                worker_factory=self._worker_factory,
             ):
                 yield
         finally:
