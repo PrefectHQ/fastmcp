@@ -276,6 +276,43 @@ def to_run(body: dict) -> tuple[str, dict] | None:
     return rkey, {k: v for k, v in record.items() if v is not None}
 
 
+TRIAGE_STAGES = {"assess", "reproduce", "verify"}
+STAGE_VALUE = re.compile(r"[a-z][a-z0-9_]{0,39}")
+
+
+def to_stage(body: dict) -> tuple[str, dict] | None:
+    """A fastmcp.triage.stage Prefect event -> (rkey, floor.event of kind "stage").
+
+    The event fires once per item when finalize records its outcome. Only the
+    number and the enum fields go out; anything that is not a short lowercase
+    token is dropped, so no free text reaches the public record.
+    """
+    payload = body.get("payload")
+    event_id = str(body.get("id") or "")
+    at = stamp(body.get("occurred"))
+    if body.get("event") != "fastmcp.triage.stage" or not isinstance(payload, dict):
+        return None
+    number = payload.get("number")
+    if not isinstance(number, int) or not 0 < number < 10**6:
+        return None
+    if payload.get("stage") not in TRIAGE_STAGES or not at:
+        return None
+    if not re.fullmatch(r"[0-9a-f-]{36}", event_id):
+        return None
+    record = {
+        "$type": f"{NSID}.event",
+        "kind": "stage",
+        "number": number,
+        "stage": payload["stage"],
+        "createdAt": at,
+    }
+    for key in ("decision", "outcome", "destination"):
+        value = payload.get(key)
+        if isinstance(value, str) and STAGE_VALUE.fullmatch(value):
+            record[key] = value
+    return "st" + event_id.replace("-", ""), record
+
+
 def gh(path: str, *, paginate: bool = False, timeout: int = 60):
     command = ["gh", "api", path]
     if paginate:
