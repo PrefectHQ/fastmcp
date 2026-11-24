@@ -5,8 +5,10 @@ Experimental: this API may change in any release without a deprecation period.
 The model's fields are the payload schema. Its optional `for_subscription`
 method takes the subscription arguments as keyword parameters and decides, per
 subscription and per event, what that subscription receives: the event as is,
-a changed copy, or nothing. Events come from `EventsExtension.emit`, kept in an
-`EventLog` that poll and push read from.
+a changed copy, or nothing. Events come from one of two sources:
+`EventsExtension.emit`, kept in an `EventLog` that poll and push read from, or
+a reader registered with `EventsExtension.reader` that reads an upstream's own
+history from a cursor.
 """
 
 from __future__ import annotations
@@ -18,13 +20,23 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, get_type_hints
 
+import anyio
 from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
 from pydantic import BaseModel, ValidationError, validate_call
 
-from fastmcp.experimental.events.extension import Event, EventBatch, EventPoll
+from fastmcp.experimental.events.extension import (
+    Event,
+    EventBatch,
+    EventCheck,
+    EventPoll,
+)
 from fastmcp.experimental.events.log import EventLog
 from fastmcp.tools.function_parsing import ParsedFunction
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.json_schema import compress_schema
 
 # How many logged events one poll reads at a time while it filters.
@@ -32,7 +44,7 @@ _READ_CHUNK = 500
 
 
 class TypedEvent:
-    """One event type declared as a model, served from its log."""
+    """One event type declared as a model, served from its log or a reader."""
 
     def __init__(self, name: str, model: type[BaseModel], log: EventLog) -> None:
         self.name = name
@@ -40,6 +52,7 @@ class TypedEvent:
         self.log = log
         self.input_schema: dict[str, Any] | None = None
         self._hook: Callable[..., Any] | None = None
+        self.reader: EventCheck | None = None
         self._arguments: Callable[..., dict[str, Any]] = lambda **kwargs: kwargs
         hook = model.__dict__.get("for_subscription")
         if hook is not None:
@@ -77,6 +90,10 @@ class TypedEvent:
 
     async def wait(self, cursor: str | None, timeout: float) -> bool:
         """Wait up to `timeout` seconds for an emit after `cursor`."""
+        if self.reader is not None:
+            # Nothing is emitted into a reader's type: wait out the interval.
+            await anyio.sleep(timeout)
+            return False
         return await self.log.wait(self.name, cursor, timeout)
 
     def arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -109,6 +126,8 @@ class TypedEvent:
     async def check(self, poll: EventPoll) -> EventBatch:
         # Checked on the first poll too, which reads nothing.
         arguments = self.arguments(poll.arguments)
+        if self.reader is not None:
+            return await self._read(poll, arguments)
         if poll.cursor is None:
             return EventBatch(cursor=await self.log.head(self.name))
         floor = None
@@ -137,6 +156,17 @@ class TypedEvent:
             cursor = read.cursor
             if not read.more:
                 return EventBatch(events=events, cursor=cursor, truncated=truncated)
+
+    async def _read(self, poll: EventPoll, arguments: dict[str, Any]) -> EventBatch:
+        assert self.reader is not None
+        if is_coroutine_function(self.reader):
+            batch = self.reader(poll)
+        else:
+            batch = await call_sync_fn_in_threadpool(self.reader, poll)
+        if inspect.isawaitable(batch):
+            batch = await batch
+        delivered = [self.for_subscription(event, arguments) for event in batch.events]
+        return replace(batch, events=[e for e in delivered if e is not None])
 
 
 def _without_self(

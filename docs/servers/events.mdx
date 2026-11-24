@@ -14,7 +14,7 @@ Tools answer when a client asks. Events cover the other direction: an alert fire
 
 In poll delivery the client asks "what happened since this cursor?" on an interval. In push delivery the client opens one long-lived request per subscription and your server writes events to it as they happen. The client chooses the mode; you declare the event once and FastMCP serves both.
 
-There are two ways to declare an event type. When your own code knows the moment something happens, in a tool or a webhook handler, declare the event's payload as a model and emit it. When the events live in an upstream you can read from a position, such as a database table, a history API or an event log, write a check function that reads it.
+Every event type is declared as a model of its payload, and its events come from one of two places. When your own code knows the moment something happens, in a tool or a webhook handler, emit them. When they already live in an upstream you can read from a position, such as a database table, a history API or an event log, give the model a reader.
 
 ## Emitting events
 
@@ -131,41 +131,66 @@ If your application already opened a Docket, pass it as `DocketEventLog(docket=.
 
 ## Reading from an upstream
 
-Decorate a check function when the events already live somewhere you can read from a position. The function receives an `EventPoll` and returns an `EventBatch`: the events after the poll's cursor, and the cursor that follows them. A cursor of `None` means the client is subscribing now, so return no events and the current position.
+When the events already live somewhere you can read from a position, such as a database table, a history API or an event log, declare the model as before and give it a reader instead of emitting. The reader receives an `EventPoll` and returns an `EventBatch`: the events after the poll's cursor, each with `data` shaped like the model, and the cursor that follows them. A cursor of `None` means the client is subscribing now, so return no events and the current position.
 
 ```python
+from __future__ import annotations
+
+from pydantic import BaseModel
+
 from fastmcp import FastMCP
 from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
 
-mcp = FastMCP("Alerts")
+mcp = FastMCP("Mail")
 events = EventsExtension()
 mcp.add_extension(events)
 
-ALERTS: list[dict[str, str]] = []
+INBOX: list[dict[str, str]] = []
 
 
-@events.event("alert.fired", description="An alert fired")
-def alert_fired(poll: EventPoll) -> EventBatch:
+@events.event("email.received")
+class EmailReceived(BaseModel):
+    """A message arrived in the inbox."""
+
+    message_id: str
+    sender: str | None
+
+    def for_subscription(
+        self, sender: str | None = None, redact: bool = False
+    ) -> EmailReceived | None:
+        if sender is not None and self.sender != sender:
+            return None
+        if redact:
+            return self.model_copy(update={"sender": None})
+        return self
+
+
+@events.reader(EmailReceived)
+def read_inbox(poll: EventPoll) -> EventBatch:
     if poll.cursor is None:
-        return EventBatch(cursor=str(len(ALERTS)))
-    new_alerts = ALERTS[int(poll.cursor) :]
-    fired = [Event(data=alert, event_id=alert["id"]) for alert in new_alerts]
-    return EventBatch(events=fired, cursor=str(len(ALERTS)))
+        return EventBatch(cursor=str(len(INBOX)))
+    new_messages = INBOX[int(poll.cursor) :]
+    received = [Event(data=m, event_id=m["message_id"]) for m in new_messages]
+    return EventBatch(events=received, cursor=str(len(INBOX)))
 ```
+
+The reader only reads. FastMCP validates the subscription arguments against `for_subscription` and applies it to every event the reader returns, exactly as it does for emitted events, so filtering and redaction live in one place whichever way the events arrive. The reader still sees `poll.arguments`, and may use them to narrow an expensive upstream query. A push stream calls the reader on the poll interval. A type with a reader is not emitted into, since its history is the upstream's.
 
 The cursor is opaque to the client and means whatever your upstream needs: a row ID, a timestamp, a history token. Derive it from durable state. A cursor that only makes sense inside one process breaks as soon as a second replica answers the next poll.
 
 Give each `Event` the upstream's stable identifier as `event_id`. Clients drop events whose ID they have already seen, and an ID FastMCP generates for you is different on every poll.
 
-Check functions may be sync or async. A sync function runs in a worker thread, as sync tools do, so a blocking upstream call does not stall the server's other requests.
+Readers may be sync or async. A sync reader runs in a worker thread, as sync tools do, so a blocking upstream call does not stall the server's other requests.
 
 ### Rejecting and ending subscriptions
 
-A check function rejects a subscription by raising `MCPError` from `mcp.shared.exceptions`, for example with the extension's `Forbidden` code (`-32024`) when the caller may not see the events it asked for. A poll answers with that error. A push stream answers its first check's error the same way, before the stream opens. After that, a `NotFound` (`-32023`), `Forbidden` (`-32024`) or `Unsupported` (`-32026`) error ends the subscription with `notifications/events/terminated`, which is how a server stops delivering once access is revoked. Any other error is reported to the client as a transient `notifications/events/error`, and the stream checks again on the next interval.
+A reader rejects a subscription by raising `MCPError` from `mcp.shared.exceptions`, for example with the extension's `Forbidden` code (`-32024`) when the caller may not see the events it asked for. A poll answers with that error. A push stream answers its first check's error the same way, before the stream opens. After that, a `NotFound` (`-32023`), `Forbidden` (`-32024`) or `Unsupported` (`-32026`) error ends the subscription with `notifications/events/terminated`, which is how a server stops delivering once access is revoked. Any other error is reported to the client as a transient `notifications/events/error`, and the stream checks again on the next interval.
 
-## Subscription arguments
+## Check functions without a model
 
-For a check function, `input_schema` is a JSON Schema for the arguments a client subscribes with, and `payload_schema` describes each event's `data`. FastMCP rejects a poll whose arguments do not match `input_schema` before your function runs, and passes valid ones as `poll.arguments`.
+A reader is the higher-level form of a check function. You can still decorate the function itself with `events.event()` and pass the schemas as JSON Schema, which suits an event type whose schemas you already have as JSON Schema. The function then does everything: it reads, filters and builds each event's `data`.
+
+`input_schema` is a JSON Schema for the arguments a client subscribes with, and `payload_schema` describes each event's `data`. FastMCP rejects a poll whose arguments do not match `input_schema` before your function runs, and passes valid ones as `poll.arguments`.
 
 ```python
 from fastmcp import FastMCP
@@ -215,7 +240,7 @@ A client may cap a poll with `poll.max_events`. When more events remain than you
 
 ## Push delivery and hosting
 
-FastMCP serves push from the same declaration. For an emitted event type, an open `events/stream` request receives each event as it is emitted. For a check function, the server runs the function on the poll interval while the client holds the stream open. Either way it writes a heartbeat when nothing else has been sent, you write nothing extra, and every event type lists both `poll` and `push`.
+FastMCP serves push from the same declaration. For an emitted event type, an open `events/stream` request receives each event as it is emitted. For a reader or a check function, the server runs it on the poll interval while the client holds the stream open. Either way it writes a heartbeat when nothing else has been sent, you write nothing extra, and every event type lists both `poll` and `push`.
 
 Push needs a server that can keep a response stream open. Stateless and serverless hosts that buffer responses or end them after a time limit cannot carry it, and neither can a host that runs no work between requests. An HTTP app created with `json_response=True` cannot either: FastMCP refuses the stream there and the client falls back to polling. On hosts like those, turn push off so clients are told to poll from the start:
 

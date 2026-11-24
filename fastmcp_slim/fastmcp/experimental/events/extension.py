@@ -118,6 +118,7 @@ class EventPoll:
 
 EventCheck: TypeAlias = Callable[[EventPoll], EventBatch | Awaitable[EventBatch]]
 EventSource = TypeVar("EventSource", bound=EventCheck | type[BaseModel])
+EventCheckT = TypeVar("EventCheckT", bound=EventCheck)
 
 
 @dataclass(frozen=True)
@@ -270,6 +271,36 @@ class EventsExtension(ServerExtension):
 
         return register
 
+    def reader(self, model: type[BaseModel]) -> Callable[[EventCheckT], EventCheckT]:
+        """Serve a model's event type from an upstream's history.
+
+        The decorated function receives an `EventPoll` and returns an
+        `EventBatch` of the events after the poll's cursor, with each event's
+        `data` shaped like the model. FastMCP validates the subscription
+        arguments against the model's `for_subscription` and applies it to
+        every event the reader returns, so the reader only reads. It may use
+        `poll.arguments` to narrow an expensive upstream query.
+
+        A type with a reader is not emitted into: its history is the
+        upstream's.
+        """
+        name = self._models.get(model)
+        if name is None:
+            raise ValueError(
+                f"{model.__name__} is not a registered event model; "
+                "decorate it with events.event() first."
+            )
+        typed = self._registrations[name].typed
+        assert typed is not None
+
+        def register(read: EventCheckT) -> EventCheckT:
+            if typed.reader is not None:
+                raise ValueError(f"The event {name!r} already has a reader.")
+            typed.reader = read
+            return read
+
+        return register
+
     async def emit(
         self,
         payload: BaseModel,
@@ -294,6 +325,11 @@ class EventsExtension(ServerExtension):
             )
         typed = self._registrations[name].typed
         assert typed is not None
+        if typed.reader is not None:
+            raise ValueError(
+                f"The event {name!r} is read from an upstream; emit() is for "
+                "event types without a reader."
+            )
         await typed.emit(payload, event_id=event_id, timestamp=timestamp, meta=meta)
 
     def lifespan(self) -> AbstractAsyncContextManager[None]:
