@@ -320,9 +320,9 @@ def json_schema_to_type(
     Returns:
         A Python type (typically a dataclass for objects) with Pydantic validation
 
-        Explicit ``additionalProperties: true`` or a schema preserves extra
-        object fields. This includes ``additionalProperties: {}`` on objects
-        that omit ``type``.
+        Explicit `additionalProperties: true` or a schema preserves extra
+        object fields. This includes `additionalProperties: {}` on objects
+        that omit `type`.
 
         Positional arrays validate each present ``prefixItems`` position and
         apply ``items`` only to the tail. Arrays pinned to the prefix length
