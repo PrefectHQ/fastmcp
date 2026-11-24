@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import mcp_types
+import pytest
 from hypothesis import event, note
 from hypothesis import strategies as st
 from hypothesis.stateful import (
@@ -33,6 +34,7 @@ from hypothesis.stateful import (
 )
 
 from fastmcp import Client, FastMCP
+from fastmcp.server.providers import AggregateProvider
 from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
 from fastmcp.tools import Tool
 from fastmcp.utilities.versions import dedupe_with_versions
@@ -261,6 +263,14 @@ class ComponentMachine(RuleBasedStateMachine):
         return len(versioned) > 1
 
     # ---- mutations ------------------------------------------------------
+
+    @rule(namespace=st.sampled_from(["", "cycle"]), aggregate=st.booleans())
+    def reject_mount_cycle(self, namespace: str, aggregate: bool) -> None:
+        provider = AggregateProvider([self.parent]) if aggregate else self.parent
+        before = list(self.child.providers)
+        with pytest.raises(ValueError, match="cycle"):
+            self.child.add_provider(provider, namespace=namespace)
+        assert self.child.providers == before
 
     def _register(self, kind, owner, ident, version, tags):
         server = self.servers[owner]
