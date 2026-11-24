@@ -1,4 +1,4 @@
-"""Client CLI argument handling for `fastmcp install claude-code|gemini-cli`.
+"""Client CLI argument handling for `fastmcp install claude-code|gemini-cli|codex-cli`.
 
 On Windows, npm installs these CLIs as `.cmd` wrappers that run through
 cmd.exe. The tests below check that each argument reaches the CLI literally.
@@ -16,7 +16,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from fastmcp.cli.install import claude_code, gemini_cli, shared
+from fastmcp.cli.install import claude_code, codex_cli, gemini_cli, shared
 from fastmcp.cli.install.shared import (
     quote_windows_batch_argument,
     run_cli_command,
@@ -292,10 +292,17 @@ INSTALLERS = [
         find_command="find_gemini_command",
         executable_name="gemini",
     ),
+    Installer(
+        install=codex_cli.install_codex_cli,
+        command=codex_cli.codex_cli_command,
+        module=codex_cli,
+        find_command="find_codex_command",
+        executable_name="codex",
+    ),
 ]
 
 
-@pytest.fixture(params=INSTALLERS, ids=["claude-code", "gemini-cli"])
+@pytest.fixture(params=INSTALLERS, ids=["claude-code", "gemini-cli", "codex-cli"])
 def installer(request: pytest.FixtureRequest) -> Installer:
     return request.param
 
@@ -581,12 +588,13 @@ def test_native_windows_cmd_wrapper_receives_literal_arguments(
     full_command = UVEnvironment(
         dependencies=[*packages, "fastmcp"], project=project
     ).build_command(["fastmcp", "run", f"{server.resolve()}:mcp"])
+    env_option = "--env" if installer.module is codex_cli else "-e"
     env_arguments = [
         argument
         for key, value in env_vars.items()
-        for argument in ("-e", f"{key}={value}")
+        for argument in (env_option, f"{key}={value}")
     ]
-    if installer.module is claude_code:
+    if installer.module is not gemini_cli:
         expected = ["mcp", "add", "server", *env_arguments, "--", *full_command]
     else:
         expected = [

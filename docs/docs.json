@@ -328,6 +328,7 @@
                       "integrations/chatgpt",
                       "integrations/claude-code",
                       "integrations/claude-desktop",
+                      "integrations/codex-cli",
                       "integrations/cursor",
                       "integrations/gemini-cli",
                       "integrations/goose"

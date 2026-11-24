@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -572,6 +573,133 @@ class TestGeminiCliInstall:
         assert bound.arguments["with_requirements"] == Path("requirements.txt")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Runs a POSIX shell script")
+class TestCodexCliInstall:
+    """Run `fastmcp install codex-cli` against a stand-in `codex` on PATH."""
+
+    @pytest.fixture
+    def server_file(self, tmp_path: Path) -> Path:
+        server_file = tmp_path / "server.py"
+        server_file.write_text(
+            "from fastmcp import FastMCP\n\nmcp = FastMCP('Dice Roller')\n",
+            encoding="utf-8",
+        )
+        return server_file
+
+    @pytest.fixture
+    def codex(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """A `codex` that records its arguments, separated by NUL."""
+        codex = tmp_path / "bin" / "codex"
+        codex.parent.mkdir()
+        codex.write_text('#!/bin/sh\nprintf "%s\\0" "$@" > "$0.argv"\n')
+        codex.chmod(0o755)
+        monkeypatch.setenv("PATH", str(codex.parent))
+        return codex
+
+    def recorded_arguments(self, codex: Path) -> list[str]:
+        recorded = codex.with_name("codex.argv").read_text(encoding="utf-8")
+        return recorded.split("\0")[:-1]
+
+    async def install(self, *arguments: str) -> None:
+        await install_app.run_async(
+            ["codex-cli", *arguments], exit_on_error=False, result_action="return_value"
+        )
+
+    async def test_registers_server(
+        self, server_file: Path, codex: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        await self.install(
+            f"{server_file}:mcp",
+            "--with",
+            "pandas>=2.0",
+            "--env",
+            "API_URL=https://example.com/?a=1",
+            "--env",
+            'GREETING=say "hi"',
+        )
+
+        # Codex rejects spaces in server names
+        assert self.recorded_arguments(codex) == [
+            "mcp",
+            "add",
+            "Dice-Roller",
+            "--env",
+            "API_URL=https://example.com/?a=1",
+            "--env",
+            'GREETING=say "hi"',
+            "--",
+            "uv",
+            "run",
+            "--with",
+            "fastmcp",
+            "--with",
+            "pandas>=2.0",
+            "fastmcp",
+            "run",
+            f"{server_file}:mcp",
+        ]
+        assert "installed 'Dice-Roller' in Codex CLI" in capsys.readouterr().out
+
+    @pytest.mark.parametrize(
+        "option", ["--python", "--project", "--with-requirements", "--with-editable"]
+    )
+    async def test_forwards_uv_option(
+        self, server_file: Path, codex: Path, tmp_path: Path, option: str
+    ):
+        value = "3.12" if option == "--python" else str(tmp_path / "dependency")
+
+        await self.install(str(server_file), option, value)
+
+        arguments = self.recorded_arguments(codex)
+        uv_command = arguments[arguments.index("--") + 1 :]
+        assert uv_command[uv_command.index(option) + 1] == value
+
+    @pytest.mark.parametrize(
+        "program,reason",
+        [
+            # Codex quotes the config line it could not parse
+            (
+                "#!/bin/sh\necho '5 | [mcp_servers.demo]' >&2\nexit 1\n",
+                "5 | [mcp_servers.demo]",
+            ),
+            ("#!/bin/sh\nexit 3\n", "exit code 3"),
+            ("not a program", "Exec format error"),
+        ],
+        ids=["stderr", "no-stderr", "not-executable"],
+    )
+    async def test_reports_failed_registration(
+        self,
+        server_file: Path,
+        codex: Path,
+        capsys: pytest.CaptureFixture[str],
+        program: str,
+        reason: str,
+    ):
+        codex.write_text(program)
+
+        with pytest.raises(SystemExit) as exc_info:
+            await self.install(
+                str(server_file), "--name", "demo", "--env", "API_KEY=secret"
+            )
+
+        assert exc_info.value.code == 1
+        output = " ".join(capsys.readouterr().out.split())
+        assert "Failed to install 'demo' in Codex CLI" in output
+        assert reason in output
+        assert "secret" not in output
+
+    async def test_reports_missing_codex(
+        self, server_file: Path, codex: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        codex.unlink()
+
+        with pytest.raises(SystemExit) as exc_info:
+            await self.install(str(server_file))
+
+        assert exc_info.value.code == 1
+        assert "Codex CLI not found" in capsys.readouterr().out
+
+
 class TestInstallCommandParsing:
     """Test command parsing and error handling."""
 
@@ -581,6 +709,7 @@ class TestInstallCommandParsing:
         commands_to_test = [
             ["claude-code", "server.py"],
             ["claude-desktop", "server.py"],
+            ["codex-cli", "server.py"],
             ["cursor", "server.py"],
             ["gemini-cli", "server.py"],
             ["goose", "server.py"],
@@ -610,6 +739,7 @@ class TestInstallCommandParsing:
         commands_to_test = [
             ["claude-code", "server.py", "--python", "3.11"],
             ["claude-desktop", "server.py", "--python", "3.11"],
+            ["codex-cli", "server.py", "--python", "3.11"],
             ["cursor", "server.py", "--python", "3.11"],
             ["gemini-cli", "server.py", "--python", "3.11"],
             ["goose", "server.py", "--python", "3.11"],
@@ -627,6 +757,7 @@ class TestInstallCommandParsing:
         commands_to_test = [
             ["claude-code", "server.py", "--with-requirements", "requirements.txt"],
             ["claude-desktop", "server.py", "--with-requirements", "requirements.txt"],
+            ["codex-cli", "server.py", "--with-requirements", "requirements.txt"],
             ["cursor", "server.py", "--with-requirements", "requirements.txt"],
             ["gemini-cli", "server.py", "--with-requirements", "requirements.txt"],
             ["mcp-json", "server.py", "--with-requirements", "requirements.txt"],
@@ -643,6 +774,7 @@ class TestInstallCommandParsing:
         commands_to_test = [
             ["claude-code", "server.py", "--project", "/path/to/project"],
             ["claude-desktop", "server.py", "--project", "/path/to/project"],
+            ["codex-cli", "server.py", "--project", "/path/to/project"],
             ["cursor", "server.py", "--project", "/path/to/project"],
             ["gemini-cli", "server.py", "--project", "/path/to/project"],
             ["mcp-json", "server.py", "--project", "/path/to/project"],
