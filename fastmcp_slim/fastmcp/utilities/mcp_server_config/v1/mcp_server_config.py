@@ -265,12 +265,20 @@ class MCPServerConfig(BaseModel):
         if not source_path.is_absolute():
             self.source.path = os.path.abspath(config_dir / source_path)
 
-        requirements = self.environment.requirements
-        if requirements is not None:
-            requirements = requirements.expanduser()
-            if not requirements.is_absolute():
-                requirements = Path(os.path.abspath(config_dir / requirements))
-            self.environment.requirements = requirements
+        def _anchor(path: Path) -> Path:
+            expanded = path.expanduser()
+            if not expanded.is_absolute():
+                return Path(os.path.abspath(config_dir / expanded))
+            return expanded
+
+        if self.environment.requirements is not None:
+            self.environment.requirements = _anchor(self.environment.requirements)
+
+        if self.environment.project is not None:
+            self.environment.project = _anchor(self.environment.project)
+
+        if self.environment.editable is not None:
+            self.environment.editable = [_anchor(p) for p in self.environment.editable]
 
     @classmethod
     def from_cli_args(
