@@ -88,6 +88,25 @@ async def test_poll_returns_emitted_events_that_match_the_subscription():
     assert not api.truncated and not api.has_more
 
 
+async def test_matches_sees_the_payload_as_emitted():
+    server, events = make_server()
+    async with client(server) as c:
+        payments = await poll_events_mcp(c, "alert.fired", {"project": "payments"})
+        search = await poll_events_mcp(c, "alert.fired", {"project": "search"})
+        alert = AlertFired(project="payments")
+        await events.emit(alert, event_id="p1")
+        alert.project = "search"
+        to_payments = await poll_events_mcp(
+            c, "alert.fired", {"project": "payments"}, cursor=payments.cursor
+        )
+        to_search = await poll_events_mcp(
+            c, "alert.fired", {"project": "search"}, cursor=search.cursor
+        )
+    assert [e.event_id for e in to_payments.events] == ["p1"]
+    assert to_payments.events[0].data["project"] == "payments"
+    assert to_search.events == []
+
+
 async def test_a_generated_event_id_is_the_same_on_every_poll():
     server, events = make_server()
     async with client(server) as c:
