@@ -553,21 +553,22 @@ record("PROBE", "#6510 UsageMiddleware", usage)
 
 EVENTS_SERVER = textwrap.dedent("""
     import sys
+    from pydantic import BaseModel
     from fastmcp import FastMCP
-    from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
+    from fastmcp.experimental.events import EventsExtension
     mcp = FastMCP("events-smoke")
     events = EventsExtension(poll_interval_ms=200)
     mcp.add_extension(events)
-    ALERTS = []
-    @events.event(name="alert.fired", description="An alert fired")
-    def alert_fired(poll: EventPoll) -> EventBatch:
-        if poll.cursor is None:
-            return EventBatch(cursor=str(len(ALERTS)))
-        new = ALERTS[int(poll.cursor):]
-        return EventBatch(events=[Event(data=a, event_id=a["id"]) for a in new], cursor=str(len(ALERTS)))
+    @events.event("alert.fired")
+    class AlertFired(BaseModel):
+        "An alert fired"
+        n: int
+    FIRED = []
     @mcp.tool
-    def fire() -> str:
-        ALERTS.append({"id": str(len(ALERTS))}); return "fired"
+    async def fire() -> str:
+        FIRED.append(1)
+        await events.emit(AlertFired(n=len(FIRED)), event_id=str(len(FIRED)))
+        return "fired"
     mcp.run(transport="http", port=int(sys.argv[1]), show_banner=False, log_level="warning")
 """)
 (WORK / "events_server.py").write_text(EVENTS_SERVER)

@@ -24,12 +24,13 @@ import os
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 from urllib.parse import urlencode
 
 import anyio
 import httpx
 import websockets
+from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
 from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
@@ -131,41 +132,38 @@ def at_uri(message: dict[str, Any]) -> str:
     return f"at://{message['did']}/{commit['collection']}/{commit['rkey']}"
 
 
-@events.event(
-    name="atproto.commit",
-    description=(
-        "A record created, updated or deleted in the collections you name, "
-        "optionally only from the accounts you name"
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "collections": {
-                "type": "array",
-                "items": {"type": "string"},
-                "minItems": 1,
-                "description": "NSIDs, or prefixes ending in .* (e.g. sh.tangled.*)",
-            },
-            "dids": {
-                "type": "array",
-                "items": {"type": "string", "pattern": "^did:"},
-                "description": "Only commits by these accounts",
-            },
-        },
-        "required": ["collections"],
-    },
-    payload_schema={
-        "type": "object",
-        "properties": {
-            "uri": {"type": "string"},
-            "did": {"type": "string"},
-            "collection": {"type": "string"},
-            "operation": {"enum": ["create", "update", "delete"]},
-            "record": {"type": "object"},
-        },
-        "required": ["uri", "did", "collection", "operation"],
-    },
-)
+Did = Annotated[str, Field(pattern="^did:")]
+
+
+@events.event("atproto.commit")
+class AtprotoCommit(BaseModel):
+    """A record created, updated or deleted in the collections you name,
+    optionally only from the accounts you name."""
+
+    uri: str
+    did: str
+    collection: str
+    operation: Literal["create", "update", "delete"]
+    record: dict[str, Any] | None = None
+
+    def for_subscription(
+        self,
+        collections: Annotated[
+            list[str],
+            Field(
+                min_length=1,
+                description="NSIDs, or prefixes ending in .* (e.g. sh.tangled.*)",
+            ),
+        ],
+        dids: Annotated[
+            list[Did] | None, Field(description="Only commits by these accounts")
+        ] = None,
+    ) -> AtprotoCommit:
+        # Jetstream filters on both, so every event the reader returns fits.
+        return self
+
+
+@events.reader(AtprotoCommit)
 async def atproto_commit(poll: EventPoll) -> EventBatch:
     params: dict[str, Any] = {"wantedCollections": poll.arguments["collections"]}
     if dids := poll.arguments.get("dids"):
@@ -173,14 +171,13 @@ async def atproto_commit(poll: EventPoll) -> EventBatch:
 
     def match(message: dict[str, Any]) -> Event:
         commit = message["commit"]
-        data: dict[str, Any] = {
+        data = {
             "uri": at_uri(message),
             "did": message["did"],
             "collection": commit["collection"],
             "operation": commit["operation"],
+            "record": commit.get("record"),
         }
-        if "record" in commit:
-            data["record"] = commit["record"]
         return Event(
             data=data,
             event_id=f"{data['uri']}#{commit['rev']}",
@@ -220,31 +217,27 @@ def mention_kind(record: dict[str, Any], did: str) -> str | None:
     return None
 
 
-@events.event(
-    name="bsky.mention",
-    description="A Bluesky post that mentions, replies to or quotes an account",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "subject": {
-                "type": "string",
-                "description": "The account: a handle (bsky.app) or a DID",
-            },
-        },
-        "required": ["subject"],
-    },
-    payload_schema={
-        "type": "object",
-        "properties": {
-            "uri": {"type": "string"},
-            "author": {"type": "string"},
-            "kind": {"enum": ["mention", "reply", "quote"]},
-            "text": {"type": "string"},
-            "createdAt": {"type": "string"},
-        },
-        "required": ["uri", "author", "kind"],
-    },
-)
+@events.event("bsky.mention")
+class BskyMention(BaseModel):
+    """A Bluesky post that mentions, replies to or quotes an account."""
+
+    uri: str
+    author: str
+    kind: Literal["mention", "reply", "quote"]
+    text: str = ""
+    createdAt: str = ""
+
+    def for_subscription(
+        self,
+        subject: Annotated[
+            str, Field(description="The account: a handle (bsky.app) or a DID")
+        ],
+    ) -> BskyMention:
+        # The reader resolves the subject and keeps only its mentions.
+        return self
+
+
+@events.reader(BskyMention)
 async def bsky_mention(poll: EventPoll) -> EventBatch:
     if poll.cursor is None:
         return EventBatch(cursor=str(now_us()))
