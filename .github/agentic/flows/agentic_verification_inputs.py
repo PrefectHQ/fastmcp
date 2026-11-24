@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -88,10 +89,55 @@ class VerificationInputs:
                 )
         return sorted(changed)
 
+    def tool_output(self, changes: list[str]) -> bool:
+        """Whether every change is an untracked file the repository ignores.
 
-def reject_mutations(result: dict, changes: list[str]) -> dict:
+        Caches and databases that test tools write next to the code (`.hypothesis/`,
+        `.pytest_cache/`, `__pycache__/`) land here. Their results are discarded either
+        way; this only decides who is asked to fix it: the runner, not the contributor.
+        """
+        paths = [
+            name
+            for name in changes
+            if not name.startswith((".git/", ".venv/")) and name != "./"
+        ]
+        if not paths or len(paths) != len(changes):
+            return False
+        try:
+            found = subprocess.run(
+                ["git", "check-ignore", "--stdin", "-z"],
+                cwd=self.repo,
+                input="\0".join(paths) + "\0",
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env={
+                    "PATH": os.environ.get("PATH", ""),
+                    "GIT_CONFIG_NOSYSTEM": "1",
+                    "GIT_CONFIG_GLOBAL": os.devnull,
+                },
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        # Tracked files are never reported as ignored, so they always count as mutations.
+        ignored = set(found.stdout.split("\0")) if found.returncode == 0 else set()
+        return all(path in ignored for path in paths)
+
+
+def reject_mutations(
+    result: dict, changes: list[str], inputs: VerificationInputs | None = None
+) -> dict:
     if not changes:
         return result
+    if inputs is not None and inputs.tool_output(changes):
+        return {
+            **result,
+            "test_status": result.get("test_status", result["status"]),
+            "status": "environment_failure",
+            "reason": "Tests left ignored tool output in the checkout; isolate it in the verification runner and retry. The contribution is not at fault.",
+            "input_changes": changes[:100],
+            "input_changes_truncated": len(changes) > 100,
+        }
     return {
         **result,
         "test_status": result.get("test_status", result["status"]),
