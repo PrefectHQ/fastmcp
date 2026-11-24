@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Any, Literal
 
 import anyio
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types import HEADER_MISMATCH
+from pydantic import BaseModel, Field
 from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
@@ -26,26 +27,32 @@ from fastmcp.experimental.events._constants import EVENTS_EXTENSION_ID
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.utilities.tests import run_server_async
 
-REGION_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "region": {"type": "string", "x-mcp-header": "Region"},
-        "severity": {"type": "string"},
-    },
-}
+Region = Annotated[str, Field(json_schema_extra={"x-mcp-header": "Region"})]
+
+
+class IncidentCreated(BaseModel):
+    """An incident was opened."""
+
+    region: str
+
+    def for_subscription(
+        self, region: Region = "", severity: str | None = None
+    ) -> IncidentCreated:
+        return self
 
 
 def make_server(seen_headers: list[str | None]) -> tuple[FastMCP, EventsExtension]:
     server = FastMCP("incidents")
     events = EventsExtension(poll_interval_ms=10)
     server.add_extension(events)
+    events.event("incident.created")(IncidentCreated)
 
-    @events.event(name="incident.created", input_schema=REGION_SCHEMA)
-    def incident_created(poll: EventPoll) -> EventBatch:
+    @events.reader(IncidentCreated)
+    def read_incidents(poll: EventPoll) -> EventBatch:
         seen_headers.append(get_http_headers(include_all=True).get("mcp-param-region"))
         if poll.cursor is None:
             return EventBatch(cursor="0")
-        region = poll.arguments.get("region", "")
+        region = poll.arguments["region"]
         return EventBatch(
             events=[Event(data={"region": region}, event_id=f"incident-{region}")],
             cursor="1",
@@ -168,24 +175,27 @@ def test_server_accepts_a_matching_param_header() -> None:
     assert response.json()["result"]["events"][0]["data"] == {"region": "us-west1"}
 
 
+class Bad(BaseModel):
+    """Routed on an object, which no header can carry."""
+
+    def for_subscription(
+        self,
+        r: Annotated[dict[str, Any], Field(json_schema_extra={"x-mcp-header": "R"})],
+    ) -> Bad:
+        return self
+
+
 def test_registering_an_invalid_annotation_is_an_error() -> None:
     events = EventsExtension()
     with pytest.raises(ValueError, match="x-mcp-header"):
-        events.event(
-            name="bad",
-            input_schema={
-                "type": "object",
-                "properties": {"r": {"type": "object", "x-mcp-header": "Region"}},
-            },
-        )
+        events.event("bad")(Bad)
 
 
 async def test_client_drops_an_event_type_with_an_invalid_annotation() -> None:
     server, events = make_server([])
     # A server SDK refuses to publish this, so plant it to stand in for one
     # that does not.
-    descriptor = events._registrations["incident.created"].descriptor
-    descriptor.input_schema = {
+    events._registrations["incident.created"].input_schema = {
         "type": "object",
         "properties": {"r": {"type": "string", "x-mcp-header": "bad token"}},
     }
