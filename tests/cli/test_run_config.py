@@ -392,3 +392,29 @@ def test_symlinked_config_anchors_paths_beside_the_link(tmp_path, monkeypatch):
 
     assert merged.source.path == os.path.abspath(project / "server.py")
     assert loaded.source.path == os.path.abspath(project / "server.py")
+
+
+def test_from_file_resolves_project_and_editable_against_config_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Relative environment.project and environment.editable resolve against fastmcp.json's dir."""
+    project = tmp_path / "proj"
+    pkg = tmp_path / "local-pkg"
+    elsewhere = tmp_path / "elsewhere"
+    project.mkdir()
+    pkg.mkdir()
+    elsewhere.mkdir()
+    (project / "server.py").write_text("from fastmcp import FastMCP\nmcp = FastMCP('x')\n")
+    (project / "fastmcp.json").write_text(
+        json.dumps(
+            {
+                "source": {"path": "server.py"},
+                "environment": {"project": ".", "editable": ["../local-pkg"]},
+            }
+        )
+    )
+    monkeypatch.chdir(elsewhere)
+
+    loaded = MCPServerConfig.from_file(project / "fastmcp.json")
+    assert loaded.environment.project == Path(os.path.abspath(project))
+    assert loaded.environment.editable == [Path(os.path.abspath(pkg))]
