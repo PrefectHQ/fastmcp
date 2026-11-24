@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-24T12:32:29+00:00",
- "source_commit": "e9f5037e1ad88cf73207aea831a4f9ecd613f0d1",
+ "generated_at": "2026-11-24T18:46:10+00:00",
+ "source_commit": "ca60566a5b45152b4016e2b516c80b318c15203b",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -2241,9 +2241,9 @@
    "module": "fastmcp.server.auth.oauth_proxy.upstream",
    "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py",
    "public": false,
-   "statements": 44,
+   "statements": 49,
    "hit": 0,
-   "functions": 6,
+   "functions": 8,
    "functions_hit": 0,
    "symbols": [],
    "tests": 0,
