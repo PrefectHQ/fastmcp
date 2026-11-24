@@ -83,7 +83,7 @@ def graph(ref: str) -> Graph:
 
 def installed(packages: Graph, name: str, extra: str) -> dict[str, str]:
     """Third-party requirements `pip install name[extra]` pulls in, by name."""
-    found: dict[str, str] = {}
+    found: dict[str, set[str]] = {}
     seen: set[tuple[str, str]] = set()
     todo = [(name, ""), (name, extra)]
     while todo:
@@ -100,8 +100,8 @@ def installed(packages: Graph, name: str, extra: str) -> dict[str, str]:
                 spec = str(req.specifier) or "any"
                 if req.marker is not None:
                     spec += f"; {req.marker}"
-                found[req.name.lower()] = spec
-    return found
+                found.setdefault(req.name.lower(), set()).add(spec)
+    return {dep: " and ".join(sorted(specs)) for dep, specs in found.items()}
 
 
 def targets(before: Graph, after: Graph) -> Iterator[tuple[str, str]]:
