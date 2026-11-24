@@ -178,7 +178,11 @@ def handoff_revision(issue: dict, pulls: list[dict]) -> str:
                 actor["login"] for actor in issue.get("assignees") or []
             ),
             "contributions": sorted(
-                [pull["number"], (pull.get("head") or {}).get("sha")]
+                [
+                    pull["number"],
+                    (pull.get("head") or {}).get("sha"),
+                    pull.get("comments"),
+                ]
                 for pull in addressed(pulls).get(number, [])
             ),
         }
@@ -195,8 +199,29 @@ def open_pulls(read: Callable[[str], object], pages: int = 3) -> list[dict]:
             raise ValueError("Expected a page of pull requests")
         pulls.extend(row for row in rows if isinstance(row, dict))
         if len(rows) < 100:
-            return pulls
+            return with_discussion(read, pulls)
     raise ValueError("More open pull requests than the follow-through bound")
+
+
+def with_discussion(read: Callable[[str], object], pulls: list[dict]) -> list[dict]:
+    """Add each PR's conversation comment count, which the pulls listing leaves out.
+
+    A contributor answering on their PR is a change to the hand-off. Triage's own
+    output on a PR is a review, which this count doesn't include.
+    """
+    counts: dict[int, int] = {}
+    for page in range(1, 11):
+        rows = read(
+            f"repos/PrefectHQ/fastmcp/issues?state=open&per_page=100&page={page}"
+        )
+        if not isinstance(rows, list):
+            raise ValueError("Expected a page of issues")
+        for row in rows:
+            if isinstance(row, dict) and "pull_request" in row:
+                counts[row["number"]] = row.get("comments", 0)
+        if len(rows) < 100:
+            return [{**pull, "comments": counts.get(pull["number"])} for pull in pulls]
+    raise ValueError("More open issues than the follow-through bound")
 
 
 def handoffs(read: Callable[[str], object], numbers: list[int]) -> dict[str, str]:

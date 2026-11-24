@@ -67,6 +67,8 @@ def test_hand_off_moves_with_people_and_contributions() -> None:
         handoff_revision(issue(1, state="closed"), [pull(10, 1)]),
         handoff_revision(issue(1), [pull(10, 1, head="2" * 40)]),
         handoff_revision(issue(1), [pull(10, 1, draft=True)]),
+        # The contributor answered on the PR without pushing.
+        handoff_revision(issue(1), [{**pull(10, 1), "comments": 1}]),
         handoff_revision(issue(1), []),
     ):
         assert changed != base
@@ -140,10 +142,12 @@ def test_handoffs_snapshot_each_admitted_issue() -> None:
     def read(path: str):
         if "/pulls?" in path:
             return [pull(10, 1)]
+        if "/issues?" in path:
+            return [{"number": 10, "pull_request": {}, "comments": 2}, issue(1)]
         return issue(int(path.rsplit("/", 1)[1]))
 
     assert handoffs(read, [1, 2]) == {
-        "1": handoff_revision(issue(1), [pull(10, 1)]),
+        "1": handoff_revision(issue(1), [{**pull(10, 1), "comments": 2}]),
         "2": handoff_revision(issue(2), []),
     }
     assert handoffs(read, []) == {}
@@ -154,10 +158,14 @@ def test_open_pulls_pages_until_short() -> None:
 
     def read(path: str):
         seen.append(path)
+        if "/issues?" in path:
+            return [{"number": 5, "pull_request": {}, "comments": 4}]
         return [pull(n, 1) for n in range(100)] if path.endswith("page=1") else []
 
-    assert len(open_pulls(read)) == 100
-    assert len(seen) == 2
+    pulls = open_pulls(read)
+    assert len(pulls) == 100
+    assert pulls[5]["comments"] == 4 and pulls[6]["comments"] is None
+    assert len(seen) == 3
 
 
 def test_a_person_clearing_needs_triage_sticks() -> None:
@@ -237,12 +245,16 @@ def test_re_entry_runs_what_the_issue_automation_runs() -> None:
         # The same queue scope as the issue's own events, without the cooldown.
         assert config.scope() == Intake(issues=[6584], queue="events").scope()
         assert config.refresh_minutes == 1 and config.sender is None
+        # A moved hand-off gets a fresh look even after a failed receipt.
+        assert config.retry_failed
         changed = dispatch(target, pinned, {**item, "revision": "d" * 64})
         assert changed != first
-        assert attempts(target)(6584, "c" * 64) == 1
+        assert attempts(target, SHA)(6584, "c" * 64) == 1
         retry = dispatch(target, pinned, {**item, "attempt": 1})
         assert retry != first
-        assert attempts(target)(6584, "c" * 64) == 2
+        assert attempts(target, SHA)(6584, "c" * 64) == 2
+        # A deploy resets the tries for the same issue revision.
+        assert attempts(target, OLD_SHA)(6584, "c" * 64) == 0
         # Scheduled runs count as in flight, so the next pass waits for them.
         assert busy(unfinished(target), []) == {6584}
 

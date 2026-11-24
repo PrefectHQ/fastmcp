@@ -99,8 +99,9 @@ def stale(record: dict | None, revision: str, source_sha: str) -> str | None:
 MAX_TRIES = 3
 
 
-def run_name(number: int, revision: str) -> str:
-    return f"follow-through-{number}-{revision[:12]}"
+def run_name(number: int, revision: str, source_sha: str) -> str:
+    """One name per issue revision and code revision, so a deploy resets the tries."""
+    return f"follow-through-{number}-{revision[:12]}-{source_sha[:8]}"
 
 
 def busy(running: list[dict], pulls: list[dict]) -> set[int]:
@@ -208,14 +209,16 @@ def unfinished(deployment_id: UUID) -> list[dict]:
     return [run.parameters or {} for run in runs]
 
 
-def attempts(deployment_id: UUID) -> Callable[[int, str], int]:
+def attempts(deployment_id: UUID, source_sha: str) -> Callable[[int, str], int]:
     def count(number: int, revision: str) -> int:
         with get_client(sync_client=True) as client:
             return len(
                 client.read_flow_runs(
                     deployment_filter=DeploymentFilter(id={"any_": [deployment_id]}),
                     flow_run_filter=FlowRunFilter(
-                        name=FlowRunFilterName(any_=[run_name(number, revision)])
+                        name=FlowRunFilterName(
+                            any_=[run_name(number, revision, source_sha)]
+                        )
                     ),
                     limit=MAX_TRIES,
                 )
@@ -232,7 +235,7 @@ def dispatch(deployment_id: UUID, pinned: dict, item: dict) -> UUID:
             raise ValueError(f"{ISSUE_AUTOMATION} points at {deployment.name}")
         run = client.create_flow_run_from_deployment(
             deployment_id,
-            name=run_name(number, item["revision"]),
+            name=run_name(number, item["revision"], pinned["runtime"]["source_sha"]),
             parameters={
                 **pinned,
                 # The same queue as the issue's own events, so they share receipts.
@@ -243,12 +246,15 @@ def dispatch(deployment_id: UUID, pinned: dict, item: dict) -> UUID:
                     "max_items": 3,
                     "issues": [number],
                     "refresh_minutes": 1,
+                    # And past a failed receipt on the same code: the hand-off moved,
+                    # so the last failure says nothing about this revision.
+                    "retry_failed": True,
                 },
             },
             # One run per attempt, however many passes race to start it.
             idempotency_key=(
                 f"fastmcp-follow-through-{number}-{item['revision'][:24]}"
-                f"-{item.get('attempt', 0)}"
+                f"-{pinned['runtime']['source_sha'][:8]}-{item.get('attempt', 0)}"
             ),
         )
     return run.id
@@ -271,7 +277,7 @@ def follow_through(max_dispatch: int = 3) -> dict:
         source_sha,
         max_dispatch,
         busy(unfinished(deployment_id), pulls),
-        attempts(deployment_id),
+        attempts(deployment_id, source_sha),
     )
     started = []
     for item in found["dispatch"]:

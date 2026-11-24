@@ -272,6 +272,7 @@ def test_queue_recovers_same_controller_and_commits_only_saved_outcomes(
         responses[f"/repos/PrefectHQ/fastmcp/issues/{number}"] = issue(number)
     responses["/repos/PrefectHQ/fastmcp/commits/main"] = {"sha": "a" * 40}
     responses["/repos/PrefectHQ/fastmcp/pulls?state=open&per_page=100&page=1"] = []
+    responses["/repos/PrefectHQ/fastmcp/issues?state=open&per_page=100&page=1"] = []
     config = Intake(issues=[1, 2, 3], max_items=2)
     with prefect_test_harness(), get_client(sync_client=True) as client:
         client.create_work_pool(WorkPoolCreate(name="managed", type="process"))
