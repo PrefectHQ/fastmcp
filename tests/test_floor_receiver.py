@@ -191,13 +191,30 @@ def test_ci_run_on_main_is_one_record_that_only_moves_forward(receiver):
     assert len(pds.puts()) == 1
 
 
-def test_ci_off_main_or_from_prs_is_ignored(receiver):
+def test_ci_off_main_without_a_pr_is_ignored(receiver):
     post, pds = receiver
     branch = ci_run("completed", "2026-11-23T07:09:00Z", head_branch="fix")
-    pr = ci_run("completed", "2026-11-23T07:09:00Z", event="pull_request")
+    fork = ci_run("completed", "2026-11-23T07:09:00Z", event="pull_request")
     assert post("workflow_run", branch)[1] == "nothing to show"
-    assert post("workflow_run", pr)[1] == "nothing to show"
+    assert post("workflow_run", fork)[1] == "nothing to show"
     assert pds.puts() == []
+
+
+def test_finished_ci_on_a_pr_is_a_checks_event(receiver):
+    post, pds = receiver
+    run = ci_run(
+        "completed",
+        "2026-11-23T07:09:00Z",
+        head_branch="fix",
+        event="pull_request",
+        pull_requests=[{"number": 42}],
+    )
+    assert post("workflow_run", run, delivery="p1") == (202, "checks #42 failure")
+    (put,) = pds.puts()
+    assert put["collection"] == "io.prefect.fastmcp.floor.event"
+    assert put["record"]["kind"] == "checks"
+    assert put["record"]["workflow"] == "Tests"
+    assert put["record"]["pr"] is True
 
 
 RUN = {
