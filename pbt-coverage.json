@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-24T05:33:57+00:00",
- "source_commit": "89d4a1840b4dcf208283f7a24c62be3c532781ab",
+ "generated_at": "2026-11-24T12:32:29+00:00",
+ "source_commit": "e9f5037e1ad88cf73207aea831a4f9ecd613f0d1",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
