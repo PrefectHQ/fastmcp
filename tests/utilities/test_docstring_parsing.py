@@ -44,6 +44,48 @@ class TestGoogleStyle:
         assert parsed.description == "Do something."
         assert parsed.parameters == {"a": "The number.", "b": "The string."}
 
+    def test_other_parameters(self):
+        def fn(x: str, **kwargs: int) -> str:
+            """Do something.
+
+            Parameters
+            ----------
+            x : str
+                The primary string.
+
+            Other Parameters
+            ----------------
+            limit : int
+                Maximum number of results.
+            """
+            return x
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do something."
+        assert parsed.parameters == {
+            "x": "The primary string.",
+            "limit": "Maximum number of results.",
+        }
+
+    def test_google_keyword_args(self):
+        def fn(query: str, *, limit: int = 10) -> str:
+            """Search the catalog.
+
+            Args:
+                query: Text to search for.
+
+            Keyword Args:
+                limit: Maximum number of results.
+            """
+            return query
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Search the catalog."
+        assert parsed.parameters == {
+            "query": "Text to search for.",
+            "limit": "Maximum number of results.",
+        }
+
     def test_returns_section_excluded(self):
         def fn(a: float) -> float:
             """Summary.
@@ -147,6 +189,48 @@ class TestNumpyStyle:
         parsed = parse_docstring(fn)
         assert parsed.description == "Do something."
         assert parsed.parameters == {"a": "The number.", "b": "The string."}
+
+    def test_other_parameters(self):
+        def fn(x: str, **kwargs: int) -> str:
+            """Do something.
+
+            Parameters
+            ----------
+            x : str
+                The primary string.
+
+            Other Parameters
+            ----------------
+            limit : int
+                Maximum number of results.
+            """
+            return x
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Do something."
+        assert parsed.parameters == {
+            "x": "The primary string.",
+            "limit": "Maximum number of results.",
+        }
+
+    def test_google_keyword_args(self):
+        def fn(query: str, *, limit: int = 10) -> str:
+            """Search the catalog.
+
+            Args:
+                query: Text to search for.
+
+            Keyword Args:
+                limit: Maximum number of results.
+            """
+            return query
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Search the catalog."
+        assert parsed.parameters == {
+            "query": "Text to search for.",
+            "limit": "Maximum number of results.",
+        }
 
 
 class TestSphinxStyle:
