@@ -77,7 +77,14 @@ def apply_patch(repository: Path, patch: str) -> list[str]:
         .split("\0")
     )
     paths = [path for path in paths if path]
-    allowed = ("docs/", "tests/", "fastmcp_slim/", "fastmcp_remote/", "fastmcp_tasks/")
+    allowed = (
+        "docs/",
+        "tests/",
+        "fastmcp_slim/",
+        "fastmcp_remote/",
+        "fastmcp_tasks/",
+        "fastmcp_events/",
+    )
     generated = (
         "docs/python-sdk/",
         "docs/public/schemas/",

@@ -28,8 +28,13 @@ from mcp_types import HEADER_MISMATCH, INTERNAL_ERROR, INVALID_REQUEST
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import BaseModel
 
-from fastmcp.server.dependencies import get_http_headers
-from fastmcp.server.extensions import MethodBinding, ServerExtension
+from fastmcp import _install_hints
+
+try:
+    from fastmcp.server.dependencies import get_http_headers
+    from fastmcp.server.extensions import MethodBinding, ServerExtension
+except ImportError as exc:  # pragma: no cover - exercised by wheel installs
+    raise ImportError(_install_hints.SERVER_SUPPORT) from exc
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.pagination import paginate_request
 from fastmcp_events._constants import (

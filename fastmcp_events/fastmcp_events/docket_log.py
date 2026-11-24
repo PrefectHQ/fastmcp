@@ -2,7 +2,7 @@
 
 Experimental: this API may change in any release without a deprecation period.
 
-Requires `pydocket`, which `pip install "fastmcp-events[docket]"` provides.
+Requires `pydocket`, which the `docket` extra provides: `pip install "fastmcp[events]" "fastmcp-events[docket]"`.
 """
 
 from __future__ import annotations

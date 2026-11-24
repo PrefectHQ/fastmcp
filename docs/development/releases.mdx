@@ -41,7 +41,7 @@ Only maintainers cut releases. Use the repository's [release skill](https://gith
 
 Current-major releases come from `main`. Maintenance releases come from the branch that owns their line, such as `release/3.x` or `release/2.x`. A branch's existence does not by itself promise ongoing security support; consult the security policy.
 
-Publishing a release triggers the package workflows, and nothing else can: they have no manual dispatch. The `fastmcp-slim` job waits in the `pypi` environment until a maintainer approves it. On the current line, `fastmcp-slim` publishes first, followed by the dependent `fastmcp-tasks`, `fastmcp-remote`, and `fastmcp` distributions. Verify the relevant workflows and package versions on PyPI rather than treating the GitHub release alone as completion. Published versions are immutable; a correction needs a new release.
+Publishing a release triggers the package workflows, and nothing else can: they have no manual dispatch. The `fastmcp-slim` job waits in the `pypi` environment until a maintainer approves it. On the current line, `fastmcp-slim` publishes first, followed by the dependent `fastmcp-tasks`, `fastmcp-events`, `fastmcp-remote`, and `fastmcp` distributions. Verify the relevant workflows and package versions on PyPI rather than treating the GitHub release alone as completion. Published versions are immutable; a correction needs a new release.
 
 ## Publishing documentation
 

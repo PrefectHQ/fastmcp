@@ -7,7 +7,7 @@ Experimental: the API may change in any release without a deprecation period.
 ```bash
 pip install "fastmcp[events]"
 # with the Redis-backed log, through Docket
-pip install "fastmcp-events[docket]"
+pip install "fastmcp[events]" "fastmcp-events[docket]"
 ```
 
 ```python
