@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-24T19:48:00+00:00",
- "source_commit": "5d39cc3be8faf1fa10f071c1667f3a948e8d0837",
+ "generated_at": "2026-11-24T20:00:17+00:00",
+ "source_commit": "92e20ca6280e7723bc5aadd58f88b8acf55d4ce2",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -1595,6 +1595,25 @@
      "name": "EventsClientExtension",
      "kind": "class",
      "statements": 55,
+     "hit": 0
+    }
+   ],
+   "tests": 0,
+   "test_ids": []
+  },
+  {
+   "module": "fastmcp.experimental.events.docket_log",
+   "path": "fastmcp_slim/fastmcp/experimental/events/docket_log.py",
+   "public": true,
+   "statements": 71,
+   "hit": 0,
+   "functions": 13,
+   "functions_hit": 0,
+   "symbols": [
+    {
+     "name": "DocketEventLog",
+     "kind": "class",
+     "statements": 64,
      "hit": 0
     }
    ],
