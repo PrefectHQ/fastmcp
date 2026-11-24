@@ -34,9 +34,9 @@ from fastmcp.telemetry import (
 # below (the API `Span` type does not expose readable attributes).
 SEAM_SPAN_MARKER = "fastmcp.span.seam"
 
-# Set on the link to an ambient HTTP span that `_meta` displaced as parent.
+# Set on the link to the span active during an HTTP request that `_meta` displaced as parent.
 LINK_KIND_ATTRIBUTE = "fastmcp.link.kind"
-HTTP_TRANSPORT_LINK_KIND = "http_transport"
+HTTP_AMBIENT_LINK_KIND = "http_ambient"
 
 
 # Tracks the SERVER span opened at the current request's seam. When the
@@ -165,7 +165,7 @@ def _get_parent_trace_context() -> tuple[Context | None, list[Link]]:
         return parent_context, []
 
     attributes = (
-        {LINK_KIND_ATTRIBUTE: HTTP_TRANSPORT_LINK_KIND}
+        {LINK_KIND_ATTRIBUTE: HTTP_AMBIENT_LINK_KIND}
         if req_ctx.request is not None
         else None
     )
@@ -265,6 +265,8 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
     that has to know the difference, because the seam is where the incoming
     `_meta` parent context is applied for the whole request.
     """
+    from fastmcp.server.dependencies import fastmcp_request_ctx
+
     if telemetry_mode() == "propagation_only":
         with _propagation_only_span() as span:
             yield span
@@ -303,6 +305,10 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
             restore_dropped_attributes(span, attrs)
         seam = _SeamSpan(span)
         token = _active_seam_span.set(seam)
+        # Middleware can enter scoped suppression after this native span has
+        # already applied the incoming parent.
+        request = fastmcp_request_ctx.get()
+        request_token = _propagated_request.set(request._srctx if request else None)
         # A seam is a new inbound request, even one an in-process proxy sends
         # from inside another server's tool call.
         open_token = _server_span_open.set(False)
@@ -315,6 +321,7 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
             if seam.error is not None:
                 record_span_exception(span, seam.error)
             _server_span_open.reset(open_token)
+            _propagated_request.reset(request_token)
             _active_seam_span.reset(token)
 
 

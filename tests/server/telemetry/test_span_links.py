@@ -21,6 +21,7 @@ from fastmcp.server.dependencies import FastMCPRequestContext, fastmcp_request_c
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from fastmcp.server.middleware.middleware import Middleware as FastMCPMiddleware
 from fastmcp.server.telemetry import _get_parent_trace_context
+from fastmcp.telemetry import suppress_fastmcp_telemetry
 from fastmcp.utilities.tests import asgi_server
 
 TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
@@ -94,7 +95,7 @@ async def test_meta_is_parent_and_http_span_is_linked(
     assert server.parent.span_id == client_send.context.span_id
     assert len(server.links) == 1
     assert server.links[0].context.span_id in _span_ids(spans, "HTTP POST")
-    assert server.links[0].attributes == {"fastmcp.link.kind": "http_transport"}
+    assert server.links[0].attributes == {"fastmcp.link.kind": "http_ambient"}
 
 
 async def test_http_span_is_parent_without_meta(
@@ -196,3 +197,65 @@ def test_meta_wins_when_both_are_visible(trace_exporter: InMemorySpanExporter):
 def test_malformed_meta_is_ignored(trace_exporter: InMemorySpanExporter):
     with trace.get_tracer("test").start_as_current_span("ambient"):
         assert _resolve({"traceparent": "not-a-traceparent"}) == (None, [])
+
+
+class ScopedSuppressionMiddleware(FastMCPMiddleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next: CallNext):
+        with (
+            trace.get_tracer("review").start_as_current_span("tool-middleware"),
+            suppress_fastmcp_telemetry(),
+        ):
+            return await call_next(context)
+
+
+@pytest.mark.parametrize("stateless_http", [False, True])
+async def test_suppress_inside_native_request_preserves_parent(
+    trace_exporter, stateless_http
+):
+    mcp = _server()
+    mcp.add_middleware(ScopedSuppressionMiddleware())
+    await _call_over_http(mcp, stateless_http=stateless_http)
+    spans = trace_exporter.get_finished_spans()
+    request = next(
+        span
+        for span in spans
+        if span.name == "tools/call" and span.kind == SpanKind.SERVER
+    )
+    middleware = _span(spans, "tool-middleware")
+    tool = _span(spans, "user-work")
+    assert middleware.parent is not None and request.context is not None
+    assert tool.parent is not None and middleware.context is not None
+    assert middleware.parent.span_id == request.context.span_id
+    assert tool.parent.span_id == middleware.context.span_id
+
+
+class AsgiRoutingSpan:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        with trace.get_tracer("review").start_as_current_span("tenant-routing"):
+            await self.app(scope, receive, send)
+
+
+async def test_http_ambient_link_points_to_active_routing_span(trace_exporter):
+    async with (
+        asgi_server(
+            _server(),
+            middleware=[Middleware(AsgiSpanMiddleware), Middleware(AsgiRoutingSpan)],
+        ) as server,
+        server.client() as client,
+    ):
+        await client.call_tool("greet", {"name": "World"})
+    spans = trace_exporter.get_finished_spans()
+    request = _span(spans, "tools/call greet")
+    (link,) = request.links
+    assert link.attributes == {"fastmcp.link.kind": "http_ambient"}
+    routing = next(
+        span
+        for span in spans
+        if span.context and span.context.span_id == link.context.span_id
+    )
+    assert routing.name == "tenant-routing"
+    assert routing.parent is not None
+    assert routing.parent.span_id in _span_ids(spans, "HTTP POST")
