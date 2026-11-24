@@ -179,7 +179,8 @@ class EventsExtension(ServerExtension):
             emit_buffer: How many emitted events per type the default
                 in-memory log keeps. Ignored when `log` is given.
             log: Where emitted events are kept. Defaults to an
-                `InMemoryEventLog`.
+                `InMemoryEventLog`; pass a `DocketEventLog` to keep them in
+                Redis, shared across replicas and restarts.
         """
         from fastmcp.experimental.events.log import InMemoryEventLog
 
