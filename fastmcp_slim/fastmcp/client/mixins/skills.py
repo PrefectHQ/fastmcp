@@ -143,7 +143,7 @@ class ClientSkillsMixin:
         for _ in range(max_pages):
             result = await self.list_skills_mcp(cursor=cursor, cache_mode=cache_mode)
             skills.extend(result.skills)
-            if not result.next_cursor:
+            if result.next_cursor is None:
                 break
             if result.next_cursor in seen_cursors:
                 logger.warning(

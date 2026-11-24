@@ -10,7 +10,12 @@ series and refreshing creation/latest-closure outcomes from public GitHub
 records. The build job has read-only access; the publisher only copies its
 artifact. Both status publishers serialize writes through the same concurrency
 group. `maintenance-status.yml` publishes the static site alongside its existing
-maintenance snapshot twice daily, or on manual dispatch.
+maintenance snapshot twice daily, whenever `status-site/` changes on main, or on
+manual dispatch.
+
+Every section heading links to itself (`#pbt-coverage`, `#incoming-and-closed`,
+…), and `#pbt-coverage/<module>` opens the coverage map with that module
+selected; clicking a module puts its link in the address bar.
 
 The original half-hourly collector's history was imported with:
 
@@ -33,6 +38,30 @@ For a local preview, copy the public `backlog.json` into this folder and run
 `python -m http.server 8765 --directory status-site` from the repository root.
 Do not commit the copied data. Charts support touch, pointer inspection, and
 arrow keys; Enter opens the selected activity day's linked items.
+
+## Property-based test coverage
+
+The landing page's last chart is a treemap of `fastmcp_slim/fastmcp`, one box
+per module, sized by the statements inside its function bodies and colored by
+the share of those statements that ran during a property-based test. It reads
+`pbt-coverage.json` (`fastmcp-pbt-coverage/1`), which `pbt-coverage.yml`
+publishes to the `status` branch on every push to main that touches the
+package, tests, docs or lockfile, plus once a day. The page names the commit
+it measured and warns when the data is more than 36 hours old, which means the
+rebuild is failing.
+
+```sh
+uv run scripts/pbt_coverage.py --output status-site/pbt-coverage.json
+```
+
+A test is property-based when its `test_*.py` file imports hypothesis; only
+those files run, with pytest's per-test timeout off. Coverage uses per-test contexts, and only statements inside function
+bodies count, so lines that ran at import or collection time never do.
+Overload stubs, `...` bodies and `if TYPE_CHECKING:` blocks are left out. The
+default view is the public API: modules the current docs (excluding the
+generated SDK reference and the archived v2/v3 trees) import from, plus the modules that define a name the docs import.
+"All modules" shows everything else. With no property-based tests on the
+commit, the report says so and every module reads as unreached.
 
 ## Automation view
 

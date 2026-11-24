@@ -30,6 +30,10 @@ logger = get_logger(__name__)
 JWKKeyData: TypeAlias = dict[str, str | list[str]]
 SUPPORTED_JWS_HEADER_FIELDS = frozenset(JWS_HEADER_REGISTRY)
 
+# Tolerance for `nbf`, so a token minted by an issuer whose clock runs slightly
+# ahead is not rejected the moment it is issued.
+_NBF_CLOCK_SKEW_SECONDS = 30
+
 
 def _key_type_for_algorithm(algorithm: str) -> Literal["oct", "RSA", "EC", "OKP"]:
     if algorithm.startswith("HS"):
@@ -539,7 +543,7 @@ class JWTVerifier(TokenVerifier):
             token (str): The JWT bearer token string to validate.
 
         Returns:
-            AccessToken | None: An AccessToken populated from token claims if the token is valid; `None` if the token is expired, has an invalid signature or format, fails issuer/audience/scope validation, or any other validation error occurs.
+            AccessToken | None: An AccessToken populated from token claims if the token is valid; `None` if the token is expired or not yet valid, has an invalid signature or format, fails issuer/audience/scope validation, or any other validation error occurs.
         """
         try:
             # Get verification key (static or from JWKS)
@@ -580,6 +584,15 @@ class JWTVerifier(TokenVerifier):
             if exp is not None and exp < time.time():
                 self.logger.info(
                     "Bearer token rejected for client %s: token expired",
+                    client_id,
+                )
+                return None
+
+            # Reject tokens that are not yet valid (RFC 7519 §4.1.5).
+            nbf = claims.get("nbf")
+            if nbf is not None and nbf > time.time() + _NBF_CLOCK_SKEW_SECONDS:
+                self.logger.info(
+                    "Bearer token rejected for client %s: token not yet valid (nbf)",
                     client_id,
                 )
                 return None

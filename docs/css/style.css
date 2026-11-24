@@ -93,7 +93,7 @@ h6 code:not(pre code) {
   background: linear-gradient(135deg, #2d00f7 0%, #4cc9f0 100%);
 }
 
-
-
-
-
+/* Let the search label truncate so the shortcut hint keeps its padding */
+#search-bar-entry > div {
+  min-width: 0;
+}

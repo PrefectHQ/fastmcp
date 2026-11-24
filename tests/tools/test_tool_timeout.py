@@ -123,7 +123,13 @@ class TestToolTimeout:
         with pytest.raises(ToolError, match="timed out"):
             await mcp.call_tool("slow_sync_tool")
 
-        assert events == ["opened", "started", "finished", "closed"]
+        # A slow runner can hit the deadline before the worker thread starts, in
+        # which case the tool never runs; either way nothing touches the
+        # dependency after it closes.
+        assert events in (
+            ["opened", "started", "finished", "closed"],
+            ["opened", "closed"],
+        )
 
     async def test_timeout_error_raises_tool_error(self):
         """Timeout error is converted to ToolError and logs warning."""

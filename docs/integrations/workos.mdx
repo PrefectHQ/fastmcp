@@ -31,7 +31,7 @@ Create an OAuth App in your WorkOS dashboard to get the credentials needed for a
 <Step title="Create OAuth Application">
 In your WorkOS dashboard:
 1. Navigate to **Applications**
-2. Click **Create Application** 
+2. Click **Create Application**
 3. Select **OAuth Application**
 4. Name your application
 </Step>
@@ -102,12 +102,12 @@ Create a test client that authenticates with your WorkOS-protected server:
 from fastmcp import Client
 import asyncio
 
-async def main():    
+async def main():
     # The client will automatically handle WorkOS OAuth
     async with Client("http://localhost:8000/mcp", auth="oauth") as client:
         # First-time connection will open WorkOS login in your browser
         print("✓ Authenticated with WorkOS!")
-        
+
         # Test the protected tool
         result = await client.call_tool("protected_tool", {"message": "Hello!"})
         print(result)
@@ -129,7 +129,7 @@ The client caches tokens locally, so you won't need to re-authenticate for subse
 
 <VersionBadge version="2.13.0" />
 
-For production deployments with persistent token management across server restarts, configure `jwt_signing_key`, and `client_storage`:
+For production deployments with persistent token management across server restarts, configure `jwt_signing_key` and `client_storage`:
 
 ```python server.py
 import os
@@ -187,7 +187,7 @@ Your FastMCP server's public URL
 </ParamField>
 
 <ParamField path="required_scopes" default="[]">
-OAuth scopes to request
+OAuth scopes every token must carry. These are also the scopes advertised to clients unless you set `valid_scopes`.
 </ParamField>
 
 <ParamField path="redirect_path" default="/auth/callback">

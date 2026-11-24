@@ -305,7 +305,12 @@ class TestGitHubTokenVerifierCaching:
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
-            mock_client.get.side_effect = [user_response, scopes_response]
+            mock_client.get.side_effect = [
+                user_response,
+                scopes_response,
+                user_response,
+                scopes_response,
+            ]
             first = await verifier.verify_token("tok-1")
             second = await verifier.verify_token("tok-1")
 
@@ -314,8 +319,8 @@ class TestGitHubTokenVerifierCaching:
             assert second is not None
             assert second.scopes == []
             assert second.client_id == first.client_id
-            assert second is not first
-            assert mock_client.get.call_count == 2
+            # The scopeless result is not cached, so the next call re-checks.
+            assert mock_client.get.call_count == 4
 
     def test_provider_passes_cache_params(self, memory_storage: MemoryStore):
         provider = GitHubProvider(

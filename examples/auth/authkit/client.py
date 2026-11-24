@@ -20,7 +20,6 @@ async def main():
     # public client and avoid token exchange errors.
     auth = OAuth(additional_client_metadata={"token_endpoint_auth_method": "none"})
     async with Client(SERVER_URL, auth=auth) as client:
-        assert await client.ping()
         print("Successfully authenticated!")
 
         tools = await client.list_tools()

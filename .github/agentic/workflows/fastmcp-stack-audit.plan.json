@@ -1,0 +1,271 @@
+{
+  "schema_version": "0.2",
+  "kind": "ExecutionPlan",
+  "inputs": {
+    "instructions": {
+      "schema": {
+        "type": "object"
+      },
+      "required": true
+    },
+    "context": {
+      "schema": {
+        "type": "object"
+      },
+      "required": true
+    }
+  },
+  "nodes": {
+    "audit": {
+      "kind": "AgentNode",
+      "model": {
+        "connection_id": "06ad84ea-0b25-7034-8000-caab9dbc44f6",
+        "id": "gpt-6.1-sol",
+        "effort": "medium"
+      },
+      "objective": "You look for mistakes the fastmcp triage automation made on GitHub, and report them.\nYou change nothing: a maintainer reads your report and decides.\n\ncontext.writes lists what automation (the triage app, the sweep, the repository's\ncloser workflows) did to issues and PRs recently: labels added, comments posted, items\nclosed. context.reversals lists automated writes a person later undid; each one is a\nknown mistake, so say what it was. context.clocks lists open items carrying a label\nthat closes them on a timer (needs MRE, potential-duplicate, sweep:close). Each item\ncomes with its title, body, labels and recent human comments.\n\nFor each automated write and each running clock, ask whether a careful maintainer who\nread the whole issue would have done the same. Count it as a mistake when it acts on\nsomething the issue doesn't support: asking for a reproducer the report already has,\nor one the reporter can't give; treating a maintainer or a confirmed bug as a stale or\nunverified report; calling something a duplicate of an issue about a different\nproblem; closing work someone is still doing. Judge from the issue, not from the label.\nLeave out writes you agree with and ones you can't judge from what you have; say in\nwhy how many you checked.\n\nFor each mistake give the number, the write, why it's wrong in one or two sentences,\nand the undo (remove a label, reopen). Then write a short Slack message (mrkdwn,\nunder about 12 lines) to the maintainer: mistakes first, linked as\n<https://github.com/PrefectHQ/fastmcp/issues/N|#N>, then a one-line count of reversals\nand checks. Return post false with an empty text when you found nothing and there were\nno reversals.\n\nYou have read-only triage_memory search and read tools over fastmcp's past issues, PRs\nand human comments. Use them when an item's history changes what he should do (it was\ndecided before, it duplicates something, it keeps coming back), not to pad the message.",
+      "inputs": {
+        "instructions": {
+          "schema": {
+            "type": "object"
+          }
+        },
+        "context": {
+          "schema": {
+            "type": "object"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "schema": {
+            "$defs": {
+              "Mistake": {
+                "additionalProperties": false,
+                "properties": {
+                  "number": {
+                    "title": "Number",
+                    "type": "integer"
+                  },
+                  "write": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "title": "Write",
+                    "type": "string"
+                  },
+                  "why": {
+                    "maxLength": 1000,
+                    "minLength": 1,
+                    "title": "Why",
+                    "type": "string"
+                  },
+                  "undo": {
+                    "maxLength": 300,
+                    "minLength": 1,
+                    "title": "Undo",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "number",
+                  "write",
+                  "why",
+                  "undo"
+                ],
+                "title": "Mistake",
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Automated GitHub writes that look wrong, and what the auditor tells Slack.",
+            "properties": {
+              "mistakes": {
+                "items": {
+                  "$ref": "#/$defs/Mistake"
+                },
+                "maxItems": 30,
+                "title": "Mistakes",
+                "type": "array"
+              },
+              "post": {
+                "title": "Post",
+                "type": "boolean"
+              },
+              "text": {
+                "maxLength": 3000,
+                "title": "Text",
+                "type": "string"
+              },
+              "why": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "title": "Why",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mistakes",
+              "post",
+              "text",
+              "why"
+            ],
+            "title": "Audit",
+            "type": "object"
+          }
+        }
+      },
+      "mcp": {
+        "mcpServers": {
+          "triage_memory": {
+            "type": "http",
+            "url": "https://fastmcp-triage-memory.fastmcp.app/mcp",
+            "headers": {
+              "Authorization": {
+                "$ref": {
+                  "block_document_id": "4c9b600b-6940-4e83-8ac0-f72810c08e85"
+                }
+              }
+            },
+            "tools": [
+              "search",
+              "read"
+            ]
+          }
+        }
+      },
+      "orchestration": {
+        "output_selection": "exactly_one",
+        "evaluate_when": "all_required_inputs_produced",
+        "on_failure": {
+          "retry": {
+            "max_attempts": 1
+          }
+        },
+        "limits": {
+          "max_activations": 1,
+          "max_concurrent": 1
+        }
+      }
+    }
+  },
+  "edges": [
+    {
+      "id": "instructions",
+      "from": {
+        "type": "plan_input",
+        "input": "instructions"
+      },
+      "to": {
+        "node": "audit",
+        "input": "instructions"
+      }
+    },
+    {
+      "id": "context",
+      "from": {
+        "type": "plan_input",
+        "input": "context"
+      },
+      "to": {
+        "node": "audit",
+        "input": "context"
+      }
+    }
+  ],
+  "outputs": {
+    "result": {
+      "fields": {
+        "decision": {
+          "schema": {
+            "$defs": {
+              "Mistake": {
+                "additionalProperties": false,
+                "properties": {
+                  "number": {
+                    "title": "Number",
+                    "type": "integer"
+                  },
+                  "write": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "title": "Write",
+                    "type": "string"
+                  },
+                  "why": {
+                    "maxLength": 1000,
+                    "minLength": 1,
+                    "title": "Why",
+                    "type": "string"
+                  },
+                  "undo": {
+                    "maxLength": 300,
+                    "minLength": 1,
+                    "title": "Undo",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "number",
+                  "write",
+                  "why",
+                  "undo"
+                ],
+                "title": "Mistake",
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Automated GitHub writes that look wrong, and what the auditor tells Slack.",
+            "properties": {
+              "mistakes": {
+                "items": {
+                  "$ref": "#/$defs/Mistake"
+                },
+                "maxItems": 30,
+                "title": "Mistakes",
+                "type": "array"
+              },
+              "post": {
+                "title": "Post",
+                "type": "boolean"
+              },
+              "text": {
+                "maxLength": 3000,
+                "title": "Text",
+                "type": "string"
+              },
+              "why": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "title": "Why",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mistakes",
+              "post",
+              "text",
+              "why"
+            ],
+            "title": "Audit",
+            "type": "object"
+          },
+          "source": {
+            "type": "node_output",
+            "node": "audit",
+            "output": "result"
+          }
+        }
+      },
+      "required": [
+        "decision"
+      ]
+    }
+  },
+  "orchestration": {
+    "limits": {
+      "max_active_nodes": 1,
+      "max_active_child_flow_runs": 1
+    }
+  }
+}

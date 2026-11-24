@@ -4,33 +4,39 @@ on:
   schedule:
     - cron: "0 9 * * *" # Run daily at 9 AM UTC
   workflow_dispatch:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: auto-close-duplicates-${{ github.event_name == 'issue_comment' && github.event.issue.number || 'scheduled' }}
+  cancel-in-progress: false
 
 jobs:
   auto-close-duplicates:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (!github.event.issue.pull_request &&
+        github.event.issue.state == 'closed' &&
+        github.event.comment.user.type == 'User' &&
+        contains(github.event.issue.labels.*.name, 'duplicate'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
       issues: write
-      id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Generate Marvin App token
-        id: marvin-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
-          app-id: ${{ secrets.MARVIN_APP_ID }}
-          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
-      - name: Auto-close duplicate issues
+      - name: Process duplicate lifecycle
         run: uv run scripts/auto_close_duplicates.py
         env:
-          GITHUB_TOKEN: ${{ steps.marvin-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}

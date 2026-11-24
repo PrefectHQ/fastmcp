@@ -12,7 +12,9 @@ import inspect
 import json
 import time
 import warnings
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
@@ -21,6 +23,7 @@ import anyio
 import httpx2
 import mcp_types
 from mcp import ClientSession
+from mcp.client.client import _evicting_message_handler
 from mcp.server.connection import Connection
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
@@ -56,15 +59,25 @@ from fastmcp.resources.base import (
 )
 from fastmcp.resources.template import forward_uri
 from fastmcp.server.context import Context
-from fastmcp.server.dependencies import fastmcp_request_ctx, get_context
+from fastmcp.server.dependencies import (
+    FastMCPRequestContext,
+    fastmcp_request_ctx,
+    get_context,
+)
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.addressing import is_app_tool_with_identity
 from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
 from fastmcp.telemetry import inject_trace_context
-from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
+from fastmcp.tools.base import (
+    InputRequiredToolResult,
+    RawStructuredToolResult,
+    Tool,
+    ToolResult,
+)
 from fastmcp.utilities.components import FastMCPComponent, get_fastmcp_metadata
+from fastmcp.utilities.json_schema import is_object_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
@@ -74,6 +87,8 @@ if TYPE_CHECKING:
 
     from fastmcp.client.transports import ClientTransport
     from fastmcp.server.extensions import ServerExtension
+
+_ResultT = TypeVar("_ResultT")
 
 logger = get_logger(__name__)
 
@@ -191,13 +206,26 @@ def _forwardable_request_meta(ctx: Context | None) -> dict[str, Any] | None:
     return forwarded or None
 
 
-def _forwardable_server_meta(meta: dict[str, Any] | None) -> dict[str, Any]:
-    """Backend result metadata that may cross onto the frontend connection."""
-    return {
+def _forwardable_server_meta(
+    meta: dict[str, Any] | None,
+    identity: ProxyIdentity = "proxy",
+) -> dict[str, Any]:
+    """Backend result metadata that may cross onto the frontend connection.
+
+    Connection-owned keys never cross. The backend's ``serverInfo`` stamp is an
+    identity decision at the response boundary: under the default ``"proxy"``
+    identity it is dropped so the gateway's own seam stamps the gateway
+    identity, and under ``"upstream"`` it is preserved so terminal results keep
+    advertising the backend, matching what discovery advertised.
+    """
+    forwarded = {
         key: value
         for key, value in (meta or {}).items()
-        if key not in _CONNECTION_META_KEYS and key != mcp_types.SERVER_INFO_META_KEY
+        if key not in _CONNECTION_META_KEYS
     }
+    if identity != "upstream":
+        forwarded.pop(mcp_types.SERVER_INFO_META_KEY, None)
+    return forwarded
 
 
 def _session_request_meta(
@@ -213,30 +241,67 @@ def _session_request_meta(
     )
 
 
+def _front_is_handshake(ctx: Context | None) -> bool:
+    """Whether the front connection negotiated a handshake-era protocol."""
+    rc = ctx.request_context if ctx is not None else None
+    return rc is not None and rc.protocol_version not in MODERN_PROTOCOL_VERSIONS
+
+
+async def _relay_modern_call(
+    client: Client,
+    ctx: Context | None,
+    call: Callable[
+        [mcp_types.InputResponses | None, str | None],
+        Coroutine[Any, Any, _ResultT | mcp_types.InputRequiredResult],
+    ],
+) -> _ResultT | mcp_types.InputRequiredResult:
+    """Make a call on a modern backend session, relaying any guard ask to the front.
+
+    A modern front gets the backend's `InputRequiredResult` (SEP-2322) back as a
+    result, and its answers travel down on the next round. A handshake front has
+    no such result type, which happens when an explicit `mode=` pins the backend
+    to the modern era. The proxy then answers the ask itself: the client's input
+    driver runs each embedded request through the relay handlers, which forward
+    it to the front as an ordinary server-initiated request.
+    """
+    result = await call(
+        ctx.input_responses if ctx is not None else None,
+        ctx.request_state if ctx is not None else None,
+    )
+    if isinstance(result, mcp_types.InputRequiredResult) and _front_is_handshake(ctx):
+        return await client._drive_input_required(result, call)
+    return result
+
+
 async def _relay_read_resource(
     client: Client, uri: str, ctx: Context | None
 ) -> mcp_types.ReadResourceResult | mcp_types.InputRequiredResult:
     """Read a backend resource, surfacing a guard ask rather than driving it.
 
     Mirrors `ProxyTool.run`: on a modern backend the low-level session is used
-    so an `InputRequiredResult` (SEP-2322) comes back as a result for the parent
-    to forward, instead of the high-level client trying to answer it here — the
-    proxy has no back-channel to the real user, so driving it fails outright.
-    The inbound request's continuation state travels down so the backend guard
-    sees the client's answers on its own `ctx.input_responses`.
+    so an `InputRequiredResult` (SEP-2322) is relayed by `_relay_modern_call`
+    rather than answered by the high-level client's own handlers. The inbound
+    request's continuation state travels down so the backend guard sees the
+    client's answers on its own `ctx.input_responses`.
     """
     meta = _forwardable_request_meta(ctx)
     if client.protocol_version not in MODERN_PROTOCOL_VERSIONS:
         return await client.read_resource_mcp(uri, meta=meta)
-    return await client._await_with_session_monitoring(
-        client.session.read_resource(
-            uri,
-            meta=_session_request_meta(meta),
-            input_responses=ctx.input_responses if ctx else None,
-            request_state=ctx.request_state if ctx else None,
-            allow_input_required=True,
+
+    async def read(
+        input_responses: mcp_types.InputResponses | None, request_state: str | None
+    ) -> mcp_types.ReadResourceResult | mcp_types.InputRequiredResult:
+        return await client._await_with_session_monitoring(
+            client.session.read_resource(
+                uri,
+                meta=_session_request_meta(meta),
+                input_responses=input_responses,
+                request_state=request_state,
+                allow_input_required=True,
+            )
         )
-    )
+
+    return await _relay_modern_call(client, ctx, read)
 
 
 def _stash_proxy_request_context(client: Client, ctx: Context) -> None:
@@ -339,10 +404,18 @@ class ProxyTool(Tool):
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _backend_name: str | None = None
+    _identity: ProxyIdentity = "proxy"
 
-    def __init__(self, client_factory: ClientFactoryT, **kwargs: Any):
+    def __init__(
+        self,
+        client_factory: ClientFactoryT,
+        *,
+        identity: ProxyIdentity = "proxy",
+        **kwargs: Any,
+    ):
         super().__init__(**kwargs)
         self._client_factory = client_factory
+        self._identity = identity
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -362,11 +435,16 @@ class ProxyTool(Tool):
 
     @classmethod
     def from_mcp_tool(
-        cls, client_factory: ClientFactoryT, mcp_tool: mcp_types.Tool
+        cls,
+        client_factory: ClientFactoryT,
+        mcp_tool: mcp_types.Tool,
+        *,
+        identity: ProxyIdentity = "proxy",
     ) -> ProxyTool:
         """Factory method to create a ProxyTool from a raw MCP tool schema."""
         return cls(
             client_factory=client_factory,
+            identity=identity,
             name=mcp_tool.name,
             title=mcp_tool.title,
             description=mcp_tool.description,
@@ -425,25 +503,31 @@ class ProxyTool(Tool):
                     header_map = x_mcp_header_map(self.parameters)
                     if header_map:
                         client.session._x_mcp_header_maps[backend_name] = header_map
-                    result = await client._await_with_session_monitoring(
-                        client.session.call_tool(
-                            name=backend_name,
-                            arguments=arguments,
-                            meta=request_meta,
-                            # Forward upstream progress the same way the legacy
-                            # `call_tool_mcp` path does — without this handler a
-                            # backend tool's `ctx.report_progress()` is dropped
-                            # on modern proxy calls.
-                            progress_callback=client._progress_handler,
-                            input_responses=ctx.input_responses,
-                            request_state=ctx.request_state,
-                            allow_input_required=True,
+
+                    async def call(
+                        input_responses: mcp_types.InputResponses | None,
+                        request_state: str | None,
+                    ) -> mcp_types.CallToolResult | mcp_types.InputRequiredResult:
+                        return await client._await_with_session_monitoring(
+                            client.session.call_tool(
+                                name=backend_name,
+                                arguments=arguments,
+                                meta=request_meta,
+                                # Forward upstream progress the same way the
+                                # legacy `call_tool_mcp` path does — without this
+                                # handler a backend tool's `ctx.report_progress()`
+                                # is dropped on modern proxy calls.
+                                progress_callback=client._progress_handler,
+                                input_responses=input_responses,
+                                request_state=request_state,
+                                allow_input_required=True,
+                            )
                         )
-                    )
-                    # A backend ask round-trips into an InputRequiredToolResult
-                    # so the parent's middleware observes it and the parent's
-                    # wire handler unwraps it (era-gated on the parent's own
-                    # connection).
+
+                    result = await _relay_modern_call(client, ctx, call)
+                    # A backend ask relayed to a modern front round-trips into
+                    # an InputRequiredToolResult so the parent's middleware
+                    # observes it and the parent's wire handler unwraps it.
                     if isinstance(result, mcp_types.InputRequiredResult):
                         return InputRequiredToolResult(result)
                     tool_result = cast("mcp_types.CallToolResult", result)
@@ -458,10 +542,29 @@ class ProxyTool(Tool):
             # backend's content (including non-text and structured content),
             # and the client still raises on isError by default.
             # Preserve backend's meta (includes task metadata for background tasks)
+            structured_content = tool_result.structured_content
+            meta = _forwardable_server_meta(tool_result.meta, self._identity) or None
+            has_structured_content = (
+                "structured_content" in tool_result.model_fields_set
+            )
+            if has_structured_content and (
+                not isinstance(structured_content, dict)
+                or (
+                    self.output_schema is not None
+                    and not is_object_schema(self.output_schema)
+                )
+            ):
+                return RawStructuredToolResult(
+                    content=tool_result.content,
+                    structured_content=structured_content,
+                    meta=meta,
+                    is_error=tool_result.is_error,
+                )
+
             return ToolResult(
                 content=tool_result.content,
-                structured_content=tool_result.structured_content,
-                meta=tool_result.meta,
+                structured_content=structured_content,
+                meta=meta,
                 is_error=tool_result.is_error,
             )
 
@@ -478,17 +581,20 @@ class ProxyResource(Resource):
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _cached_content: ResourceResult | None = None
     _backend_uri: str | None = None
+    _identity: ProxyIdentity = "proxy"
 
     def __init__(
         self,
         client_factory: ClientFactoryT,
         *,
         _cached_content: ResourceResult | None = None,
+        identity: ProxyIdentity = "proxy",
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
         self._client_factory = client_factory
         self._cached_content = _cached_content
+        self._identity = identity
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -511,11 +617,14 @@ class ProxyResource(Resource):
         cls,
         client_factory: ClientFactoryT,
         mcp_resource: mcp_types.Resource,
+        *,
+        identity: ProxyIdentity = "proxy",
     ) -> ProxyResource:
         """Factory method to create a ProxyResource from a raw MCP resource schema."""
 
         return cls(
             client_factory=client_factory,
+            identity=identity,
             uri=mcp_resource.uri,
             name=mcp_resource.name,
             title=mcp_resource.title,
@@ -576,7 +685,8 @@ class ProxyResource(Resource):
                     raise ResourceError(f"Unsupported content type: {type(item)}")
 
             return ResourceResult(
-                contents=contents, meta=_forwardable_server_meta(result.meta) or None
+                contents=contents,
+                meta=_forwardable_server_meta(result.meta, self._identity) or None,
             )
 
     def get_span_attributes(self) -> dict[str, Any]:
@@ -591,10 +701,18 @@ class ProxyTemplate(ResourceTemplate):
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _backend_uri_template: str | None = None
+    _identity: ProxyIdentity = "proxy"
 
-    def __init__(self, client_factory: ClientFactoryT, **kwargs: Any):
+    def __init__(
+        self,
+        client_factory: ClientFactoryT,
+        *,
+        identity: ProxyIdentity = "proxy",
+        **kwargs: Any,
+    ):
         super().__init__(**kwargs)
         self._client_factory = client_factory
+        self._identity = identity
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -614,12 +732,17 @@ class ProxyTemplate(ResourceTemplate):
 
     @classmethod
     def from_mcp_template(  # type: ignore[override]
-        cls, client_factory: ClientFactoryT, mcp_template: mcp_types.ResourceTemplate
-    ) -> ProxyTemplate:  # ty:ignore[invalid-method-override]
+        cls,
+        client_factory: ClientFactoryT,
+        mcp_template: mcp_types.ResourceTemplate,
+        *,
+        identity: ProxyIdentity = "proxy",
+    ) -> ProxyTemplate:  # ty:ignore[incompatible-method-override]
         """Factory method to create a ProxyTemplate from a raw MCP template schema."""
 
         return cls(
             client_factory=client_factory,
+            identity=identity,
             uri_template=mcp_template.uri_template,
             name=mcp_template.name,
             title=mcp_template.title,
@@ -657,6 +780,7 @@ class ProxyTemplate(ResourceTemplate):
             # handler, which unwraps it.
             return ProxyResource(
                 client_factory=self._client_factory,
+                identity=self._identity,
                 uri=parameterized_uri,
                 name=self.name,
                 title=self.title,
@@ -696,11 +820,13 @@ class ProxyTemplate(ResourceTemplate):
                 raise ResourceError(f"Unsupported content type: {type(item)}")
 
         cached_content = ResourceResult(
-            contents=contents, meta=_forwardable_server_meta(result.meta) or None
+            contents=contents,
+            meta=_forwardable_server_meta(result.meta, self._identity) or None,
         )
 
         return ProxyResource(
             client_factory=self._client_factory,
+            identity=self._identity,
             uri=parameterized_uri,
             name=self.name,
             title=self.title,
@@ -728,10 +854,18 @@ class ProxyPrompt(Prompt):
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _backend_name: str | None = None
+    _identity: ProxyIdentity = "proxy"
 
-    def __init__(self, client_factory: ClientFactoryT, **kwargs):
+    def __init__(
+        self,
+        client_factory: ClientFactoryT,
+        *,
+        identity: ProxyIdentity = "proxy",
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._client_factory = client_factory
+        self._identity = identity
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -751,7 +885,11 @@ class ProxyPrompt(Prompt):
 
     @classmethod
     def from_mcp_prompt(
-        cls, client_factory: ClientFactoryT, mcp_prompt: mcp_types.Prompt
+        cls,
+        client_factory: ClientFactoryT,
+        mcp_prompt: mcp_types.Prompt,
+        *,
+        identity: ProxyIdentity = "proxy",
     ) -> ProxyPrompt:
         """Factory method to create a ProxyPrompt from a raw MCP prompt schema."""
         arguments = [
@@ -765,6 +903,7 @@ class ProxyPrompt(Prompt):
         ]
         return cls(
             client_factory=client_factory,
+            identity=identity,
             name=mcp_prompt.name,
             title=mcp_prompt.title,
             description=mcp_prompt.description,
@@ -775,7 +914,7 @@ class ProxyPrompt(Prompt):
             task_config=TaskConfig(mode="forbidden"),
         )
 
-    async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]  # ty:ignore[invalid-method-override]
+    async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]  # ty:ignore[incompatible-method-override]
         """Render the prompt by making a call through the client."""
         backend_name = self._backend_name or self.name
         with client_span(
@@ -791,18 +930,24 @@ class ProxyPrompt(Prompt):
                 _stash_proxy_request_context(client, ctx)
                 meta = _forwardable_request_meta(ctx)
                 if client.protocol_version in MODERN_PROTOCOL_VERSIONS:
-                    # See `_relay_read_resource`: surface a backend guard's ask
-                    # instead of trying to answer it inside the proxy.
-                    raw = await client._await_with_session_monitoring(
-                        client.session.get_prompt(
-                            backend_name,
-                            arguments,
-                            meta=_session_request_meta(meta),
-                            input_responses=ctx.input_responses if ctx else None,
-                            request_state=ctx.request_state if ctx else None,
-                            allow_input_required=True,
+                    # See `_relay_modern_call` for how a backend guard's ask
+                    # reaches the front.
+                    async def get(
+                        input_responses: mcp_types.InputResponses | None,
+                        request_state: str | None,
+                    ) -> mcp_types.GetPromptResult | mcp_types.InputRequiredResult:
+                        return await client._await_with_session_monitoring(
+                            client.session.get_prompt(
+                                backend_name,
+                                arguments,
+                                meta=_session_request_meta(meta),
+                                input_responses=input_responses,
+                                request_state=request_state,
+                                allow_input_required=True,
+                            )
                         )
-                    )
+
+                    raw = await _relay_modern_call(client, ctx, get)
                     if isinstance(raw, mcp_types.InputRequiredResult):
                         return InputRequiredPromptResult(raw)
                     result = raw
@@ -817,7 +962,7 @@ class ProxyPrompt(Prompt):
             return PromptResult(
                 messages=messages,
                 description=result.description,
-                meta=result.meta,
+                meta=_forwardable_server_meta(result.meta, self._identity) or None,
             )
 
     def get_span_attributes(self) -> dict[str, Any]:
@@ -891,6 +1036,7 @@ class ProxyProvider(Provider):
         client_factory: ClientFactoryT,
         cache_ttl: float | None = None,
         *,
+        identity: ProxyIdentity = "proxy",
         skills: bool = False,
     ):
         """Initialize a ProxyProvider.
@@ -898,16 +1044,21 @@ class ProxyProvider(Provider):
         Args:
             client_factory: A callable that returns a Client instance when called.
                            This gives you full control over session creation and reuse.
-                           Can be either a synchronous or asynchronous function.
+                           Can be either a synchronous or an asynchronous function.
             cache_ttl: How long (in seconds) to cache component lists for
                       individual lookups.  Defaults to 300.  Set to 0 to
                       disable caching.
+            identity: Whether proxied results carry the gateway's server
+                      identity (``"proxy"``, the default) or keep the backend's
+                      (``"upstream"``), matching what ``ProxyMetadataMiddleware``
+                      advertises for discovery.
             skills: Forward the backend's Skills discovery (`skills/list` and
                 `skills/get`). Registers `SkillsExtension` on the server
                 this provider is added to.
         """
         super().__init__()
         self.client_factory = client_factory
+        self.identity = identity
         self._skills = skills
         self._cache_ttl = cache_ttl if cache_ttl is not None else _DEFAULT_CACHE_TTL
         self._tools_cache: _CacheEntry[Tool] | None = None
@@ -920,6 +1071,25 @@ class ProxyProvider(Provider):
         self._resources_generation = 0
         self._templates_generation = 0
         self._prompts_generation = 0
+
+    def _use_identity(self, identity: ProxyIdentity) -> None:
+        """Adopt the identity a ``ProxyMetadataMiddleware`` was explicitly given.
+
+        Cached components carry the identity they were built with, so a change
+        drops the caches and advances the generations to keep in-flight
+        listings from caching components built under the old identity.
+        """
+        if identity == self.identity:
+            return
+        self.identity = identity
+        self._tools_cache = None
+        self._resources_cache = None
+        self._templates_cache = None
+        self._prompts_cache = None
+        self._tools_generation += 1
+        self._resources_generation += 1
+        self._templates_generation += 1
+        self._prompts_generation += 1
 
     def required_extensions(self) -> Sequence[ServerExtension]:
         if not self._skills:
@@ -948,7 +1118,10 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_tools = await client.list_tools()
                 tools = [
-                    ProxyTool.from_mcp_tool(self.client_factory, t) for t in mcp_tools
+                    ProxyTool.from_mcp_tool(
+                        self.client_factory, t, identity=self.identity
+                    )
+                    for t in mcp_tools
                 ]
         except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
@@ -1022,7 +1195,9 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_resources = await client.list_resources()
                 resources = [
-                    ProxyResource.from_mcp_resource(self.client_factory, r)
+                    ProxyResource.from_mcp_resource(
+                        self.client_factory, r, identity=self.identity
+                    )
                     for r in mcp_resources
                 ]
         except MCPError as e:
@@ -1064,7 +1239,9 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_templates = await client.list_resource_templates()
                 templates = [
-                    ProxyTemplate.from_mcp_template(self.client_factory, t)
+                    ProxyTemplate.from_mcp_template(
+                        self.client_factory, t, identity=self.identity
+                    )
                     for t in mcp_templates
                 ]
         except MCPError as e:
@@ -1106,7 +1283,9 @@ class ProxyProvider(Provider):
             async with client:
                 mcp_prompts = await client.list_prompts()
                 prompts = [
-                    ProxyPrompt.from_mcp_prompt(self.client_factory, p)
+                    ProxyPrompt.from_mcp_prompt(
+                        self.client_factory, p, identity=self.identity
+                    )
                     for p in mcp_prompts
                 ]
         except MCPError as e:
@@ -1200,17 +1379,24 @@ class ProxyMetadataMiddleware(Middleware):
     Instructions and namespaced metadata are forwarded with frontend values
     taking precedence. Protocol versions, capabilities, cache policy, and result
     type are never copied from the backend. ``identity`` controls whether server
-    identity remains the gateway's or uses the backend's when available.
+    identity remains the gateway's or uses the backend's when available. It
+    defaults to the provider's identity; an explicit value also applies to the
+    provider's proxied results, so discovery and results always agree.
     """
 
     def __init__(
         self,
         provider: ProxyProvider,
         *,
-        identity: ProxyIdentity = "proxy",
+        identity: ProxyIdentity | None = None,
     ) -> None:
+        if identity is None:
+            identity = provider.identity
         if identity not in ("proxy", "upstream"):
             raise ValueError("identity must be 'proxy' or 'upstream'")
+        # Results must report the same identity discovery advertises, so an
+        # explicit identity here also decides the provider's result stamps.
+        provider._use_identity(identity)
         self.provider = provider
         self.identity = identity
 
@@ -1284,7 +1470,16 @@ class ProxyMetadataMiddleware(Middleware):
         result = await call_next(context)
         if result is None:
             return None
-        upstream = await self._read_upstream(client, context.fastmcp_context)
+        # The front connection commits its capabilities only after this
+        # handshake, so a backend session opened here reads them from the
+        # request. A stateful client opened here is kept for the whole connection.
+        token = _initializing_front_capabilities.set(
+            context.message.params.capabilities if context.message else None
+        )
+        try:
+            upstream = await self._read_upstream(client, context.fastmcp_context)
+        finally:
+            _initializing_front_capabilities.reset(token)
         if upstream is None:
             return result
         return result.model_copy(update=self._updates(result, upstream))
@@ -1312,6 +1507,21 @@ class ProxyMetadataMiddleware(Middleware):
 # -----------------------------------------------------------------------------
 
 
+_initializing_front_capabilities: ContextVar[mcp_types.ClientCapabilities | None] = (
+    ContextVar("_initializing_front_capabilities", default=None)
+)
+"""Capabilities from a front `initialize` request, before the connection commits them."""
+
+
+def _front_request_context() -> FastMCPRequestContext | None:
+    """Return the active front request's context, or `None` outside a request."""
+    try:
+        ctx = get_context()
+    except RuntimeError:
+        return None
+    return ctx.request_context
+
+
 def _mirror_front_era_mode() -> str | None:
     """Return the backend connect ``mode`` that mirrors the front connection's era.
 
@@ -1331,11 +1541,7 @@ def _mirror_front_era_mode() -> str | None:
     - no request context (e.g. proxy construction before any request) → ``None``,
       leaving the factory's configured default mode in place.
     """
-    try:
-        ctx = get_context()
-    except RuntimeError:
-        return None
-    rc = ctx.request_context
+    rc = _front_request_context()
     if rc is None:
         return None
     version = rc.protocol_version
@@ -1507,7 +1713,8 @@ class FastMCPProxy(FastMCP):
                 operations. Defaults to ``"warn"`` for compatibility; use
                 ``"raise"`` when the proxy should surface upstream failures.
             identity: Whether clients see the proxy's server identity or the
-                upstream server's when available. Defaults to ``"proxy"``
+                upstream server's when available, in discovery and in proxied
+                result metadata. Defaults to ``"proxy"``
                 for compatibility.
             skills: Forward the backend's Skills discovery.
             **kwargs: Additional settings for the FastMCP server.
@@ -1515,9 +1722,9 @@ class FastMCPProxy(FastMCP):
         super().__init__(**kwargs)
         self.provider_error_strategy = provider_error_strategy
         self.client_factory = client_factory
-        provider = ProxyProvider(client_factory, skills=skills)
+        provider = ProxyProvider(client_factory, identity=identity, skills=skills)
         self.add_provider(provider)
-        self.middleware.append(ProxyMetadataMiddleware(provider, identity=identity))
+        self.middleware.append(ProxyMetadataMiddleware(provider))
         self._setup_proxy_ping_handler()
 
     async def _get_client(self) -> Client:
@@ -1582,6 +1789,10 @@ async def default_proxy_sampling_handler(
     # the same model, stop reason and content as with a direct connection.
     return await ctx.session.create_message(  # ty: ignore[deprecated]
         messages=list(messages),
+        # tools and tool_choice select the overload, so they go first: ty stops
+        # expanding optional arguments before it reaches the end of this call.
+        tools=params.tools,
+        tool_choice=params.tool_choice,
         system_prompt=params.system_prompt,
         include_context=params.include_context,
         temperature=params.temperature,
@@ -1600,18 +1811,26 @@ async def default_proxy_elicitation_handler(
     context: ServerRequestContext[Any, Any],
 ) -> ElicitResult:
     """Forward elicitation request from remote server to proxy's connected clients."""
-    ctx = get_context()
-    # requestedSchema only exists on ElicitRequestFormParams, not ElicitRequestURLParams
-    requested_schema = (
-        params.requested_schema
-        if isinstance(params, ElicitRequestFormParams)
-        else {"type": "object", "properties": {}}
-    )
-    result = await ctx.session.elicit(
-        message=message,
-        requested_schema=requested_schema,
-        related_request_id=ctx.request_id,
-    )
+    if isinstance(params, ElicitRequestFormParams):
+        ctx = get_context()
+        result = await ctx.session.elicit(
+            message=message,
+            requested_schema=params.requested_schema,
+            related_request_id=ctx.request_id,
+        )
+    else:
+        if params.elicitation_id is None:
+            raise ValueError(
+                "URL-mode elicitation request from the remote server has no "
+                "elicitationId; the proxy cannot forward it."
+            )
+        ctx = get_context()
+        result = await ctx.session.elicit_url(
+            message=message,
+            url=params.url,
+            elicitation_id=params.elicitation_id,
+            related_request_id=ctx.request_id,
+        )
     return ElicitResult(action=result.action, content=result.content)
 
 
@@ -1636,6 +1855,34 @@ async def default_proxy_progress_handler(
     """Forward progress notification from remote server to proxy's connected clients."""
     ctx = get_context()
     await ctx.report_progress(progress, total, message)
+
+
+_FORWARDED_LIST_CHANGED_NOTIFICATIONS = (
+    mcp_types.ToolListChangedNotification,
+    mcp_types.ResourceListChangedNotification,
+    mcp_types.PromptListChangedNotification,
+)
+
+
+async def default_proxy_message_handler(
+    message: mcp_types.ServerNotification | Exception,
+) -> None:
+    """Forward list-changed notifications from remote server to proxy's connected clients.
+
+    Logging and progress have dedicated handlers; the tool, resource, and prompt
+    list-changed notifications only arrive through the message handler.
+    """
+    if isinstance(message, _FORWARDED_LIST_CHANGED_NOTIFICATIONS):
+        ctx = get_context()
+        # Handshake-era downstream clients get it on the session's push
+        # channel; 2026-07-28 clients only see it on their listen streams.
+        await ctx.send_notification(message)
+        if isinstance(message, mcp_types.ToolListChangedNotification):
+            await ctx.fastmcp.notify_tools_changed()
+        elif isinstance(message, mcp_types.ResourceListChangedNotification):
+            await ctx.fastmcp.notify_resources_changed()
+        else:
+            await ctx.fastmcp.notify_prompts_changed()
 
 
 def _restore_request_context(
@@ -1689,12 +1936,28 @@ def _restore_request_context(
         _current_server.set(weakref.ref(fastmcp))
 
 
-def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
-    """Wrap a proxy handler to restore request_ctx before delegating."""
+def _make_restoring_handler(
+    handler: Callable,
+    rc_ref: list[Any],
+    pending: set[anyio.Event] | None = None,
+) -> Callable:
+    """Wrap a proxy handler to restore request_ctx before delegating.
+
+    When ``pending`` is given, each in-flight call is tracked in it so the
+    proxy client can let started forwards finish before it disconnects.
+    """
 
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         _restore_request_context(rc_ref)
-        return await handler(*args, **kwargs)
+        if pending is None:
+            return await handler(*args, **kwargs)
+        done = anyio.Event()
+        pending.add(done)
+        try:
+            return await handler(*args, **kwargs)
+        finally:
+            pending.discard(done)
+            done.set()
 
     return wrapper
 
@@ -1702,7 +1965,8 @@ def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
 class ProxyClient(Client[ClientTransportT]):
     """A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
 
-    Supports forwarding roots, sampling, elicitation, logging, and progress.
+    Supports forwarding roots, sampling, elicitation, logging, progress, and
+    tool, resource, and prompt list-changed notifications.
     Eligible inbound HTTP headers are forwarded by default; set
     `forward_incoming_headers=False` to use only the backend transport's
     configured headers and authentication. Applies to HTTP and SSE backends,
@@ -1726,6 +1990,7 @@ class ProxyClient(Client[ClientTransportT]):
     # tuple — never a Context instance — because Context properties are
     # ContextVar-dependent and would resolve stale values in the receive loop.
     _proxy_rc_ref: list[Any]
+    _pending_proxy_logs: set[anyio.Event]
     _proxy_restoring_handler_keys: set[str]
 
     # A proxy forwards calls; it must not advertise task support to its backend.
@@ -1770,6 +2035,7 @@ class ProxyClient(Client[ClientTransportT]):
         # Install context-restoring handler wrappers BEFORE super().__init__
         # registers them with the Client's session kwargs.
         self._proxy_rc_ref = [None]
+        self._pending_proxy_logs = set()
         self._proxy_restoring_handler_keys = set()
         for key, default_fn in (
             ("roots", default_proxy_roots_handler),
@@ -1777,9 +2043,14 @@ class ProxyClient(Client[ClientTransportT]):
             ("elicitation_handler", default_proxy_elicitation_handler),
             ("log_handler", default_proxy_log_handler),
             ("progress_handler", default_proxy_progress_handler),
+            ("message_handler", default_proxy_message_handler),
         ):
             if key not in kwargs:
-                kwargs[key] = _make_restoring_handler(default_fn, self._proxy_rc_ref)
+                kwargs[key] = _make_restoring_handler(
+                    default_fn,
+                    self._proxy_rc_ref,
+                    self._pending_proxy_logs if key == "log_handler" else None,
+                )
                 self._proxy_restoring_handler_keys.add(key)
         super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
 
@@ -1787,6 +2058,41 @@ class ProxyClient(Client[ClientTransportT]):
             _with_proxy_transport_options(self._transport_options),
             forward_incoming_headers=forward_incoming_headers,
         )
+
+    @asynccontextmanager
+    async def _context_manager(self):
+        # Each backend session declares the relays of the front request that
+        # opens it, including on a client shared between front connections.
+        self._mirror_front_capabilities()
+        async with super()._context_manager():
+            yield
+
+    def _mirror_front_capabilities(self) -> None:
+        """Declare to the backend only the relayed features the front client declared.
+
+        The default relays forward roots, sampling, and elicitation requests to
+        the front client. Declaring one the front client lacks hides that from
+        the backend, so a backend that falls back for such clients sends a
+        request the front client can only reject. Handlers passed explicitly
+        answer on the proxy itself and stay declared. Outside a front request
+        every relay stays declared.
+        """
+        self._bind_restoring_handlers()
+        capabilities = _initializing_front_capabilities.get()
+        if capabilities is None:
+            rc = _front_request_context()
+            if rc is None:
+                return
+            capabilities = rc.session.client_capabilities
+        capabilities = capabilities or mcp_types.ClientCapabilities()
+        keys = self._proxy_restoring_handler_keys
+        if "roots" in keys and capabilities.roots is None:
+            self._session_kwargs["list_roots_callback"] = None
+        if "sampling_handler" in keys and capabilities.sampling is None:
+            self._session_kwargs["sampling_callback"] = None
+            self._session_kwargs.pop("sampling_capabilities", None)
+        if "elicitation_handler" in keys and capabilities.elicitation is None:
+            self._session_kwargs.pop("elicitation_callback", None)
 
     def _bind_restoring_handlers(self) -> None:
         if "roots" in self._proxy_restoring_handler_keys:
@@ -1807,16 +2113,43 @@ class ProxyClient(Client[ClientTransportT]):
             )
         if "log_handler" in self._proxy_restoring_handler_keys:
             self._session_kwargs["logging_callback"] = create_log_callback(
-                _make_restoring_handler(default_proxy_log_handler, self._proxy_rc_ref)
+                _make_restoring_handler(
+                    default_proxy_log_handler,
+                    self._proxy_rc_ref,
+                    self._pending_proxy_logs,
+                )
             )
         if "progress_handler" in self._proxy_restoring_handler_keys:
             self._progress_handler = _make_restoring_handler(
                 default_proxy_progress_handler, self._proxy_rc_ref
             )
+        if "message_handler" in self._proxy_restoring_handler_keys:
+            message_handler = _make_restoring_handler(
+                default_proxy_message_handler, self._proxy_rc_ref
+            )
+            self._base_message_handler = message_handler
+            self._session_kwargs["message_handler"] = (
+                _evicting_message_handler(self._response_cache, message_handler)
+                if self._response_cache is not None
+                else message_handler
+            )
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        # The SDK runs notification callbacks concurrently with the response,
+        # so a backend's logs can still be forwarding when its result arrives.
+        # Let them finish before disconnecting cancels them.
+        try:
+            if exc_type is None and self._pending_proxy_logs:
+                with anyio.move_on_after(self._disconnect_timeout):
+                    while self._pending_proxy_logs:
+                        await next(iter(self._pending_proxy_logs)).wait()
+        finally:
+            await super().__aexit__(exc_type, exc_val, exc_tb)
 
     def new(self) -> ProxyClient[ClientTransportT]:
         new_client = cast(ProxyClient[ClientTransportT], super().new())
         new_client._proxy_rc_ref = [None]
+        new_client._pending_proxy_logs = set()
         new_client._proxy_restoring_handler_keys = set(
             self._proxy_restoring_handler_keys
         )
@@ -1848,7 +2181,7 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
     def new(self) -> StatefulProxyClient[ClientTransportT]:
         return cast(StatefulProxyClient[ClientTransportT], super().new())
 
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # type: ignore[override]
         """Release this context without disconnecting the persistent session."""
         with anyio.CancelScope(shield=True):
             async with self._session_state.lock:

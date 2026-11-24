@@ -1,0 +1,70 @@
+# Publishes triage activity as public atproto records for the live triage floor
+# (https://sites.wisp.place/prefect.io/triage-floor/). Viewers subscribe over
+# Jetstream, so the floor updates within seconds without anyone polling GitHub.
+#
+# SECURITY: pull_request_target runs with secrets, so this workflow never checks
+# out or runs PR-head code; it reads only the GitHub API. The cached session is
+# encrypted with the app password, which PR runs from forks cannot read.
+#
+# Each event's record comes from the webhook receiver (scripts/floor_receiver).
+# This workflow writes only the snapshot of open work.
+name: Triage floor feed
+
+on:
+  issues:
+    types: [opened, reopened, closed, labeled]
+  pull_request_target:
+    types:
+      [opened, reopened, closed, labeled, ready_for_review, converted_to_draft]
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  publish:
+    if: github.repository == 'PrefectHQ/fastmcp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/triage_floor_feed.py
+          sparse-checkout-cone-mode: false
+      - name: Restore session
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/floor-session.enc
+          key: floor-session-${{ github.run_id }}
+          restore-keys: floor-session-
+      - name: Publish
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATPROTO_HANDLE: ${{ vars.TRIAGE_FLOOR_ATPROTO_HANDLE }}
+          ATPROTO_PDS: ${{ vars.TRIAGE_FLOOR_ATPROTO_PDS }}
+          ATPROTO_PASSWORD: ${{ secrets.TRIAGE_FLOOR_ATPROTO_PASSWORD }}
+        run: |
+          if [ -z "$ATPROTO_PASSWORD" ]; then echo "no credential configured; skipping"; exit 0; fi
+          enc="$RUNNER_TEMP/floor-session.enc" plain="$RUNNER_TEMP/floor-session.json"
+          if [ -f "$enc" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -pass env:ATPROTO_PASSWORD -in "$enc" -out "$plain" 2>/dev/null || rm -f "$plain"
+          fi
+          python3 scripts/triage_floor_feed.py --session-file "$plain"
+          if [ -f "$plain" ]; then
+            openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:ATPROTO_PASSWORD -in "$plain" -out "$enc"
+            rm -f "$plain"
+          fi
+      - name: Save session
+        if: steps.publish.outputs.session-changed == 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/floor-session.enc
+          key: floor-session-${{ github.run_id }}-${{ github.run_attempt }}

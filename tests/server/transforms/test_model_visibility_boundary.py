@@ -132,7 +132,7 @@ async def test_the_apps_own_ui_still_reaches_its_backend(transform_cls):
     result = await server.call_tool(
         hashed_backend_name("contacts", "save_contact"), {"name": "ada"}
     )
-    assert result.content[0].text == "saved ada"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+    assert result.content[0].text == "saved ada"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
 
 async def test_visibility_is_checked_on_the_version_a_name_reaches():

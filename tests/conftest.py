@@ -144,7 +144,7 @@ def isolate_settings_home(_settings_home_root: Path):
 
 
 def get_fn_name(fn: Callable[..., Any]) -> str:
-    return fn.__name__  # ty: ignore[unresolved-attribute]
+    return fn.__name__  # ty: ignore[missing-attribute]
 
 
 @pytest.fixture(scope="session")

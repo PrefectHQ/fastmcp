@@ -30,7 +30,7 @@ from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.transports.base import ClientTransport
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
-from fastmcp.client.transports.stdio import StdioTransport
+from fastmcp.client.transports.stdio import NodeStdioTransport, StdioTransport
 from fastmcp.skills.client import SkillsClientExtension
 from fastmcp.skills.models import MCPSkill
 from fastmcp.utilities.logging import get_logger
@@ -125,8 +125,7 @@ def resolve_server_spec(
                 command="fastmcp",
                 args=["run", str(resolved_path), "--no-banner"],
             )
-        # .js — pass through for Client's infer_transport
-        return spec
+        return NodeStdioTransport(script_path=path.resolve())
 
     # 3. Name-based resolution (bare name or source:name)
     try:
@@ -267,12 +266,13 @@ def _build_client(
     timeout: float | None = None,
     auth: str | None = None,
     skills: bool = False,
+    events: bool = False,
 ) -> Client:
     """Build a ``Client`` from a resolved server spec.
 
     Applies ``auth='oauth'`` automatically for HTTP-based targets unless
     the caller explicitly passes ``--auth none`` to disable it. ``skills=True``
-    opts the client into the Skills extension.
+    opts the client into the Skills extension, ``events=True`` into Events.
 
     ``auth=None`` means "not specified" (use default), ``auth="none"``
     means "explicitly disabled".
@@ -327,8 +327,19 @@ def _build_client(
             timeout=timeout,
             auth=effective_auth,
             elicitation_handler=_terminal_elicitation_handler,
-            extensions=[SkillsClientExtension()] if skills else None,
+            extensions=_client_extensions(skills=skills, events=events),
         )
+
+
+def _client_extensions(*, skills: bool, events: bool) -> list[Any] | None:
+    extensions: list[Any] = []
+    if skills:
+        extensions.append(SkillsClientExtension())
+    if events:
+        from fastmcp.experimental.events import EventsClientExtension
+
+        extensions.append(EventsClientExtension())
+    return extensions or None
 
 
 # ---------------------------------------------------------------------------
@@ -353,10 +364,72 @@ def _unwrap_nullable(schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+def _union_branches(schema: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Return the ``anyOf``/``oneOf`` branches of a union schema, if any."""
+
+    branches = schema.get("anyOf", schema.get("oneOf"))
+    return branches if isinstance(branches, list) else None
+
+
+def _schema_allows_null(schema: dict[str, Any]) -> bool:
+    """Return True if the schema permits a null/None value."""
+
+    branches = _union_branches(schema)
+    if branches is not None:
+        return any(_schema_allows_null(s) for s in branches)
+
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        return "null" in schema_type
+    return schema_type == "null"
+
+
+def _schema_may_be_string(schema: dict[str, Any]) -> bool:
+    """Return True if a non-null value matching ``schema`` could be a string.
+
+    Branches without a ``type`` (a ``$ref``, an enum, an unconstrained schema)
+    are treated as possibly strings so the raw CLI input is preserved.
+    """
+
+    branches = _union_branches(schema)
+    if branches is not None:
+        return any(_schema_may_be_string(s) for s in branches)
+
+    schema_type = schema.get("type")
+    if schema_type is None:
+        return True
+    if isinstance(schema_type, list):
+        return "string" in schema_type
+    return schema_type == "string"
+
+
 def coerce_value(raw: str, schema: dict[str, Any]) -> Any:
     """Coerce a string CLI value according to a JSON-Schema type hint."""
 
-    schema_type = _unwrap_nullable(schema).get("type", "string")
+    # ``null`` means None for nullable schemas, unless the value could also be
+    # the literal string "null" (e.g. ``str | None``); use --input-json there.
+    if (
+        raw == "null"
+        and _schema_allows_null(schema)
+        and not _schema_may_be_string(schema)
+    ):
+        return None
+
+    unwrapped = _unwrap_nullable(schema)
+
+    # Unions with several non-null branches (``int | list[int]``, a
+    # discriminated ``Cat | Dog``) have no top-level type. When no branch can
+    # be a string, decode raw arrays and objects as JSON; anything else is
+    # passed through for the server to validate.
+    if _union_branches(unwrapped) is not None and "type" not in unwrapped:
+        if not _schema_may_be_string(unwrapped) and raw[:1] in ("[", "{"):
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+        return raw
+
+    schema_type = unwrapped.get("type", "string")
 
     if schema_type == "integer":
         try:
@@ -988,6 +1061,16 @@ async def call_command(
         fastmcp call http://server/mcp create --input-json '{"tags": ["a","b"]}'
         ```
     """
+
+    if command is not None and server_spec is not None:
+        # With --command there is no server spec, so the positionals bind one
+        # slot early: the target lands in `server_spec` and the first key=value
+        # argument in `target`. A `target` that is not key=value (or a JSON
+        # object) means a server spec was passed as well; leave that to
+        # resolve_server_spec to reject.
+        if not target or "=" in target or target.startswith("{"):
+            arguments = (target, *arguments) if target else arguments
+            server_spec, target = None, server_spec
 
     if not target:
         console.print(

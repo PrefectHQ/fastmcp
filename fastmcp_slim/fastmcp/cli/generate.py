@@ -2,6 +2,7 @@
 
 import keyword
 import re
+import shlex
 import sys
 import textwrap
 from collections import defaultdict
@@ -40,8 +41,31 @@ def _is_simple_type(schema: dict[str, Any]) -> bool:
     schema_type = schema.get("type")
     if isinstance(schema_type, list):
         # Union of types - simple only if all are simple
-        return all(t in _SIMPLE_TYPES for t in schema_type)
-    return schema_type in _SIMPLE_TYPES
+        return all(isinstance(t, str) and t in _SIMPLE_TYPES for t in schema_type)
+    return isinstance(schema_type, str) and schema_type in _SIMPLE_TYPES
+
+
+def _is_optional_string(schema: dict[str, Any]) -> bool:
+    """Check if a schema is Pydantic's `anyOf` form of `str | None`.
+
+    Such a parameter takes plain text, like a required string. Other unions,
+    such as `int | None`, `bool | None` or an optional enum, take JSON.
+    """
+    branches = schema.get("anyOf")
+    if "type" in schema or not isinstance(branches, list) or len(branches) != 2:
+        return False
+    if branches[0] == {"type": "null"}:
+        string_branch = branches[1]
+    elif branches[1] == {"type": "null"}:
+        string_branch = branches[0]
+    else:
+        return False
+    return (
+        isinstance(string_branch, dict)
+        and string_branch.get("type") == "string"
+        and "enum" not in string_branch
+        and "const" not in string_branch
+    )
 
 
 def _is_simple_array(schema: dict[str, Any]) -> tuple[bool, str | None]:
@@ -221,7 +245,7 @@ def _resolve_tool_param_flags(
     items: list[tuple[str, str, str, str]] = []
     for prop_name in properties:
         safe_name = _to_python_identifier(prop_name)
-        if safe_name in {"_call_tool", "isinstance", "json", "str"}:
+        if safe_name in {"_call_tool", "_json_text", "isinstance", "json", "str"}:
             safe_name = f"{safe_name}_"
         default_flag = _param_to_cli_flag(prop_name)
         norm_key = default_flag.replace("_", "-")
@@ -289,7 +313,7 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
     # Build parameter lines and track which need JSON parsing
     param_lines: list[str] = []
     call_args: list[str] = []
-    json_params: list[tuple[str, str]] = []  # (prop_name, safe_name)
+    json_params: list[tuple[str, str]] = []  # (prop_name, decoder)
     seen_names: dict[str, str] = {}  # safe_name -> original prop_name
 
     for prop_name, prop_schema in properties.items():
@@ -297,7 +321,7 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
         help_text = prop_schema.get("description", "")
         is_required = prop_name in required
         safe_name = _to_python_identifier(prop_name)
-        if safe_name in {"_call_tool", "isinstance", "json", "str"}:
+        if safe_name in {"_call_tool", "_json_text", "isinstance", "json", "str"}:
             # The command body refers to these names, so a parameter must not
             # shadow them. Cyclopts drops the trailing underscore from the flag.
             safe_name = f"{safe_name}_"
@@ -310,11 +334,14 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             )
         seen_names[safe_name] = prop_name
 
-        # For complex types, add schema to help text
-        if needs_json:
+        # For complex types, add schema to help text. An optional string takes
+        # plain text, so it shows no schema and decodes only a JSON string or null.
+        if _is_optional_string(prop_schema):
+            json_params.append((prop_name, "_json_text"))
+        elif needs_json:
             schema_help = _format_schema_for_help(prop_schema)
             help_text = f"{help_text}\\n{schema_help}" if help_text else schema_help
-            json_params.append((prop_name, safe_name))
+            json_params.append((prop_name, "json.loads"))
 
         _, explicit_name = param_flags[prop_name]
         flag_arg = f'name="{explicit_name}", ' if explicit_name else ""
@@ -375,12 +402,12 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             f"    {arguments_name} = {{k: v for k, v in {arguments_name}.items() "
             f"if v is not None or k in {tuple(sorted(required))!r}}}"
         )
-        for prop_name, _safe_name in json_params:
+        for prop_name, decoder in json_params:
             value = f"{arguments_name}[{prop_name!r}]"
             lines.append(
                 f"    if {prop_name!r} in {arguments_name} and isinstance({value}, str):"
             )
-            lines.append(f"        {value} = json.loads({value})")
+            lines.append(f"        {value} = {decoder}({value})")
         lines.append(f"    await _call_tool({tool.name!r}, {arguments_name})")
     else:
         lines.append(f"    await _call_tool({tool.name!r}, {{}})")
@@ -505,7 +532,16 @@ def generate_cli_script(
                 result = await client.call_tool(tool_name, arguments, raise_on_error=False)
                 _print_tool_result(result)
                 if result.is_error:
-                    sys.exit(1)""")
+                    sys.exit(1)
+
+
+        def _json_text(value: str) -> str | None:
+            \"\"\"Decode a JSON string or null, and pass any other text through.\"\"\"
+            try:
+                decoded = json.loads(value)
+            except json.JSONDecodeError:
+                return value
+            return decoded if decoded is None or isinstance(decoded, str) else value""")
     )
     lines.append("")
     lines.append("")
@@ -684,8 +720,14 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
 
     schema_type = prop_schema.get("type", "string")
     if isinstance(schema_type, list):
-        labels = [_JSON_SCHEMA_TYPE_LABELS.get(t, t) for t in schema_type]
-        return " | ".join(labels)
+        labels = [
+            _JSON_SCHEMA_TYPE_LABELS.get(t, t)
+            for t in schema_type
+            if isinstance(t, str)
+        ]
+        return " | ".join(labels) or "any"
+    if not isinstance(schema_type, str):
+        return "any"
 
     label = _JSON_SCHEMA_TYPE_LABELS.get(schema_type, schema_type)
 
@@ -697,6 +739,47 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
             return f"array[{item_type}]"
 
     return label
+
+
+def _table_cell(text: str) -> str:
+    """Keep server-supplied text on one Markdown table row."""
+    return re.sub(r"[\r\n]+", " ", text).replace("|", "\\|")
+
+
+def _bash_quote(value: str) -> str:
+    """Quote a value as one bash word that stays on one line.
+
+    `shlex.quote` keeps newlines literal, which would split the word across
+    lines of the generated `bash` block (and a line of backticks would end the
+    block). Values with unprintable characters use ANSI-C quoting instead.
+    """
+    if value.isprintable():
+        return shlex.quote(value)
+
+    def escape(char: str) -> str:
+        if char in "\\'":
+            return "\\" + char
+        if char.isprintable():
+            return char
+        return f"\\U{ord(char):08x}"
+
+    escaped = "".join(escape(char) for char in value)
+    return f"$'{escaped}'"
+
+
+def _inert_text_block(text: str) -> str:
+    """Keep server-supplied text from adding code blocks to SKILL.md.
+
+    A description containing a code fence could otherwise plant its own
+    `bash` block next to the generated invocation. Such text is wrapped in a
+    `text` fence one backtick longer than its longest backtick run, which it
+    cannot close. Text without fences is returned unchanged.
+    """
+    if "```" not in text and "~~~" not in text:
+        return text
+    longest_run = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest_run + 1)
+    return f"{fence}text\n{text}\n{fence}"
 
 
 def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
@@ -719,7 +802,10 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
         else:
             flag_parts_list.append(f"{flag} <value>")
     flag_parts = " ".join(flag_parts_list)
-    invocation = f"uv run --with fastmcp python {cli_filename} call-tool {tool.name}"
+    invocation = (
+        "uv run --with fastmcp python "
+        f"{_bash_quote(cli_filename)} call-tool {_bash_quote(tool.name)}"
+    )
     if flag_parts:
         invocation += f" {flag_parts}"
 
@@ -727,15 +813,15 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     rows: list[str] = []
     for prop_name, prop_schema in properties.items():
         flag = f"`{param_flags[prop_name][0]}`"
-        type_label = _schema_type_label(prop_schema).replace("|", "\\|")
+        type_label = _table_cell(_schema_type_label(prop_schema))
         is_required = "yes" if prop_name in required else "no"
         description = prop_schema.get("description", "")
         _, needs_json = _schema_to_python_type(prop_schema)
-        if needs_json:
+        if needs_json and not _is_optional_string(prop_schema):
             description = (
                 f"{description} (JSON string)" if description else "JSON string"
             )
-        description = description.replace("\n", " ").replace("|", "\\|")
+        description = _table_cell(description)
         rows.append(f"| {flag} | {type_label} | {is_required} | {description} |")
 
     param_table = ""
@@ -743,9 +829,10 @@ def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
         header = "| Flag | Type | Required | Description |\n|------|------|----------|-------------|"
         param_table = f"\n{header}\n" + "\n".join(rows) + "\n"
 
-    lines: list[str] = [f"### {tool.name}"]
+    heading = " ".join(tool.name.splitlines())
+    lines: list[str] = [f"### {heading}"]
     if tool.description:
-        lines.extend(["", tool.description])
+        lines.extend(["", _inert_text_block(tool.description)])
     lines.extend(["", "```bash", invocation, "```"])
     if param_table:
         lines.extend(["", param_table.strip("\n")])

@@ -1,3 +1,4 @@
+import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -134,6 +135,33 @@ class TestBearerToken:
 
         access_token = await bearer_provider.load_access_token(token)
         assert access_token is None
+
+    @pytest.mark.parametrize(
+        ("nbf_offset", "accepted"),
+        [
+            (3600, False),  # not valid for another hour
+            (-60, True),  # already valid
+            (10, True),  # within clock-skew tolerance
+        ],
+    )
+    async def test_not_before_claim(
+        self,
+        rsa_key_pair: RSAKeyPair,
+        bearer_provider: JWTVerifier,
+        nbf_offset: int,
+        accepted: bool,
+    ):
+        """Tokens are rejected until their nbf time, allowing small clock skew."""
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+            expires_in_seconds=7200,
+            additional_claims={"nbf": int(time.time()) + nbf_offset},
+        )
+
+        access_token = await bearer_provider.load_access_token(token)
+        assert (access_token is not None) is accepted
 
     async def test_invalid_issuer_rejection(
         self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier

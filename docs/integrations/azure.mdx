@@ -139,13 +139,12 @@ async def get_user_info() -> dict:
     from fastmcp.server.dependencies import get_access_token
     
     token = get_access_token()
-    # The AzureProvider stores user data in token claims
+    # Claims come from the Azure access token
     return {
-        "azure_id": token.claims.get("sub"),
-        "email": token.claims.get("email"),
+        "azure_id": token.claims.get("oid"),
+        "username": token.claims.get("preferred_username"),
         "name": token.claims.get("name"),
-        "job_title": token.claims.get("job_title"),
-        "office_location": token.claims.get("office_location")
+        "tenant_id": token.claims.get("tid"),
     }
 ```
 
@@ -254,7 +253,7 @@ async def main():
         # Test the protected tool
         result = await client.call_tool("get_user_info")
         user_info = result.data
-        print(f"Azure user: {user_info['email']}")
+        print(f"Azure user: {user_info['username']}")
         print(f"Name: {user_info['name']}")
 
 if __name__ == "__main__":

@@ -39,13 +39,14 @@ following the same pattern as ResponseCachingMiddleware and OAuthProxy.
 
 **Args:**
 - `storage`: AsyncKeyValue backend. Defaults to MemoryStore.
-- `max_events_per_stream`: Maximum events to retain per stream. Default 100.
+- `max_events_per_stream`: Maximum events to retain per stream. Must be at
+least 1. Default 100.
 - `ttl`: Event TTL in seconds. Default 3600 (1 hour). Set to None for no expiration.
 
 
 **Methods:**
 
-#### `store_event` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/event_store.py#L120" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `store_event` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/event_store.py#L124" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 store_event(self, stream_id: StreamId, message: JSONRPCMessage | None) -> EventId
@@ -61,7 +62,7 @@ Store an event and return its ID.
 - The generated event ID for the stored event
 
 
-#### `replay_events_after` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/event_store.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `replay_events_after` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/event_store.py#L170" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 replay_events_after(self, last_event_id: EventId, send_callback: EventCallback) -> StreamId | None
