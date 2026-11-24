@@ -23,6 +23,18 @@ flagging a duplicate (`potential-duplicate`) is recorded as the issue's next ste
 digest, and a maintainer decides. When triage isn't sure, it holds. Nothing in this path
 assigns, closes or merges.
 
+An intake that hands an issue to a person is not the end of it. Most of what follows
+doesn't look like an event the automations take: a maintainer assigns the issue, the
+issue-link gate (a bot) reopens the PR, the reporter answers in a comment, a contributor
+pushes. `cloud-triage-follow-through` (`flows/agentic_followup.py`, hourly, no model) looks
+at every open issue labeled `needs:triage` and every open issue an outside PR says it
+fixes. When one has changed since triage last saw it (`fastmcp-triage-handled-<n>`, written
+by every intake), or triage never saw it, or its last run failed on older code, it starts
+the same intake an issue event would, with the issue automation's pinned parameters, at
+most three per pass. It waits while an intake for the issue is still running and stops
+after three runs on the same revision; those failures already raised the intake alert. A person removing `needs:triage` clears the hand-off: triage keeps
+recording the issue's next step but never puts the label back.
+
 `cloud-triage-sweep` (`flows/agentic_sweep.py`, no model) lists inactive outside issues and PRs
 in Slack every Monday and labels nothing. A maintainer adds `sweep:close` to the ones that
 should go; a daily run closes them once the label has been on for 48 hours with no comment from
