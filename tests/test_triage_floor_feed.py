@@ -74,7 +74,7 @@ def test_closed_issue_carries_its_reason():
     assert event["reason"] == "not_planned"
 
 
-def test_gate_release_is_ungated_and_other_unlabels_are_skipped():
+def test_gate_release_is_ungated_and_other_unlabels_are_recorded():
     gate = {
         "action": "unlabeled",
         "label": {"name": feed.GATE_LABEL},
@@ -83,7 +83,24 @@ def test_gate_release_is_ungated_and_other_unlabels_are_skipped():
     }
     assert feed.to_event("pull_request_target", gate, NOW)["kind"] == "ungated"
     other = {**gate, "label": {"name": "bug"}}
-    assert feed.to_event("pull_request_target", other, NOW) is None
+    event = feed.to_event("pull_request_target", other, NOW)
+    assert event["kind"] == "unlabeled"
+    assert event["label"] == "bug"
+
+
+def test_opened_pr_carries_the_issues_it_closes():
+    payload = {
+        "action": "opened",
+        "pull_request": {
+            "number": 12,
+            "title": "x",
+            "body": "Fixes #6100, and closes: #6101. see #7",
+        },
+        "sender": {"login": "jane", "type": "User"},
+    }
+    assert feed.to_event("pull_request_target", payload, NOW)["links"] == [6100, 6101]
+    payload["pull_request"]["body"] = "no links"
+    assert "links" not in feed.to_event("pull_request_target", payload, NOW)
 
 
 def test_uninteresting_actions_are_skipped():

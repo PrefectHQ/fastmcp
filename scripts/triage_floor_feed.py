@@ -48,6 +48,16 @@ def excerpt(body: str | None) -> str | None:
     return text if len(text) <= 160 else text[:159].rstrip() + "…"
 
 
+CLOSING_REF = re.compile(
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)", re.IGNORECASE
+)
+
+
+def linked_issues(body: str | None) -> list[int]:
+    """Issue numbers a PR body closes with a GitHub closing keyword."""
+    return sorted({int(n) for n in CLOSING_REF.findall(body or "")})
+
+
 def to_event(name: str, payload: dict, now: datetime) -> dict | None:
     """One GitHub webhook event -> one floor event record, or None to skip it."""
     action = payload.get("action", "")
@@ -71,15 +81,16 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
         elif action in {"opened", "reopened"}:
             kind = "opened"
             base["association"] = thing.get("author_association")
+            if base["pr"]:
+                base["links"] = linked_issues(thing.get("body")) or None
         elif action == "labeled":
             label = (payload.get("label") or {}).get("name", "")
             kind = "gated" if label == GATE_LABEL else "labeled"
             base["label"] = label
         elif action == "unlabeled":
             label = (payload.get("label") or {}).get("name", "")
-            if label == GATE_LABEL:
-                kind = "ungated"
-                base["label"] = label
+            kind = "ungated" if label == GATE_LABEL else "unlabeled"
+            base["label"] = label
         elif action == "ready_for_review":
             kind = "updated"
         elif action == "synchronize":
