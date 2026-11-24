@@ -187,6 +187,25 @@ def _version_request_meta(
     return {"fastmcp": {"version": version_value}}
 
 
+def _requested_version_from_meta(meta: dict[str, Any] | None) -> VersionSpec | None:
+    if not meta:
+        return None
+    fastmcp_meta = meta.get("fastmcp")
+    if not isinstance(fastmcp_meta, dict):
+        return None
+    version = fastmcp_meta.get("version")
+    if isinstance(version, str):
+        return VersionSpec(eq=version)
+    if isinstance(version, dict):
+        gte = version.get("gte")
+        lt = version.get("lt")
+        eq = version.get("eq")
+        if not all(v is None or isinstance(v, str) for v in (gte, lt, eq)):
+            return None
+        return VersionSpec(gte=gte, lt=lt, eq=eq)
+    return None
+
+
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
 # for every call addressed by hashed backend name, since that address is
 # an identity rather than a listed tool name. This fires even when
@@ -1676,7 +1695,9 @@ class FastMCP(
                             lambda context: self.call_tool(
                                 context.message.name,
                                 context.message.arguments or {},
-                                version=version,
+                                version=version
+                                if version is not None
+                                else _requested_version_from_meta(context.message.meta),
                                 run_middleware=False,
                             )
                         ),
@@ -1833,7 +1854,9 @@ class FastMCP(
                     context=mw_context,
                     call_next=lambda context: self.read_resource(
                         str(context.message.uri),
-                        version=version,
+                        version=version
+                        if version is not None
+                        else _requested_version_from_meta(context.message.meta),
                         run_middleware=False,
                     ),
                 )
@@ -2010,7 +2033,9 @@ class FastMCP(
                     call_next=lambda context: self.render_prompt(
                         context.message.name,
                         context.message.arguments,
-                        version=version,
+                        version=version
+                        if version is not None
+                        else _requested_version_from_meta(context.message.meta),
                         run_middleware=False,
                     ),
                 )

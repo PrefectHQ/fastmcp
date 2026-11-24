@@ -24,7 +24,8 @@ Example:
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
 import mcp_types as mt
@@ -48,9 +49,31 @@ from fastmcp.utilities.authorization import (
     run_auth_checks_with_shortfall,
     scope_requirements,
 )
-from fastmcp.utilities.versions import VersionSpec
+from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 logger = logging.getLogger(__name__)
+
+
+async def _list_matching_tools(server: Any, tool_name: str) -> Sequence[Tool]:
+    return [t for t in await server.list_tools(run_middleware=False) if t.name == tool_name]
+
+
+async def _list_matching_resources(server: Any, uri: str) -> Sequence[Any]:
+    resources = [
+        r for r in await server.list_resources(run_middleware=False) if str(r.uri) == uri
+    ]
+    templates = [
+        t
+        for t in await server.list_resource_templates(run_middleware=False)
+        if t.matches(uri) is not None
+    ]
+    return [*resources, *templates]
+
+
+async def _list_matching_prompts(server: Any, prompt_name: str) -> Sequence[Prompt]:
+    return [
+        p for p in await server.list_prompts(run_middleware=False) if p.name == prompt_name
+    ]
 
 
 def _requested_version(meta: Mapping[str, Any] | None) -> VersionSpec | None:
@@ -207,6 +230,59 @@ class AuthMiddleware(Middleware):
             missing |= set(sibling)
         return sorted(missing)
 
+    async def _all_auth_layers_allow(self, server: Any, ctx: AuthContext) -> bool:
+        """Check whether this middleware and all sibling `AuthMiddleware` layers allow `ctx`."""
+        middleware = getattr(server, "middleware", None)
+        layers = (
+            [mw for mw in middleware if isinstance(mw, AuthMiddleware)]
+            if isinstance(middleware, list)
+            else []
+        )
+        if not any(mw is self for mw in layers):
+            layers = [self]
+        for mw in layers:
+            try:
+                if not await run_auth_checks(mw.auth, ctx):
+                    return False
+            except AuthorizationError:
+                return False
+        return True
+
+    async def _fallback_authorized_context(
+        self,
+        context: MiddlewareContext[Any],
+        server: Any,
+        token: Any,
+        top_component: Any,
+        list_candidates: Callable[[], Awaitable[Sequence[Any]]],
+    ) -> MiddlewareContext[Any] | None:
+        """For an unversioned call whose top version is denied, pin the highest authorized version."""
+        candidates = sorted(
+            await list_candidates(),
+            key=version_sort_key,
+            reverse=True,
+        )
+        for candidate in candidates:
+            if candidate.version == top_component.version:
+                continue
+            if await self._all_auth_layers_allow(
+                server, AuthContext(token=token, component=candidate)
+            ):
+                if candidate.version is not None:
+                    meta_version: str | dict[str, str] = candidate.version
+                elif top_component.version is not None:
+                    meta_version = {"lt": top_component.version}
+                else:
+                    continue
+                new_meta = {
+                    **(context.message.meta or {}),
+                    "fastmcp": {"version": meta_version},
+                }
+                return replace(
+                    context, message=context.message.model_copy(update={"meta": new_meta})
+                )
+        return None
+
     async def on_list_tools(
         self,
         context: MiddlewareContext[mt.ListToolsRequest],
@@ -290,6 +366,16 @@ class AuthMiddleware(Middleware):
         ctx = AuthContext(token=token, component=tool)
         authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
         if not authorized:
+            if version is None:
+                fallback_ctx = await self._fallback_authorized_context(
+                    context,
+                    fastmcp.fastmcp,
+                    token,
+                    tool,
+                    lambda: _list_matching_tools(fastmcp.fastmcp, tool_name),
+                )
+                if fallback_ctx is not None:
+                    return await call_next(fallback_ctx)
             if missing:
                 missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)
                 raise InsufficientScopeError(
@@ -332,15 +418,14 @@ class AuthMiddleware(Middleware):
 
         return authorized_resources
 
-    async def check_resource_access(
+    async def _authorize_resource_access(
         self, context: MiddlewareContext[mt.ReadResourceRequestParams]
-    ) -> None:
-        """Apply the resource policy shared by reads and extension discovery."""
-        # STDIO has no auth concept, skip enforcement
+    ) -> MiddlewareContext[mt.ReadResourceRequestParams]:
+        """Authorize resource access and return the context (possibly pinned to a fallback version)."""
         from fastmcp.server.context import _current_transport
 
         if _current_transport.get() == "stdio":
-            return
+            return context
 
         # Get the resource being read
         uri = context.message.uri
@@ -354,10 +439,6 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for resource '{uri}': missing context"
             )
 
-        # get_resource/get_resource_template return None both when the resource
-        # does not exist and when component-level auth denied access, so the two
-        # cases are indistinguishable here. Keep the message ambiguous to avoid
-        # disclosing existence of resources the caller is not authorized to see.
         version = _requested_version(context.message.meta)
         component = await fastmcp.fastmcp.get_resource(str(uri), version=version)
         if component is None:
@@ -366,12 +447,6 @@ class AuthMiddleware(Middleware):
                 version=version,
             )
         if component is None:
-            # Prefab renderer resources (`ui://prefab/renderer/<sha256>/
-            # renderer.html`, plus legacy per-tool hashed URIs) are synthesized
-            # on demand by core `read_resource` rather than stored on a
-            # provider, so neither lookup above can see them. Mirror that path
-            # so the global checks below run against the component core would
-            # actually read.
             from fastmcp.server.providers.prefab_synthesis import (
                 synthesize_prefab_resource_by_uri,
             )
@@ -390,6 +465,16 @@ class AuthMiddleware(Middleware):
         ctx = AuthContext(token=token, component=component)
         authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
         if not authorized:
+            if version is None:
+                fallback_ctx = await self._fallback_authorized_context(
+                    context,
+                    fastmcp.fastmcp,
+                    token,
+                    component,
+                    lambda: _list_matching_resources(fastmcp.fastmcp, str(uri)),
+                )
+                if fallback_ctx is not None:
+                    return fallback_ctx
             if missing:
                 missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)
                 raise InsufficientScopeError(
@@ -402,6 +487,22 @@ class AuthMiddleware(Middleware):
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': insufficient permissions"
             )
+        return context
+
+    async def check_resource_access(
+        self, context: MiddlewareContext[mt.ReadResourceRequestParams]
+    ) -> None:
+        """Apply the resource policy shared by reads and extension discovery."""
+        await self._authorize_resource_access(context)
+
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[mt.ReadResourceRequestParams],
+        call_next: CallNext[mt.ReadResourceRequestParams, Any],
+    ) -> Any:
+        """Check auth before resource read, falling back on unversioned requests."""
+        context = await self._authorize_resource_access(context)
+        return await call_next(context)
 
     async def on_list_resource_templates(
         self,
@@ -500,6 +601,16 @@ class AuthMiddleware(Middleware):
         ctx = AuthContext(token=token, component=prompt)
         authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
         if not authorized:
+            if version is None:
+                fallback_ctx = await self._fallback_authorized_context(
+                    context,
+                    fastmcp.fastmcp,
+                    token,
+                    prompt,
+                    lambda: _list_matching_prompts(fastmcp.fastmcp, prompt_name),
+                )
+                if fallback_ctx is not None:
+                    return await call_next(fallback_ctx)
             if missing:
                 missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)
                 raise InsufficientScopeError(

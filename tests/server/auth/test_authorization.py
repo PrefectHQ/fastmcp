@@ -1100,6 +1100,61 @@ class TestAuthMiddlewareVersionedRequests:
         finally:
             auth_context_var.reset(tok)
 
+    async def test_middleware_falls_back_to_allowed_lower_version_on_unversioned_calls(
+        self,
+    ):
+        """When the highest version is denied by AuthMiddleware, unversioned calls run the listed lower version."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(name="calc", version="1")
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2", tags={"admin"})
+        def calc_v2() -> str:
+            return "v2"
+
+        @mcp.resource("data://info", version="1")
+        def info_v1() -> str:
+            return "info-v1"
+
+        @mcp.resource("data://info", version="2", tags={"admin"})
+        def info_v2() -> str:
+            return "info-v2"
+
+        @mcp.prompt(name="greet", version="1")
+        def greet_v1() -> str:
+            return "greet-v1"
+
+        @mcp.prompt(name="greet", version="2", tags={"admin"})
+        def greet_v2() -> str:
+            return "greet-v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+                assert [(t.name, t.meta["fastmcp"]["version"]) for t in tools] == [
+                    ("calc", "1")
+                ]
+                assert (await client.call_tool("calc", {})).data == "v1"
+
+                resources = await client.list_resources()
+                assert [
+                    (str(r.uri), r.meta["fastmcp"]["version"]) for r in resources
+                ] == [("data://info", "1")]
+                read_res = await client.read_resource("data://info")
+                assert read_res[0].text == "info-v1"
+
+                prompts = await client.list_prompts()
+                assert [(p.name, p.meta["fastmcp"]["version"]) for p in prompts] == [
+                    ("greet", "1")
+                ]
+                prompt_res = await client.get_prompt("greet")
+                assert prompt_res.messages[0].content.text == "greet-v1"
+        finally:
+            auth_context_var.reset(tok)
+
 
 # =============================================================================
 # Tests for component-level auth denial messaging (issue #4054 bug 1)
