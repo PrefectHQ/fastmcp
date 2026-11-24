@@ -9,7 +9,7 @@ from mcp.server.elicitation import (
     CancelledElicitation,
     DeclinedElicitation,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 from pydantic_core import core_schema
 from typing_extensions import TypeVar
@@ -130,6 +130,26 @@ class ElicitationJsonSchema(GenerateJsonSchema):
         # A `None` default has no meaning once the null type is gone
         if json_schema.get("default") is None:
             json_schema.pop("default", None)
+        elif (
+            json_schema.get("type") == "string"
+            and "enum" in json_schema
+            and isinstance(json_schema.get("default"), int)
+            and not isinstance(json_schema.get("default"), bool)
+        ):
+            json_schema["default"] = str(json_schema["default"])
+        return json_schema
+
+    @staticmethod
+    def _stringify_integer_enum(json_schema: JsonSchemaValue) -> JsonSchemaValue:
+        if json_schema.get("type") == "integer" and "enum" in json_schema:
+            json_schema["enum"] = [str(v) for v in json_schema["enum"]]
+            json_schema["type"] = "string"
+            if (
+                "default" in json_schema
+                and isinstance(json_schema["default"], int)
+                and not isinstance(json_schema["default"], bool)
+            ):
+                json_schema["default"] = str(json_schema["default"])
         return json_schema
 
     def enum_schema(self, schema: core_schema.EnumSchema) -> JsonSchemaValue:
@@ -139,7 +159,11 @@ class ElicitationJsonSchema(GenerateJsonSchema):
         Titled enums are handled separately via dict-based syntax in ctx.elicit().
         """
         # Get the base schema from parent - always use simple enum pattern
-        return super().enum_schema(schema)
+        return self._stringify_integer_enum(super().enum_schema(schema))
+
+    def literal_schema(self, schema: core_schema.LiteralSchema) -> JsonSchemaValue:
+        """Normalize integer Literal enum schemas to MCP string enums."""
+        return self._stringify_integer_enum(super().literal_schema(schema))
 
 
 # we can't use the low-level AcceptedElicitation because it only works with BaseModels
@@ -383,7 +407,15 @@ def handle_elicit_accept(
     # For typed schemas, validate with Pydantic
     if config.response_type is not None:
         type_adapter = get_cached_typeadapter(config.response_type)
-        validated_data = type_adapter.validate_python(content)
+        try:
+            validated_data = type_adapter.validate_python(content)
+        except ValidationError:
+            if not isinstance(content, dict):
+                raise
+            coerced = _coerce_stringified_int_enums(content, config.schema)
+            if coerced is None:
+                raise
+            validated_data = type_adapter.validate_python(coerced)
         if isinstance(validated_data, ScalarElicitationType):
             return AcceptedElicitation[Any](data=validated_data.value)
         return AcceptedElicitation[Any](data=validated_data)
@@ -394,6 +426,48 @@ def handle_elicit_accept(
             f"Elicitation expected an empty response, but received: {content}"
         )
     return AcceptedElicitation[dict[str, Any]](data={})
+
+
+def _coerce_stringified_int_enums(
+    content: dict[str, Any], schema: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Coerce stringified integer enum choices back to int when needed."""
+    props = schema.get("properties", {})
+    coerced: dict[str, Any] | None = None
+    for key, value in content.items():
+        prop = props.get(key)
+        if not isinstance(prop, dict):
+            continue
+        if isinstance(value, str) and "enum" in prop and prop.get("type") == "string":
+            try:
+                int_val = int(value)
+            except ValueError:
+                continue
+            if coerced is None:
+                coerced = dict(content)
+            coerced[key] = int_val
+        elif (
+            isinstance(value, list)
+            and prop.get("type") == "array"
+            and isinstance(prop.get("items"), dict)
+            and "enum" in prop["items"]
+        ):
+            new_list = []
+            changed = False
+            for item in value:
+                if isinstance(item, str):
+                    try:
+                        new_list.append(int(item))
+                        changed = True
+                        continue
+                    except ValueError:
+                        pass
+                new_list.append(item)
+            if changed:
+                if coerced is None:
+                    coerced = dict(content)
+                coerced[key] = new_list
+    return coerced
 
 
 def _dict_to_enum_schema(

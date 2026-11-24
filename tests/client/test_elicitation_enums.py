@@ -437,6 +437,31 @@ def test_choice_shorthand_rejects_values_not_offered(response_type, valid, inval
         handle_elicit_accept(config, {"value": invalid})
 
 
+def test_integer_choices_render_as_string_enum_and_accept_string_values():
+    from enum import Enum
+    from typing import Literal
+
+    class Rating(Enum):
+        LOW = 1
+        HIGH = 2
+
+    lit_config = parse_elicit_response_type(Literal[1, 2])
+    assert lit_config.schema["properties"]["value"] == {
+        "enum": ["1", "2"],
+        "title": "Value",
+        "type": "string",
+    }
+    assert handle_elicit_accept(lit_config, {"value": "1"}).data == 1
+
+    enum_config = parse_elicit_response_type(Rating)
+    assert enum_config.schema["properties"]["value"] == {
+        "enum": ["1", "2"],
+        "title": "Rating",
+        "type": "string",
+    }
+    assert handle_elicit_accept(enum_config, {"value": "2"}).data is Rating.HIGH
+
+
 async def test_validation_allows_enum_arrays():
     """Test validation accepts arrays with enum items."""
     schema = {
