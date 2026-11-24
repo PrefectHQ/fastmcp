@@ -49,7 +49,7 @@ def excerpt(body: str | None) -> str | None:
 
 
 CLOSING_REF = re.compile(
-    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)", re.IGNORECASE
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?:\s*:\s*|\s+)#(\d+)", re.IGNORECASE
 )
 
 
