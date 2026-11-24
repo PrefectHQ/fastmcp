@@ -4,9 +4,10 @@ import tempfile
 from pathlib import Path
 from uuid import UUID
 
-from prefect import flow
+from prefect import flow, get_run_logger
 from prefect.client.orchestration import get_client
 from prefect.context import FlowRunContext
+from prefect.events import emit_event
 
 from flows.agentic_existing_review import verify_existing
 from flows.agentic_stack_plans import Reproduction
@@ -160,7 +161,48 @@ def finalize(
     }
     record(ref.owner, ref.key + "-outcome", final)
     record(parent_id, ref.key + "-outcome", final)
+    announce_stage(number, stage_summary(output, result, destination))
     return final
+
+
+STAGES = {
+    "record": "assess",
+    "blocked": "assess",
+    "reproduce": "reproduce",
+    "verify": "verify",
+}
+
+
+def stage_summary(
+    output: tuple[str, dict] | None, result: dict, destination: str
+) -> dict:
+    """Which stage an item last went through and how it came out, for the floor.
+
+    Reproduce runs as a node inside the plan and verify runs inside intake, so
+    neither shows up as its own flow run; this is the only record that they ran.
+    Only stage names and enum outcomes leave: no free text from the issue.
+    """
+    branch, assessment = output if output is not None else ("record", {})
+    outcome = result.get("decision") if branch == "reproduce" else None
+    if branch == "verify":
+        outcome = result.get("status")
+    return {
+        "stage": STAGES.get(branch, "assess"),
+        "decision": assessment.get("decision"),
+        "outcome": outcome if isinstance(outcome, str) else None,
+        "destination": destination,
+    }
+
+
+def announce_stage(number: int, summary: dict) -> None:
+    try:
+        emit_event(
+            event="fastmcp.triage.stage",
+            resource={"prefect.resource.id": f"fastmcp.triage.stage.{number}"},
+            payload={"number": number, **summary},
+        )
+    except Exception as error:  # noqa: BLE001 - visibility only, never fatal
+        get_run_logger().warning("Stage event failed: %s", error)
 
 
 def verified_destination(review: dict) -> str:

@@ -310,3 +310,33 @@ class SimpleNamespaceArtifact:
     def __init__(self, data):
         self.data = data
         self.id = "stored-id"
+
+
+def test_stage_summary_says_which_stage_ran_and_how_it_came_out():
+    from flows.agentic_triage_nodes import stage_summary
+
+    assert stage_summary(
+        ("reproduce", {"decision": "reproduce"}), {"decision": "reproduced"}, "evidence"
+    ) == {
+        "stage": "reproduce",
+        "decision": "reproduce",
+        "outcome": "reproduced",
+        "destination": "evidence",
+    }
+    assert (
+        stage_summary(
+            ("verify", {"decision": "existing_review"}),
+            {"status": "verification_recorded"},
+            "existing_review",
+        )["outcome"]
+        == "verification_recorded"
+    )
+    assert stage_summary(
+        ("record", {"decision": "maintainer"}), {"decision": "maintainer"}, "decisions"
+    ) == {
+        "stage": "assess",
+        "decision": "maintainer",
+        "outcome": None,
+        "destination": "decisions",
+    }
+    assert stage_summary(None, {}, "operational")["stage"] == "assess"
