@@ -160,3 +160,19 @@ def test_assessor_must_answer_area_but_old_assessments_still_validate() -> None:
         }
     )
     assert old.area == ""
+
+
+def test_assessor_must_say_who_offered_a_fix_but_old_assessments_validate() -> None:
+    from flows.agentic_stack_plans import Assessment
+
+    assert "fix_offered_by" in Assessment.model_json_schema()["required"]
+    old = Assessment.model_validate(
+        {
+            "decision": "maintainer",
+            "reason": "Retained before offers were recorded",
+            "contract": "",
+            "prior_art": [],
+            "question": "Accept the reporter's fix?",
+        }
+    )
+    assert old.fix_offered_by == ""

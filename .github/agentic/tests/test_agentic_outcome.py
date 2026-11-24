@@ -230,6 +230,25 @@ def test_evidence_says_what_the_reproduction_found():
     )
 
 
+def test_reproduced_issue_names_who_offered_a_fix():
+    line = outcome_lines(
+        {
+            "bins": {
+                "evidence": [
+                    {
+                        "issue_number": 1,
+                        "decision": "reproduced",
+                        "observed": "Nested query values are sent as Python repr.",
+                        "assessment": {"fix_offered_by": "someone"},
+                    }
+                ]
+            }
+        },
+        [],
+    )[0]
+    assert "→ reproduced, @someone offered a fix: Nested query values" in line
+
+
 def test_decision_without_question_or_reason_is_never_blank():
     assert outcome_lines({"bins": {"decisions": [{"issue_number": 1}]}}, [])[
         0
