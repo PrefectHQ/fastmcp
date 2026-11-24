@@ -169,6 +169,7 @@ def test_deploy_registers_and_repins_both_automations(stack):
         "cloud-triage-sweep",
         "cloud-triage-memory-sync",
         "cloud-triage-digest",
+        "cloud-triage-follow-through",
         "cloud-triage-audit",
         "contributor-vouch",
     }
