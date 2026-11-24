@@ -97,7 +97,37 @@ A client that subscribes with `{"project": "api"}` receives only that project's 
 
 Emitted events are held in memory, in a buffer of the last 1,000 per event type. Set `EventsExtension(emit_buffer=...)` to change it. A client that polls from a cursor older than the buffer gets what the buffer still holds, with `truncated=True` so it knows it missed some.
 
-The buffer belongs to one process. A restart empties it, and a cursor from before the restart is answered from the new buffer with `truncated=True`. Events emitted while the server was down are not recovered. Behind a load balancer, each replica has its own buffer, so an event emitted on one replica reaches only the clients connected to it. When events have to survive a restart or reach every replica, keep them in an upstream that does, and serve them with a reader.
+The buffer belongs to one process. A restart empties it, and a cursor from before the restart is answered from the new buffer with `truncated=True`. Events emitted while the server was down are not recovered. Behind a load balancer, each replica has its own buffer, so an event emitted on one replica reaches only the clients connected to it.
+
+### Sharing events across replicas with Docket
+
+When emitted events have to survive a restart or reach every replica, keep them in Redis with `DocketEventLog`. It stores each event type's log as a Redis stream through [Docket](https://github.com/chrisguidry/docket), the same backend that runs [background tasks](/servers/tasks), so it needs the `tasks` extra:
+
+```bash
+pip install "fastmcp[tasks]"
+```
+
+Pass the log to the extension. Nothing else about declaring or emitting events changes:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.experimental.events import EventsExtension
+from fastmcp.experimental.events.docket_log import DocketEventLog
+
+log = DocketEventLog("redis://localhost:6379/0", max_events=10_000)
+events = EventsExtension(log=log)
+
+mcp = FastMCP("ci")
+mcp.add_extension(events)
+```
+
+Every server pointed at the same Redis URL and log `name` (default `"fastmcp-events"`) reads and writes the same log. An event emitted on one replica reaches clients polling or streaming from any of them, and open push streams on every replica wake when it lands. A client's cursor is a Redis stream ID, so it stays valid across restarts, and a client that comes back after a deploy gets the events it missed instead of a gap. The log keeps the last `max_events` per event type; a cursor older than that is answered with `truncated=True`, as with the in-memory buffer.
+
+If your application already opened a Docket, pass it as `DocketEventLog(docket=...)` instead of a URL, and the log uses that connection rather than opening its own.
+
+<Note>
+`memory://` URLs work too, which is useful in tests: servers in one process that share a `memory://` URL share the log.
+</Note>
 
 ## Reading from an upstream
 
