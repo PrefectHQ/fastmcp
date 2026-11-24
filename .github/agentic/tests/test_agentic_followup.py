@@ -138,6 +138,26 @@ def test_plan_starts_the_oldest_changes_first_and_bounds_the_pass() -> None:
     assert {item["why"] for item in found["due"]} == {"never followed"}
 
 
+def test_changes_after_a_hand_off_go_before_the_backfill() -> None:
+    issues = {number: issue(number) for number in (1, 2, 3, 9)}
+    records = {
+        9: {"handoff_revision": "before the assign", "status": "triaged"},
+        3: {
+            "handoff_revision": handoff_revision(issues[3], []),
+            "status": "operational",
+            "source_sha": OLD_SHA,
+        },
+    }
+    found = plan(issues, [], records.get, SHA, 2)
+    assert [(item["issue_number"], item["why"]) for item in found["due"]] == [
+        (9, "changed since triage"),
+        (3, "failed on older code"),
+        (1, "never followed"),
+        (2, "never followed"),
+    ]
+    assert [item["issue_number"] for item in found["dispatch"]] == [9, 3]
+
+
 def test_handoffs_snapshot_each_admitted_issue() -> None:
     def read(path: str):
         if "/pulls?" in path:
