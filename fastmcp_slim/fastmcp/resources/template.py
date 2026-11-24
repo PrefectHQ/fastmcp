@@ -211,6 +211,7 @@ def build_regex(template: str) -> re.Pattern[str] | None:
 
     parts = re.split(r"(\{[^}]+\})", template_without_query)
     pattern = ""
+    seen_groups: set[str] = set()
     # Past a literal `?` a placeholder is a query value: it may be empty, may
     # hold `/`, and ends at the next `&`.
     in_query = False
@@ -219,12 +220,18 @@ def build_regex(template: str) -> re.Pattern[str] | None:
             name = part[1:-1]
             if in_query:
                 group = template_param_key(name.removesuffix("*"))
-                pattern += f"(?P<{group}>[^&]*)"
+                body = "[^&]*"
             elif name.endswith("*"):
-                name = name[:-1]
-                pattern += f"(?P<{template_param_key(name)}>.+)"
+                group = template_param_key(name[:-1])
+                body = ".+"
             else:
-                pattern += f"(?P<{template_param_key(name)}>[^/]+)"
+                group = template_param_key(name)
+                body = "[^/]+"
+            if group in seen_groups:
+                pattern += f"(?P={group})"
+            else:
+                seen_groups.add(group)
+                pattern += f"(?P<{group}>{body})"
         else:
             pattern += _literal_pattern(part)
             in_query = in_query or "?" in part

@@ -980,8 +980,11 @@ class TestMalformedURITemplates:
         ) == {"year": "2024"}
         assert builds == first_build
 
-    def test_build_regex_returns_none_for_duplicate_group_names(self):
-        assert build_regex("test://{a}/{a}/path") is None
+    def test_build_regex_supports_duplicate_group_names(self):
+        regex = build_regex("test://{a}/{a}/path")
+        assert regex is not None
+        assert regex.match("test://foo/foo/path") is not None
+        assert regex.match("test://foo/bar/path") is None
 
     @pytest.mark.parametrize(
         "template",
@@ -2054,3 +2057,43 @@ class TestExpandNonIdentifierNames:
     def test_forward_uri_keeps_literal_when_unresolved(self):
         result = forward_uri("resource://dollar/{$top}", {}, "resource://dollar/x")
         assert result == "resource://dollar/{$top}"
+
+
+class TestRepeatedTemplateParameters:
+    """Templates that repeat the same parameter must still match (#6603)."""
+
+    def test_repeated_path_parameter(self):
+        assert match_uri_template("data://acme/acme", "data://{tenant}/{tenant}") == {
+            "tenant": "acme"
+        }
+        assert match_uri_template("data://acme/other", "data://{tenant}/{tenant}") is None
+
+    def test_repeated_wildcard_and_simple_parameter(self):
+        assert match_uri_template("data://acme/acme", "data://{tenant*}/{tenant}") == {
+            "tenant": "acme"
+        }
+        assert match_uri_template("data://acme/other", "data://{tenant*}/{tenant}") is None
+
+    def test_repeated_literal_query_parameter(self):
+        assert match_uri_template(
+            "data://x?a=acme&b=acme", "data://x?a={tenant}&b={tenant}"
+        ) == {"tenant": "acme"}
+        assert (
+            match_uri_template(
+                "data://x?a=acme&b=other", "data://x?a={tenant}&b={tenant}"
+            )
+            is None
+        )
+
+    async def test_read_resource_with_repeated_parameter(self):
+        mcp = FastMCP("repeated-param")
+
+        @mcp.resource("data://{tenant}/{tenant}")
+        def item(tenant: str) -> str:
+            return tenant
+
+        async with Client(mcp) as client:
+            [contents] = await client.read_resource("data://acme/acme")
+
+        assert isinstance(contents, TextResourceContents)
+        assert contents.text == "acme"
