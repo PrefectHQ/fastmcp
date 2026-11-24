@@ -90,7 +90,10 @@ class EmittedEvents:
             timestamp=timestamp or datetime.now(UTC),
             meta=meta,
         )
-        self._buffer.append(_Emitted(self._next, event, payload))
+        # A copy, so `matches` sees the payload as emitted even if the caller
+        # changes its instance afterwards, the same as the `data` delivered.
+        snapshot = payload.model_copy(deep=True)
+        self._buffer.append(_Emitted(self._next, event, snapshot))
         self._next += 1
         changed, self._changed = self._changed, anyio.Event()
         changed.set()
