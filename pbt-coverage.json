@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-25T12:33:20+00:00",
- "source_commit": "dcb9f8e2b02236f15bc926733fd52a16af0b60e6",
+ "generated_at": "2026-11-25T21:54:11+00:00",
+ "source_commit": "9e5fefdb2a3b98528e91bd40e7812aa2d2997727",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -4179,7 +4179,7 @@
    "module": "fastmcp.skills._proxy",
    "path": "fastmcp_slim/fastmcp/skills/_proxy.py",
    "public": false,
-   "statements": 67,
+   "statements": 78,
    "hit": 0,
    "functions": 12,
    "functions_hit": 0,
@@ -4258,7 +4258,7 @@
    "module": "fastmcp.skills.models",
    "path": "fastmcp_slim/fastmcp/skills/models.py",
    "public": false,
-   "statements": 75,
+   "statements": 73,
    "hit": 0,
    "functions": 12,
    "functions_hit": 0,
