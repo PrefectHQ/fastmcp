@@ -17,10 +17,11 @@ The server controls where those instructions come from. FastMCP represents a ski
 
 ## Skill definitions
 
-A `Skill` contains the files for one skill. When you construct it in Python, FastMCP renders the `name` and `description` as YAML frontmatter in `SKILL.md` and uses `instructions` as the Markdown body. For each supporting file, put its filename and contents in the `files` dictionary. Use that filename in the instructions so the agent can find it.
+A `Skill` contains the files for one skill. When you construct it in Python, FastMCP renders the `name` and `description` as YAML frontmatter in `SKILL.md` and uses `instructions` as the Markdown body. For each supporting file, put its filename and contents in the `files` dictionary. Use that filename in the instructions so the agent can find it. Save this example as `server.py` to define and serve the skill in one file.
 
-```python
-from fastmcp import Skill
+```python server.py
+from fastmcp import FastMCP, Skill
+from fastmcp.skills.provider import SkillCatalogProvider
 
 triage = Skill(
     name="issue-triage",
@@ -28,7 +29,14 @@ triage = Skill(
     instructions="Check for duplicates. For a new issue, choose an owner from routing.md.\n",
     files={"routing.md": "Login failures go to Identity. Invoice errors go to Billing.\n"},
 )
+mcp = FastMCP("Issue tracker", providers=[SkillCatalogProvider([triage])])
 ```
+
+```bash
+fastmcp list server.py --skills
+```
+
+The listing shows `skill://issue-triage/SKILL.md` and a manifest for both files. The manifest lists their URIs, sizes, and content digests so the client can verify what it reads. To run the client examples below, start the server at `http://localhost:8000/mcp` with `fastmcp run server.py --transport http`.
 
 The description appears in discovery results, so write it for an agent deciding whether to open the skill. The instructions and supporting files are available separately. Here an agent can read the duplicate-checking procedure without also loading the routing table.
 
@@ -91,17 +99,7 @@ A **skill provider** determines which skills a FastMCP server publishes and wher
 
 ### Skill providers
 
-Use `SkillCatalogProvider` when your application supplies the `Skill` objects. Pass a collection at startup for a fixed catalog, or override its loader for a [dynamic catalog](#dynamic-skills). This server publishes the triage skill from disk:
-
-```python server.py
-from fastmcp import FastMCP, Skill
-from fastmcp.skills.provider import SkillCatalogProvider
-
-triage = Skill.from_directory("skills/issue-triage")
-mcp = FastMCP("Issue tracker", providers=[SkillCatalogProvider([triage])])
-```
-
-Run `fastmcp list server.py --skills` to inspect the published skill. Its entry URI is `skill://issue-triage/SKILL.md`. Its **manifest** lists both files with their URIs, sizes, and content digests so a client can verify what it reads. To try the Python client examples on this page, start this server with `fastmcp run server.py --transport http`. It listens at `http://localhost:8000/mcp`.
+Use `SkillCatalogProvider` when your application supplies the `Skill` objects. Pass a collection at startup for a fixed catalog, or override its loader for a [dynamic catalog](#dynamic-skills). To serve a skill maintained on disk, pass the result of `Skill.from_directory("skills/issue-triage")` in the catalog just as you would a skill constructed in Python.
 
 The catalog uses each skill's name as its default path. To group skills under a prefix, pass a dictionary of paths and skills, for example `SkillCatalogProvider({"support/issue-triage": triage})`. The final path segment must match the skill name.
 
@@ -343,25 +341,29 @@ For a whole-skill download, FastMCP obtains the manifest via `skills/get` when a
 
 ### Install skills into a local agent
 
-An agent that loads skills from a local directory can use a copy downloaded from an MCP server. The folder name must match the skill name. This example installs a verified copy into Claude Code for the current user.
+An agent that loads skills from a local directory can use copies downloaded from an MCP server. This example discovers the skills available to the client, downloads each one with verification, and writes it into Claude Code's skills directory. Each target folder must match the skill's name.
 
 ```python
 import asyncio
 from pathlib import Path
 
 from fastmcp import Client
+from fastmcp.skills import SkillsClientExtension
 
 
 async def main() -> None:
-    async with Client("http://localhost:8000/mcp") as client:
-        skill = await client.read_skill("skill://issue-triage/SKILL.md")
-
-    target = Path.home() / ".claude" / "skills" / skill.name
-    skill.to_directory(target)
+    skills_dir = Path.home() / ".claude" / "skills"
+    client = Client("http://localhost:8000/mcp", extensions=[SkillsClientExtension()])
+    async with client:
+        for entry in await client.list_skills():
+            skill = await client.read_skill(entry.uri)
+            skill.to_directory(skills_dir / skill.name)
 
 
 asyncio.run(main())
 ```
+
+For a server that exposes skills as resources, use `list_skill_resources()` and pass each `str(resource.uri)` to `read_skill()` if the server provides a `_manifest` resource.
 
 An installed copy captures the contents available to the caller at download time. To update it, download again and pass `overwrite=True` to `to_directory()`. This replaces the directory, including any local edits or additional files. By default an existing directory raises `FileExistsError`.
 
@@ -384,7 +386,7 @@ FastMCP 4.2 deprecates the providers in `fastmcp.server.providers.skills` and th
 | `list_skills(client)` | `client.list_skill_resources()` (any server) or `client.list_skills()` (Skills extension) |
 | `get_skill_manifest(client, name)` | `client.read_resource('skill://<name>/_manifest')` for manifest JSON on any resource server; `client.get_skill(uri)` for Skills-extension entries |
 | `Skill(uri=..., frontmatter=..., resources=...)` from `fastmcp.skills` | `MCPSkill(...)`; `Skill` is now the authoring class |
-| `download_skill()` / `sync_skills()` | `client.read_skill(uri)` then `skill.to_directory(path)` ([example](#install-skills-into-a-local-agent)) |
+| `download_skill()` / `sync_skills()` | `client.read_skill(uri)` then `skill.to_directory(path)` ([installation example](#install-skills-into-a-local-agent)) |
 
 The 4.2 provider uses `SKILL.md` as its entry file and exposes all supporting files as resources. The old `main_file_name` and `supporting_files` settings have no equivalents. Clients that need manifest metadata alone can read the provider's `_manifest` JSON without downloading the files.
 
