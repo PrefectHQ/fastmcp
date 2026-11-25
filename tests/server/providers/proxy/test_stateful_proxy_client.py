@@ -328,3 +328,41 @@ class TestRestoreRequestContextCurrentServer:
             assert fastmcp_request_ctx.get() is None
 
         await self._run_in_child_context(body)
+
+
+async def test_stateful_proxy_concurrent_progress_routes_to_each_call():
+    """Concurrent calls on StatefulProxyClient must route progress to their own caller."""
+    backend = FastMCP("Read-only backend")
+    count = 0
+    ready = asyncio.Event()
+    received: dict[str, list[str | None]] = {"first": [], "second": []}
+
+    @backend.tool
+    async def read_only(label: str, ctx: Context) -> str:
+        nonlocal count
+        count += 1
+        if count == 2:
+            ready.set()
+        await asyncio.wait_for(ready.wait(), timeout=2)
+        await ctx.report_progress(1, 1, label)
+        return label
+
+    stateful = StatefulProxyClient(backend)
+    proxy = FastMCPProxy(client_factory=stateful.new_stateful)
+    async with Client(proxy, mode="legacy") as client:
+
+        async def call(label: str) -> str:
+            async def progress(value: float, total: float | None, message: str | None) -> None:
+                received[label].append(message)
+
+            result = await client.call_tool(
+                "read_only", {"label": label}, progress_handler=progress
+            )
+            return result.data
+
+        results = await asyncio.wait_for(
+            asyncio.gather(call("first"), call("second")), timeout=5
+        )
+
+    assert sorted(results) == ["first", "second"]
+    assert received == {"first": ["first"], "second": ["second"]}

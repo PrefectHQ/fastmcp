@@ -326,6 +326,17 @@ def _stash_proxy_request_context(client: Client, ctx: Context) -> None:
         )
 
 
+def _call_progress_handler(client: Client, ctx: Context) -> Any:
+    if (
+        isinstance(client, ProxyClient)
+        and "progress_handler" in client._proxy_restoring_handler_keys
+    ):
+        return _make_restoring_handler(
+            default_proxy_progress_handler, [(ctx.request_context, ctx._fastmcp)]
+        )
+    return client._progress_handler
+
+
 class ProxyInitializeMiddleware(Middleware):
     """Deprecated middleware for forwarding instructions during initialization."""
 
@@ -517,7 +528,7 @@ class ProxyTool(Tool):
                                 # legacy `call_tool_mcp` path does — without this
                                 # handler a backend tool's `ctx.report_progress()`
                                 # is dropped on modern proxy calls.
-                                progress_callback=client._progress_handler,
+                                progress_callback=_call_progress_handler(client, ctx),
                                 input_responses=input_responses,
                                 request_state=request_state,
                                 allow_input_required=True,
@@ -535,7 +546,10 @@ class ProxyTool(Tool):
                     # Legacy backend: the multi-round-trip result type does not
                     # exist there, so keep the original path.
                     tool_result = await client.call_tool_mcp(
-                        name=backend_name, arguments=arguments, meta=meta
+                        name=backend_name,
+                        arguments=arguments,
+                        progress_handler=_call_progress_handler(client, ctx),
+                        meta=meta,
                     )
             # Pass an upstream error result through faithfully rather than
             # collapsing it into a raised ToolError — this preserves the
