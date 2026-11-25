@@ -165,7 +165,7 @@ mcp = FastMCP("My Server")
 app = mcp.http_app(max_request_body_size=16 * 1024 * 1024)
 ```
 
-The server reads each request body into memory, so keep the limit close to what your tools need. `run()` does not accept this option, so serve the app with an [ASGI server](#asgi-application). The legacy SSE transport ignores it and keeps the 4 MiB limit.
+The server reads each request body into memory, so keep the limit close to what your tools need. If nginx is in front, raise its `client_max_body_size` too, which is 1 MiB by default. `run()` does not accept this option, so serve the app with an [ASGI server](#asgi-application). The legacy SSE transport ignores it and keeps the 4 MiB limit.
 
 ### Gateway Routing Headers
 
