@@ -212,14 +212,21 @@ def run_tests(
         }
     if changes := inputs.changes():
         return reject_mutations(
-            {"status": "not_run", "cases": [], "setup": setup}, changes
+            {"status": "not_run", "cases": [], "setup": setup}, changes, inputs
         )
     lock = repo / "uv.lock"
     lock_sha = hashlib.sha256(lock.read_bytes()).hexdigest() if lock.exists() else None
     stage_home = tempfile.mkdtemp(prefix=report.stem + "-home-", dir=report.parent)
     stage_tmp = tempfile.mkdtemp(prefix=report.stem + "-tmp-", dir=report.parent)
     stage_cache = tempfile.mkdtemp(prefix=report.stem + "-cache-", dir=report.parent)
-    stage_env = {**env, "HOME": stage_home, "TMPDIR": stage_tmp}
+    # Tools that keep state next to the code get it redirected out of the checkout,
+    # so the input check only ever sees what the tests themselves changed.
+    stage_env = {
+        **env,
+        "HOME": stage_home,
+        "TMPDIR": stage_tmp,
+        "HYPOTHESIS_STORAGE_DIRECTORY": os.path.join(stage_cache, "hypothesis"),
+    }
     result = execute(
         [
             "uv",
@@ -253,6 +260,7 @@ def run_tests(
             ),
         },
         inputs.changes(),
+        inputs,
     )
 
 
@@ -456,16 +464,16 @@ def verify(
     )
     base_changes = base_inputs.changes()
     head_changes = head_inputs.changes()
-    baseline = reject_mutations(baseline, base_changes)
-    candidate = reject_mutations(candidate, head_changes)
+    baseline = reject_mutations(baseline, base_changes, base_inputs)
+    candidate = reject_mutations(candidate, head_changes, head_inputs)
     if "probe_base" in probe_results:
         probe_results["probe_base"] = reject_mutations(
-            probe_results["probe_base"], base_changes
+            probe_results["probe_base"], base_changes, base_inputs
         )
         probe_results["probe_head"] = reject_mutations(
-            probe_results["probe_head"], head_changes
+            probe_results["probe_head"], head_changes, head_inputs
         )
-    adjacent = reject_mutations(adjacent, head_changes)
+    adjacent = reject_mutations(adjacent, head_changes, head_inputs)
     status = "verification_recorded"
     reason = None
     if baseline["status"] == "baseline_collection_incompatible" and not probe_results:
@@ -475,13 +483,16 @@ def verify(
     if any(r["status"] == "collection_failure" for r in stages):
         status = "evidence_needed"
         reason = "Test collection failed; repair the test inputs before requesting verification again."
-    if any(r["status"] == "environment_failure" for r in stages):
-        status = "environment_failure"
-        reason = "Verification could not complete; inspect stage diagnostics before retrying."
     if any(r["status"] == "input_mutation" for r in stages):
         status = "evidence_needed"
         reason = "Verification inputs were modified; retained test output cannot establish behavior transitions."
         comparison = outcomes({"status": "input_mutation"}, candidate)
+    # A runner that couldn't finish says so, even when a stage also saw mutated
+    # inputs: asking the contributor for evidence would hide our own failure.
+    if any(r["status"] == "environment_failure" for r in stages):
+        status = "environment_failure"
+        reason = "Verification could not complete; inspect stage diagnostics before retrying."
+        comparison = outcomes({"status": "environment_failure"}, candidate)
     return {
         **result,
         "status": status,

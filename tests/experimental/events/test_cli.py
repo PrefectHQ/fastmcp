@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from typing import Any, Literal
 from unittest.mock import patch
@@ -5,6 +7,7 @@ from unittest.mock import patch
 import anyio
 import pytest
 from mcp.shared.exceptions import MCPError
+from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
 from fastmcp.cli import client as client_module
@@ -20,6 +23,16 @@ from fastmcp.experimental.events._constants import FORBIDDEN
 from fastmcp.experimental.events.models import EventType
 
 
+class AlertFired(BaseModel):
+    """An alert fired"""
+
+    key: str
+    level: int
+
+    def for_subscription(self, min_level: int = 0) -> AlertFired | None:
+        return self if self.level >= min_level else None
+
+
 def make_server(
     log: list[dict[str, Any]], subscribed: anyio.Event | None = None
 ) -> FastMCP:
@@ -27,24 +40,17 @@ def make_server(
     events = EventsExtension(poll_interval_ms=10)
     server.add_extension(events)
 
-    @events.event(
-        name="alert.fired",
-        description="An alert fired",
-        input_schema={
-            "type": "object",
-            "properties": {"min_level": {"type": "integer"}},
-        },
-    )
-    def alert_fired(poll: EventPoll) -> EventBatch:
+    events.event("alert.fired")(AlertFired)
+
+    @events.reader(AlertFired)
+    def read_alerts(poll: EventPoll) -> EventBatch:
         if poll.cursor is None:
             if subscribed is not None:
                 subscribed.set()
             return EventBatch(cursor=str(len(log)))
-        floor = poll.arguments.get("min_level", 0)
         fired = [
             Event(data=entry, event_id=entry["key"])
             for entry in log[int(poll.cursor) :]
-            if entry["level"] >= floor
         ]
         return EventBatch(events=fired, cursor=str(len(log)))
 
@@ -169,7 +175,11 @@ async def test_watch_escapes_markup_in_what_the_server_sends(
     events = EventsExtension(poll_interval_ms=10)
     server.add_extension(events)
 
-    @events.event(name="tick")
+    @events.event("tick")
+    class Tick(BaseModel):
+        """A tick"""
+
+    @events.reader(Tick)
     def tick(poll: EventPoll) -> EventBatch:
         return EventBatch(
             events=[Event(data={}, event_id="e1")], cursor="[link=https://x.test]c"
@@ -191,7 +201,11 @@ async def test_watch_escapes_markup_in_a_server_error(
     events = EventsExtension(poll_interval_ms=10)
     server.add_extension(events)
 
-    @events.event(name="tick")
+    @events.event("tick")
+    class Tick(BaseModel):
+        """A tick"""
+
+    @events.reader(Tick)
     def tick(poll: EventPoll) -> EventBatch:
         raise MCPError(code=FORBIDDEN, message="[link=https://x.test]denied[/link]")
 
