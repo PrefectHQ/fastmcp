@@ -137,8 +137,9 @@ class _ProxiedSkills:
                         entries.append(MCPSkill.model_validate(raw_entry))
                     except ValidationError as error:
                         logger.warning(
-                            "Omitting an invalid Skills entry from the backend: %s",
-                            error,
+                            "Omitting an invalid Skills entry from backend skills/list"
+                            " (validation errors: %d)",
+                            error.error_count(),
                         )
                 if page.next_cursor is None or page.next_cursor in seen:
                     return entries
@@ -163,7 +164,9 @@ class _ProxiedSkills:
                 raise
             except ValidationError as error:
                 logger.warning(
-                    "Omitting an invalid Skills entry from the backend: %s", error
+                    "Omitting an invalid Skills entry from backend skills/get"
+                    " (validation errors: %d)",
+                    error.error_count(),
                 )
                 return None
         return result.skill
