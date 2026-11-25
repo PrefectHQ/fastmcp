@@ -1911,6 +1911,44 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             expires_at=metadata.expires_at,
         )
 
+    async def _load_refresh_token_for_revocation(
+        self,
+        client: OAuthClientInformationFull,
+        refresh_token: str,
+    ) -> RefreshToken | None:
+        """Load an active or rotated refresh token for explicit revocation.
+
+        Unlike `load_refresh_token` on the `/token` route, an explicit
+        revocation must still resolve a refresh token that was just claimed or
+        rotated without applying the refresh-reuse grace period.
+        """
+        token_hash = _hash_token(refresh_token)
+        metadata = await self._refresh_token_store.get(key=token_hash)
+        if metadata is not None:
+            if metadata.client_id != client.client_id:
+                logger.warning(
+                    "Refresh token client_id mismatch: expected %s, got %s",
+                    client.client_id,
+                    metadata.client_id,
+                )
+                return None
+            return RefreshToken(
+                token=refresh_token,
+                client_id=metadata.client_id,
+                scopes=metadata.scopes,
+                expires_at=metadata.expires_at,
+            )
+
+        rotated = await self._rotated_refresh_store.get(key=token_hash)
+        if rotated is None or rotated.client_id != client.client_id:
+            return None
+        return RefreshToken(
+            token=refresh_token,
+            client_id=rotated.client_id,
+            scopes=[],
+            expires_at=None,
+        )
+
     async def _end_grant(self, upstream_token_id: str) -> None:
         """End a grant so every FastMCP token that maps to it stops working.
 
@@ -2017,6 +2055,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "Upstream token set not found: %s", jti_mapping.upstream_token_id[:8]
             )
             raise TokenError("invalid_grant", "Upstream token not found")
+        if await self._ended_grant_store.get(key=jti_mapping.upstream_token_id):
+            logger.debug(
+                "Grant has ended for upstream token: %s",
+                jti_mapping.upstream_token_id[:8],
+            )
+            raise TokenError("invalid_grant", "Grant was revoked")
 
         # Decrypt upstream refresh token
         if not upstream_token_set.refresh_token:
@@ -2163,19 +2207,32 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if not grant_alive:
             raise TokenError("invalid_grant", "Grant was revoked")
 
+        if client.client_id is None:
+            raise TokenError("invalid_client", "Client ID is required")
+
+        # Record the rotation before consuming the refresh token so a
+        # concurrent revocation arriving right after the delete can still
+        # resolve the grant without a window where neither store holds the key.
+        token_hash = _hash_token(refresh_token.token)
+        await self._rotated_refresh_store.put(
+            key=token_hash,
+            value=RotatedRefreshToken(
+                client_id=client.client_id,
+                upstream_token_id=upstream_token_set.upstream_token_id,
+                rotated_at=time.time(),
+            ),
+            ttl=refresh_ttl,
+        )
+
         # Consume the FastMCP refresh token before issuing successors.
         # delete() reports whether this call removed the key, so of two
         # concurrent refreshes only one wins, including across replicas sharing
         # a store. Claiming this late means a failed upstream refresh or claims
         # extraction leaves the token usable for a retry.
-        if not await self._refresh_token_store.delete(
-            key=_hash_token(refresh_token.token)
-        ):
+        if not await self._refresh_token_store.delete(key=token_hash):
             raise TokenError("invalid_grant", "Refresh token already used")
 
         # Issue new minimal FastMCP access token (just a reference via JTI)
-        if client.client_id is None:
-            raise TokenError("invalid_client", "Client ID is required")
         new_access_jti = secrets.token_urlsafe(32)
         new_fastmcp_access = self.jwt_issuer.issue_access_token(
             client_id=client.client_id,
@@ -2222,18 +2279,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=refresh_ttl,  # Align with upstream refresh token expiry
         )
 
-        # Invalidate old refresh token (refresh token rotation - enforces one-time use)
+        # Invalidate old refresh token JTI mapping (rotation already recorded at claim)
         await self._jti_mapping_store.delete(key=refresh_jti)
-        # Remember it was rotated so a later replay ends the grant.
-        await self._rotated_refresh_store.put(
-            key=_hash_token(refresh_token.token),
-            value=RotatedRefreshToken(
-                client_id=client.client_id,
-                upstream_token_id=upstream_token_set.upstream_token_id,
-                rotated_at=time.time(),
-            ),
-            ttl=refresh_ttl,
-        )
         logger.debug(
             "Rotated refresh token (old JTI invalidated - one-time use enforced)"
         )
@@ -2469,6 +2516,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     "Upstream token not found: %s", jti_mapping.upstream_token_id
                 )
                 return None
+            if await self._ended_grant_store.get(key=jti_mapping.upstream_token_id):
+                logger.debug(
+                    "Grant has ended for upstream token: %s",
+                    jti_mapping.upstream_token_id,
+                )
+                return None
 
             # 3. Validate with upstream provider (delegated to TokenVerifier)
             # This calls the real token validator (GitHub API, JWKS, etc.)
@@ -2542,7 +2595,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         reloaded = await self._upstream_token_store.get(
                             key=upstream_token_set.upstream_token_id
                         )
-                        if reloaded:
+                        if reloaded and not await self._ended_grant_store.get(
+                            key=upstream_token_set.upstream_token_id
+                        ):
                             verification_token = self._get_verification_token(reloaded)
                             if verification_token is not None:
                                 validated = await self._token_validator.verify_token(
@@ -2643,10 +2698,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         upstream but cannot retire the FastMCP token. For all tokens,
         attempts upstream revocation if endpoint is configured.
         """
-        # For refresh tokens, delete from local storage by hash
+        # For refresh tokens, end the grant before deleting the refresh token
+        # record so a retry after a transient store error still resolves it.
         if isinstance(token, RefreshToken):
-            await self._refresh_token_store.delete(key=_hash_token(token.token))
             await self._revoke_refresh_grant(token)
+            await self._refresh_token_store.delete(key=_hash_token(token.token))
             return
 
         # ID-JAG access tokens are self-contained and never known upstream, so
@@ -2691,6 +2747,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         access tokens of the same grant. Every FastMCP token of a grant maps
         to one upstream record, so removing that record ends them all.
         """
+        refresh_jti: str | None = None
         try:
             refresh_payload = self.jwt_issuer.verify_token(
                 token.token, expected_token_use="refresh"
@@ -2698,16 +2755,25 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             refresh_jti = refresh_payload["jti"]
         except (JoseError, ValueError, KeyError) as e:
             logger.warning("Failed to revoke token with upstream server: %s", e)
-            return
 
-        jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
-        if jti_mapping is None:
+        upstream_token_id: str | None = None
+        if refresh_jti is not None:
+            jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
+            if jti_mapping is not None:
+                upstream_token_id = jti_mapping.upstream_token_id
+
+        if upstream_token_id is None:
+            rotated = await self._rotated_refresh_store.get(
+                key=_hash_token(token.token)
+            )
+            if rotated is not None and rotated.client_id == token.client_id:
+                upstream_token_id = rotated.upstream_token_id
+
+        if upstream_token_id is None:
             logger.warning("No JTI mapping found for refresh token")
             return
 
-        upstream_token_set = await self._upstream_token_store.get(
-            key=jti_mapping.upstream_token_id
-        )
+        upstream_token_set = await self._upstream_token_store.get(key=upstream_token_id)
         if upstream_token_set is None or not upstream_token_set.refresh_token:
             logger.warning("No upstream refresh token found")
         else:
@@ -2715,8 +2781,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             # the FastMCP-issued JWT wrapper.
             await self._revoke_upstream(upstream_token_set.refresh_token)
 
-        await self._jti_mapping_store.delete(key=refresh_jti)
-        await self._end_grant(jti_mapping.upstream_token_id)
+        await self._end_grant(upstream_token_id)
+        if refresh_jti is not None:
+            await self._jti_mapping_store.delete(key=refresh_jti)
         logger.debug("Revoked refresh token and ended its grant")
 
     async def _revoke_upstream(self, upstream_token: str) -> None:

@@ -122,7 +122,9 @@ class RevocationProvider:
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> RefreshToken | None:
-        return await self._proxy.load_refresh_token(client, refresh_token)
+        return await self._proxy._load_refresh_token_for_revocation(
+            client, refresh_token
+        )
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         await self._proxy.revoke_token(token)
