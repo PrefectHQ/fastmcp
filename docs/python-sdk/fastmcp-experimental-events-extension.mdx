@@ -1,0 +1,101 @@
+---
+title: extension
+sidebarTitle: extension
+---
+
+# `fastmcp.experimental.events.extension`
+
+
+FastMCP server implementation of the MCP Events extension (poll and push).
+
+Experimental: this API may change in any release without a deprecation period.
+
+
+## Classes
+
+### `Event` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/extension.py#L71" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+An event a check function reports.
+
+Set `event_id` to the upstream's stable identifier whenever it has one:
+clients deduplicate on it, and a generated ID differs on every poll.
+
+
+### `EventBatch` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/extension.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+What a check function returns for one poll.
+
+`cursor` is the position after `events`, returned to the client and passed
+back on its next poll. Leave it `None` for an event type with no replay.
+
+
+### `EventPoll` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/extension.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+One `events/poll` request, as a check function receives it.
+
+A `cursor` of `None` means "start from now": return no events and the
+current position.
+
+
+### `EventsExtension` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/extension.py#L123" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Serve event types over SEP-3415 poll and push delivery.
+
+Experimental: this API may change in any release without a deprecation
+period.
+
+Each event type is one check function that reports what happened since a
+cursor. `events/poll` calls it once per request, so the server keeps no
+subscription state. `events/stream` calls it on a loop for as long as the
+client holds the request open; pass `push=False` on a host that cannot
+keep a response stream open.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
+
+mcp = FastMCP("alerts")
+events = EventsExtension()
+mcp.add_extension(events)
+
+
+@events.event(name="alert.fired", description="An alert fired")
+async def alert_fired(poll: EventPoll) -> EventBatch:
+    if poll.cursor is None:
+        return EventBatch(cursor=await newest_alert_id())
+    alerts = await alerts_after(poll.cursor)
+    return EventBatch(
+        events=[Event(data=a.payload, event_id=a.id) for a in alerts],
+        cursor=alerts[-1].id if alerts else poll.cursor,
+    )
+```
+
+
+**Methods:**
+
+#### `event` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/extension.py#L165" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+event(self) -> Callable[[EventCheck], EventCheck]
+```
+
+Register a check function as an event type.
+
+**Args:**
+- `name`: Event type name clients subscribe to.
+- `description`: What the event means and when it fires.
+- `input_schema`: JSON Schema for subscription arguments. Polls whose
+arguments do not match are rejected before the check runs.
+- `payload_schema`: JSON Schema for each event's `data`.
+- `meta`: Optional `_meta` for the listing.
+
+
+#### `methods` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/extension.py#L210" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+methods(self) -> Sequence[MethodBinding]
+```

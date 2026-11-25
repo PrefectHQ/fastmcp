@@ -11,10 +11,12 @@ from prefect import flow
 from prefect.client.schemas.objects import State
 from prefect.context import FlowRunContext
 from prefect.states import Completed
+from prefect.variables import Variable
 
 from flows.agentic_claims import claim_issues, claim_work
 from flows.agentic_freshness import revalidate
 from flows.agentic_intake import policy_outcome, route_intake
+from flows.agentic_labels import CONFIG_VARIABLE
 from flows.agentic_native_triage import run_native_triage
 from flows.agentic_reproduction_evidence import validate_reproduction_patch
 from flows.agentic_review_delivery import deliver_reviews
@@ -35,6 +37,7 @@ from flows.agentic_stack_runtime import (
 from flows.agentic_stack_usage import usage_report
 from flows.agentic_triage_records import Admission
 from flows.agentic_triage_review import apply_disposition, requires_review
+from flows.agentic_work import WorkClaims, work_claims
 
 
 def batch_owner(batch: Batch, runtime: Runtime) -> UUID:
@@ -55,8 +58,9 @@ def batch_owner(batch: Batch, runtime: Runtime) -> UUID:
     return owner
 
 
-def run_batch(batch: Batch, runtime: Runtime) -> dict:
+def run_batch(batch: Batch, runtime: Runtime, claims: WorkClaims | None = None) -> dict:
     owner = batch_owner(batch, runtime)
+    claims = claims or WorkClaims(None, str(owner))
     record(
         owner,
         f"{batch.id}-configuration",
@@ -120,6 +124,22 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
             number = requested.issue_number
             try:
                 owner_alive(owner, batch.expires_at)
+                # The same claim every agent takes: an interactive session
+                # already on this issue keeps it, and triage steps aside.
+                held_by = claims.claim(number)
+                if held_by is not None:
+                    bins["decisions"].append(
+                        policy_outcome(
+                            number,
+                            {
+                                "route": "claimed",
+                                "reason": "Another agent holds a live claim; "
+                                "do not launch competing work",
+                                "held_by": held_by,
+                            },
+                        )
+                    )
+                    continue
                 intake_key = f"{batch.id}-issue-{number}-intake"
                 item: dict | None = saved(owner, intake_key)
                 if item is None:
@@ -152,6 +172,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                         "retry": "operational",
                     }.get(route["route"], "decisions")
                     bins[destination].append(policy_outcome(number, route))
+                    claims.release(number, destination)
                     continue
                 bundle = (
                     item_bundles["existing_instructions"]
@@ -163,6 +184,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                 if projected is None:
                     projected = assessment_context(item)
                     record(owner, assessment_key, projected)
+                claims.progress(number, "assessing")
                 destination, result, native_calls, final_evidence = run_native_triage(
                     owner,
                     Admission(
@@ -204,6 +226,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                         review_item = {**item, "evidence": final_evidence}
                         projected = assessment_context(review_item)
                         item_bundles = skills(final_evidence["base_sha"])
+                    claims.progress(number, "reviewing")
                     review, review_run = ask(
                         "triage_review",
                         item_bundles["triage_review_instructions"],
@@ -218,6 +241,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                         route,
                     )
                     if runtime.publish_reviews and destination == "existing_review":
+                        claims.progress(number, "posting")
                         try:
                             delivery = deliver_reviews(
                                 owner,
@@ -257,6 +281,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                         result["review_delivery"] = delivery
                         result["published_reviews"] = delivery.get("posted", [])
                 bins[destination].append(result)
+                claims.release(number, destination)
             except (
                 ValueError,
                 RuntimeError,
@@ -274,6 +299,7 @@ def run_batch(batch: Batch, runtime: Runtime) -> dict:
                     # The change that moved the evidence starts its own triage.
                     failure["status"] = "stale"
                 bins["operational"].append(failure)
+                claims.release(number, "operational")
         record(
             owner,
             f"{batch.id}-{group.name}-outcome",
@@ -326,7 +352,8 @@ def stack_batch(batch: Batch, runtime: Runtime) -> dict | State:
             },
         )
         intake_tools(Path(temporary))
-        result = run_batch(batch, runtime)
+        claims = work_claims(Variable.get(CONFIG_VARIABLE, default={}), owner)
+        result = run_batch(batch, runtime, claims)
         if result["bins"]["operational"]:
             return Completed(
                 name="Degraded",

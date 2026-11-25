@@ -1686,3 +1686,91 @@ class TestNonIdentifierPathParameterNames:
                 for uri, path in expected_paths.items():
                     result = (await mcp_client.read_resource(uri))[0]
                     assert json.loads(result.text) == {"path": path}
+
+
+class TestCookieParameterEncoding:
+    """Cookie values are percent-encoded so a tool argument cannot add cookies."""
+
+    @staticmethod
+    async def _cookie_header(parameters, arguments):
+        import httpx2
+
+        from fastmcp import Client, FastMCP
+
+        spec = {
+            "openapi": "3.1.0",
+            "info": {"title": "t", "version": "1"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "op",
+                        "parameters": parameters,
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                }
+            },
+        }
+        seen = []
+
+        def handler(request):
+            seen.append(request.headers.get("cookie"))
+            return httpx2.Response(200, json={})
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(handler), base_url="http://api"
+        ) as http:
+            async with Client(
+                FastMCP.from_openapi(openapi_spec=spec, client=http)
+            ) as c:
+                await c.call_tool("op", arguments)
+        return seen[-1]
+
+    async def test_semicolon_in_scalar_does_not_add_a_cookie(self):
+        header = await self._cookie_header(
+            [{"name": "session", "in": "cookie", "schema": {"type": "string"}}],
+            {"session": "abc; role=admin"},
+        )
+        assert header == "session=abc%3B%20role=admin"
+
+    async def test_non_ascii_scalar_is_encoded(self):
+        header = await self._cookie_header(
+            [{"name": "session", "in": "cookie", "schema": {"type": "string"}}],
+            {"session": "é"},
+        )
+        assert header == "session=%C3%A9"
+
+    async def test_base64_value_is_unchanged(self):
+        header = await self._cookie_header(
+            [{"name": "session", "in": "cookie", "schema": {"type": "string"}}],
+            {"session": "YWJj+/ZA=="},
+        )
+        assert header == "session=YWJj+/ZA=="
+
+    async def test_exploded_array_items_are_encoded(self):
+        header = await self._cookie_header(
+            [
+                {
+                    "name": "ids",
+                    "in": "cookie",
+                    "schema": {"type": "array", "items": {"type": "string"}},
+                }
+            ],
+            {"ids": ["a", "b; role=admin"]},
+        )
+        assert header == "ids=a; ids=b%3B%20role=admin"
+
+    async def test_exploded_object_keys_and_values_are_encoded(self):
+        header = await self._cookie_header(
+            [
+                {
+                    "name": "prefs",
+                    "in": "cookie",
+                    "schema": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                }
+            ],
+            {"prefs": {"k; role=admin": "v;x"}},
+        )
+        assert header == "k%3B%20role%3Dadmin=v%3Bx"

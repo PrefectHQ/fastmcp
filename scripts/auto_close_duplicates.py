@@ -21,6 +21,9 @@ from pathlib import Path
 import httpx
 
 MARVIN_BOT_ID = 225465937
+# github-actions[bot] closes now; Marvin's older closures stay recognized.
+ACTIONS_BOT_ID = 41898282
+CLOSER_IDS = {MARVIN_BOT_ID, ACTIONS_BOT_ID}
 CLOSURE_NOTICE = (
     "Closing this issue as a duplicate based on the automated analysis above."
 )
@@ -318,14 +321,14 @@ def reconsider_duplicate(client: GitHubClient, event: dict) -> None:
                 found_close
                 or kind != "closed"
                 or created_at != closed_at
-                or (entry.get("actor") or {}).get("id") != MARVIN_BOT_ID
+                or (entry.get("actor") or {}).get("id") not in CLOSER_IDS
             ):
                 return
             found_close = True
         elif (
             found_close
             and kind == "commented"
-            and (entry.get("user") or {}).get("id") == MARVIN_BOT_ID
+            and (entry.get("user") or {}).get("id") in CLOSER_IDS
             and (entry.get("body") or "").startswith(CLOSURE_NOTICE)
             and created_at
             and timedelta(0)

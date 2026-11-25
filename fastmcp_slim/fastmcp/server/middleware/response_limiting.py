@@ -78,31 +78,37 @@ class ResponseLimitingMiddleware(Middleware):
         meta: dict[str, Any] | None = None,
         is_error: bool = False,
     ) -> ToolResult:
-        """Truncate text to fit within max_size and wrap in ToolResult."""
-        suffix_bytes = len(self.truncation_suffix.encode("utf-8"))
-        # Account for JSON wrapper overhead: {"content":[{"type":"text","text":"..."}]}
-        overhead = 50
-        target_size = self.max_size - suffix_bytes - overhead
+        """Truncate text so the serialized result fits within max_size.
 
-        if target_size <= 0:
-            # Edge case: max_size too small for even the suffix
-            truncated = self.truncation_suffix
-        else:
-            # Truncate to target size, preserving UTF-8 boundaries
-            encoded = text.encode("utf-8")
-            if len(encoded) <= target_size:
-                truncated = text + self.truncation_suffix
+        Size is measured the same way `on_call_tool` decides to truncate: the
+        serialized `ToolResult`, so JSON escaping, the suffix, and preserved
+        metadata all count against the limit.
+        """
+
+        def build(prefix: str) -> ToolResult:
+            return ToolResult(
+                content=[
+                    TextContent(type="text", text=prefix + self.truncation_suffix)
+                ],
+                meta=meta,
+                is_error=is_error,
+            )
+
+        def fits(candidate: ToolResult) -> bool:
+            serialized = pydantic_core.to_json(candidate, fallback=str)
+            return len(serialized) <= self.max_size
+
+        # Longest prefix (in characters, so UTF-8 sequences stay whole) whose
+        # serialized result fits. If even the bare suffix doesn't fit, return
+        # it anyway: max_size is too small to carry any content.
+        low, high = 0, len(text)
+        while low < high:
+            mid = (low + high + 1) // 2
+            if fits(build(text[:mid])):
+                low = mid
             else:
-                truncated = (
-                    encoded[:target_size].decode("utf-8", errors="ignore")
-                    + self.truncation_suffix
-                )
-
-        return ToolResult(
-            content=[TextContent(type="text", text=truncated)],
-            meta=meta,
-            is_error=is_error,
-        )
+                high = mid - 1
+        return build(text[:low])
 
     async def on_list_tools(
         self,

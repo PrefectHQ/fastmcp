@@ -42,6 +42,7 @@ jobs:
       - name: Checkout base repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           repository: ${{ github.repository }}
           ref: ${{ github.event.repository.default_branch }}
 
@@ -167,7 +168,7 @@ jobs:
 
       - name: Run Marvin for Issue Triage
         id: marvin
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f # v1.0.284
         with:
           path_to_claude_code_executable: ${{ steps.pin-claude.outputs.path }}
           github_token: ${{ steps.marvin-token.outputs.token }}

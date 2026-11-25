@@ -92,7 +92,7 @@ def _opted_in_request(
         "_meta": opt_in_meta(settings),
     }
     srctx = ServerRequestContext(
-        session=cast(ServerSession, SimpleNamespace()),
+        session=cast(ServerSession, SimpleNamespace(client_capabilities=None)),
         lifespan_context={},
         protocol_version="2026-07-28",
         method="tools/call",

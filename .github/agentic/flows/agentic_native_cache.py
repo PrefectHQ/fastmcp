@@ -35,6 +35,11 @@ def verified_outcome(
     outcome = saved(ref.owner, ref.key + "-outcome")
     if outcome is None:
         return None
+    if outcome["native_run_id"] != str(run_id):
+        raise ValueError("Retained native result belongs to another plan run")
+    if outcome["finalizer_run_id"] == str(ref.owner):
+        # Settled in intake itself (see agentic_native_triage.settle_native).
+        return outcome
     runtime = admission.runtime
     with get_client(sync_client=True) as client:
         finalizer = client.read_flow_run(UUID(outcome["finalizer_run_id"]))
@@ -109,8 +114,6 @@ def find_native_result(admission: Admission) -> dict | None:
                 or run.flow_id != plan.flow_id
                 or intent is None
                 or digest(run.parameters) != intent["parameters_sha256"]
-                or run.parameters.get("parameters")
-                != {"ref": ref.model_dump(mode="json")}
             ):
                 continue
             observation = api("GET", f"/flow_runs/{run_id}/execution-plan")

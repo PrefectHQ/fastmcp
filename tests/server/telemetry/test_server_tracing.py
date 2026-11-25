@@ -13,7 +13,9 @@ import fastmcp
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import MCPError, NotFoundError, ToolError
 from fastmcp.server.auth import AccessToken
+from fastmcp.server.context import reset_transport, set_transport
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.utilities.tests import asgi_client
 
 
 class TestToolTracing:
@@ -797,6 +799,73 @@ class TestProtocolVersionAttribute:
             server_span.attributes["jsonrpc.request.id"]
             == sdk_span.attributes["jsonrpc.request.id"]
         )
+
+    async def test_server_span_has_http_network_attributes(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with asgi_client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        server_span = next(
+            s
+            for s in trace_exporter.get_finished_spans()
+            if s.kind == SpanKind.SERVER and s.name == "tools/call greet"
+        )
+        assert server_span.attributes is not None
+        assert server_span.attributes["network.transport"] == "tcp"
+        assert server_span.attributes["network.protocol.name"] == "http"
+        assert server_span.attributes["network.protocol.version"] == "1.1"
+
+    async def test_server_span_has_stdio_network_transport(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        token = set_transport("stdio")
+        try:
+            async with Client(mcp) as client:
+                await client.call_tool("greet", {"name": "World"})
+        finally:
+            reset_transport(token)
+
+        server_span = next(
+            s
+            for s in trace_exporter.get_finished_spans()
+            if s.kind == SpanKind.SERVER and s.name == "tools/call greet"
+        )
+        assert server_span.attributes is not None
+        assert server_span.attributes["network.transport"] == "pipe"
+        assert "network.protocol.name" not in server_span.attributes
+
+    async def test_in_memory_server_span_has_no_network_attributes(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        server_span = next(
+            s
+            for s in trace_exporter.get_finished_spans()
+            if s.kind == SpanKind.SERVER and s.name == "tools/call greet"
+        )
+        assert server_span.attributes is not None
+        assert "network.transport" not in server_span.attributes
 
     async def test_jsonrpc_error_reports_error_code(
         self, trace_exporter: InMemorySpanExporter

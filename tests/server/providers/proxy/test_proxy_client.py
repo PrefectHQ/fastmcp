@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from typing import Any, cast
 
+import anyio
 import pytest
 from anyio import create_task_group
 from mcp import CreateMessageResult
+from mcp.shared.subscriptions import ToolsListChanged
 from mcp_types import (
     ElicitRequestFormParams,
     ElicitRequestURLParams,
@@ -12,7 +14,11 @@ from mcp_types import (
     ModelHint,
     ModelPreferences,
     Root,
+    SamplingCapability,
+    SamplingToolsCapability,
     TextContent,
+    Tool,
+    ToolChoice,
 )
 from pydantic import BaseModel, Field
 
@@ -97,6 +103,25 @@ async def _backend_sample(context: Context) -> str:
     return result.content.text if isinstance(result.content, TextContent) else ""
 
 
+SAMPLING_WITH_TOOLS = SamplingCapability(tools=SamplingToolsCapability())
+
+
+async def _backend_sample_with_tools(context: Context) -> str:
+    """Issue a handshake-era `sampling/createMessage` that offers the model a tool."""
+    await context.session.create_message(  # ty: ignore[deprecated]
+        messages=[
+            SamplingMessage(
+                role="user", content=TextContent(type="text", text="Weather in Boston?")
+            )
+        ],
+        max_tokens=100,
+        tools=[Tool(name="get_weather", input_schema={"type": "object"})],
+        tool_choice=ToolChoice(mode="required"),
+        related_request_id=context.origin_request_id,
+    )
+    return "sampled"
+
+
 async def _backend_sample_result(context: Context) -> dict[str, Any]:
     """Issue a handshake-era `sampling/createMessage` and return the whole result."""
     result = await context.session.create_message(  # ty: ignore[deprecated]
@@ -126,6 +151,10 @@ def fastmcp_server():
         context: Context,
     ) -> str:
         return await _backend_sample(context)
+
+    @mcp.tool
+    async def sampling_with_tools(context: Context) -> str:
+        return await _backend_sample_with_tools(context)
 
     @mcp.tool
     async def sampling_result(context: Context) -> dict[str, Any]:
@@ -301,6 +330,52 @@ class TestProxyClient:
         ) as client:
             result = await client.call_tool("sampling", {})
             assert result.data == "I love FastMCP"
+
+    async def test_forward_sampling_request_with_tools(self, fastmcp_server: FastMCP):
+        """
+        Test that a proxy opted into sampling tools forwards the backend's tools.
+        """
+        received: list[SamplingParams] = []
+
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> str:
+            received.append(params)
+            return ""
+
+        proxy = create_proxy(
+            ProxyClient(fastmcp_server, sampling_capabilities=SAMPLING_WITH_TOOLS)
+        )
+        async with Client(
+            proxy,
+            mode="legacy",
+            sampling_handler=sampling_handler,
+            sampling_capabilities=SAMPLING_WITH_TOOLS,
+        ) as client:
+            result = await client.call_tool("sampling_with_tools", {})
+            assert result.data == "sampled"
+
+        assert len(received) == 1
+        assert [tool.name for tool in received[0].tools or []] == ["get_weather"]
+        assert received[0].tool_choice == ToolChoice(mode="required")
+
+    async def test_forward_sampling_tools_to_client_without_support(
+        self, fastmcp_server: FastMCP
+    ):
+        """
+        Test that forwarded sampling tools fail as they would directly when the
+        client does not support them.
+        """
+        proxy = create_proxy(
+            ProxyClient(fastmcp_server, sampling_capabilities=SAMPLING_WITH_TOOLS)
+        )
+        async with Client(
+            proxy, mode="legacy", sampling_handler=lambda *args: ""
+        ) as client:
+            with pytest.raises(ToolError, match="sampling tools capability"):
+                await client.call_tool("sampling_with_tools", {})
 
     @pytest.mark.parametrize(
         "content",
@@ -527,6 +602,35 @@ class TestProxyClient:
             "notifications/resources/list_changed",
             "notifications/prompts/list_changed",
         ]
+
+    async def test_forward_list_changed_to_modern_listen_stream(
+        self, proxy_server: FastMCP
+    ):
+        """A 2026-07-28 client has no push channel; the proxy relays an
+        upstream list change onto its listen stream instead."""
+        async with Client(proxy_server) as client:
+            assert client.protocol_version == "2026-07-28"
+            async with client.listen(tools_list_changed=True) as subscription:
+                await client.call_tool("hide_echo", {})
+                with anyio.fail_after(2):
+                    event = await anext(aiter(subscription))
+
+        assert event == ToolsListChanged()
+
+    async def test_proxy_added_as_provider_relays_to_parent_listen_stream(
+        self, proxy_server: FastMCP
+    ):
+        """An upstream list change relayed by a proxy also reaches clients
+        listening on a server the proxy is attached to with `add_provider`."""
+        parent = FastMCP("parent")
+        parent.add_provider(proxy_server, namespace="up")
+        async with Client(parent) as client:
+            async with client.listen(tools_list_changed=True) as subscription:
+                await client.call_tool("up_hide_echo", {})
+                with anyio.fail_after(2):
+                    event = await anext(aiter(subscription))
+
+        assert event == ToolsListChanged()
 
     async def test_concurrent_log_requests_no_mixing(self, proxy_server: FastMCP):
         """Test that concurrent log requests don't mix handlers (fixes #1068)."""

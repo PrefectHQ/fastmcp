@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 import flows.agentic_triage as triage
 from flows.agentic_backlog import Intake
-from flows.agentic_outcome import outcome_lines, subjects
+from flows.agentic_outcome import next_steps, outcome_lines, subjects
 from flows.agentic_triage import announce, maintainer
 
 URL = "https://github.com/PrefectHQ/fastmcp/issues/"
@@ -136,7 +136,7 @@ def test_subjects_come_from_evidence_with_inventory_fallback(evidence):
 
 
 @pytest.mark.parametrize(
-    "review,emitted",
+    "review,recorded",
     [
         (REVIEW, True),
         ({"bins": {"unchanged": REVIEW["bins"]["unchanged"]}}, False),
@@ -144,21 +144,23 @@ def test_subjects_come_from_evidence_with_inventory_fallback(evidence):
         (None, False),
     ],
 )
-def test_announce_emits_only_when_a_maintainer_is_needed(monkeypatch, review, emitted):
+def test_announce_records_next_steps_without_posting(monkeypatch, review, recorded):
     calls = []
-    monkeypatch.setattr(triage, "emit_event", lambda **event: calls.append(event))
+    posted = []
+    monkeypatch.setattr(triage, "record_next_step", lambda *args: calls.append(args))
+    monkeypatch.setattr(triage, "emit_event", lambda **event: posted.append(event))
+    monkeypatch.setattr(triage, "live_item", lambda number: None)
     owner = uuid4()
     announce(owner, {"review": review, "issues": ISSUES})
-    if not emitted:
+    assert posted == []
+    if not recorded:
         assert calls == []
         return
     assert calls == [
-        {
-            "event": "fastmcp.triage.outcome",
-            "resource": {"prefect.resource.id": f"fastmcp.triage.intake.{owner}"},
-            "payload": {"text": "\n".join(outcome_lines(REVIEW, ISSUES))},
-        }
+        (owner, number, line)
+        for number, line in next_steps(REVIEW, ISSUES, lambda number: None).items()
     ]
+    assert len(calls) == len(outcome_lines(REVIEW, ISSUES))
 
 
 @pytest.mark.parametrize(

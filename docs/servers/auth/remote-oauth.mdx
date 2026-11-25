@@ -9,14 +9,14 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.11.0" />
 
-Remote OAuth integration allows your FastMCP server to leverage external identity providers that **support Dynamic Client Registration (DCR)**. With DCR, MCP clients can automatically register themselves with the identity provider and obtain credentials without any manual configuration. This provides enterprise-grade authentication with fully automated flows, making it ideal for production applications with modern identity providers.
+Remote OAuth integration allows your FastMCP server to leverage external identity providers that let MCP clients register themselves, through **Dynamic Client Registration (DCR)** or **Client ID Metadata Documents (CIMD)**. Either way, MCP clients obtain credentials from the identity provider without any manual configuration. This provides enterprise-grade authentication with fully automated flows, making it ideal for production applications with modern identity providers.
 
 <Tip>
 **When to use RemoteAuthProvider vs OAuth Proxy:**
-- **RemoteAuthProvider**: For providers WITH Dynamic Client Registration (Descope, WorkOS AuthKit, modern OIDC providers)
-- **OAuth Proxy**: For providers WITHOUT Dynamic Client Registration (GitHub, Google, Azure, AWS, Discord, etc.)
+- **RemoteAuthProvider**: For providers that support DCR or CIMD (Descope, WorkOS AuthKit, Keycloak, modern OIDC providers)
+- **OAuth Proxy**: For providers that support neither (GitHub, Google, Azure, AWS, Discord, etc.). The proxy accepts DCR and CIMD clients itself.
 
-RemoteAuthProvider requires DCR support for fully automated client registration and authentication.
+RemoteAuthProvider leaves client registration to the identity provider, so the registration methods clients can use are the ones the provider supports. FastMCP serves the provider's authorization server metadata unchanged, including whether it accepts CIMD.
 </Tip>
 
 ## DCR-Enabled Providers
@@ -31,7 +31,7 @@ RemoteAuthProvider works with identity providers that support **Dynamic Client R
 | **Examples** | Descope, WorkOS AuthKit, modern OIDC | GitHub, Google, Azure |
 | **FastMCP Class** | `RemoteAuthProvider` | [`OAuthProxy`](/servers/auth/oauth-proxy) |
 
-If your provider doesn't support DCR (most traditional OAuth providers), you'll need to use [`OAuth Proxy`](/servers/auth/oauth-proxy) instead, which bridges the gap between MCP's DCR expectations and fixed OAuth credentials.
+If your provider supports neither DCR nor CIMD (most traditional OAuth providers), you'll need to use [`OAuth Proxy`](/servers/auth/oauth-proxy) instead, which bridges the gap between MCP's DCR expectations and fixed OAuth credentials.
 
 ## The Remote OAuth Challenge
 

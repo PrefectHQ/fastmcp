@@ -13,6 +13,11 @@
   --other: #838b97;
   --merged: #7357cd;
   --closed-unmerged: #ba657e;
+  --pbt-0: #f4f6fa;
+  --pbt-1: #d5efe8;
+  --pbt-2: #8fd3c0;
+  --pbt-3: #23826d;
+  --pbt-4: #0b5f4f;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 15px;
   line-height: 1.5;
@@ -34,6 +39,11 @@
   --other: #9da9bc;
   --merged: #b49af4;
   --closed-unmerged: #ed99b2;
+  --pbt-0: #232a36;
+  --pbt-1: #1f4a42;
+  --pbt-2: #266a5a;
+  --pbt-3: #5cc4a8;
+  --pbt-4: #a3eed8;
 }
 * {
   box-sizing: border-box;
@@ -403,4 +413,83 @@ footer button {
 }
 #triage-ages th:first-child {
   text-align: left;
+}
+
+.pbt-chart .pbt-group {
+  fill: var(--surface);
+}
+.pbt-chart .pbt-group-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.pbt-chart .pbt-cell {
+  stroke: var(--bg);
+  stroke-width: 1;
+  cursor: pointer;
+}
+.pbt-chart .pbt-none {
+  stroke: var(--line);
+}
+.pbt-chart .pbt-active {
+  stroke: var(--text);
+  stroke-width: 2;
+}
+.pbt-chart .pbt-label {
+  fill: var(--text);
+  font-size: 10.5px;
+  pointer-events: none;
+}
+.pbt-chart .pbt-label-inverse {
+  fill: var(--bg);
+}
+.pbt-symbols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+}
+.pbt-reached {
+  color: var(--text);
+}
+.pbt-missed {
+  color: var(--muted);
+}
+.pbt-table {
+  overflow-x: auto;
+}
+.pbt-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.pbt-table th,
+.pbt-table td {
+  text-align: left;
+  padding: 5px 10px 5px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+/* Section and module links: quiet until the heading is hovered or focused;
+   always shown where there is no hover. */
+.anchor {
+  margin-left: 0.4em;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 400;
+  opacity: 0;
+}
+h2:hover .anchor,
+.anchor:focus-visible,
+.readout .anchor {
+  opacity: 1;
+}
+@media (hover: none) {
+  .anchor {
+    opacity: 1;
+  }
+}
+section[id] {
+  scroll-margin-top: 12px;
 }

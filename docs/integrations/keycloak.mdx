@@ -9,7 +9,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="3.2.4" />
 
-This guide shows you how to secure your FastMCP server using **Keycloak OAuth**. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern with Dynamic Client Registration (DCR), where Keycloak handles user login and your FastMCP server validates the tokens.
+This guide shows you how to secure your FastMCP server using **Keycloak OAuth**. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern: Keycloak handles client registration and user login, and your FastMCP server validates the tokens. MCP clients register with Keycloak through Dynamic Client Registration (DCR), or through Client ID Metadata Documents (CIMD) when Keycloak has CIMD enabled.
 
 <Note>
 **Keycloak 26.6.0 or later is required.** Earlier versions had a DCR incompatibility with MCP clients ([PR #45309](https://github.com/keycloak/keycloak/pull/45309)) that is fixed in 26.6.0.
@@ -23,6 +23,10 @@ Before you begin, you will need:
 1. A running **[Keycloak](https://keycloak.org/)** instance (e.g., `http://localhost:8080`)
 2. A Keycloak realm with **Dynamic Client Registration** enabled and a trusted host policy that allows your server URL (e.g., `http://localhost:8000/*`)
 3. Your FastMCP server's public URL (e.g., `http://localhost:8000`)
+
+### Client ID Metadata Documents
+
+Recent Keycloak releases can also accept [CIMD](/clients/auth/cimd) clients, which use the URL of a metadata document as their `client_id` instead of registering. The feature is experimental in Keycloak and must be turned on when Keycloak starts (`--features=cimd`). `KeycloakAuthProvider` needs no extra configuration for it: FastMCP serves Keycloak's authorization server metadata as Keycloak publishes it, so clients that support CIMD, such as Claude Code, use it when Keycloak advertises it, and other clients keep using DCR.
 
 ### FastMCP Configuration
 

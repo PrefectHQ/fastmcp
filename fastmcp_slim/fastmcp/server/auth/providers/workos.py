@@ -242,7 +242,7 @@ class WorkOSProvider(OAuthProxy):
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs (default True). Set to False to disable.
-            identity_assertion: Optional SEP-990 ID-JAG configuration for
+            identity_assertion: Beta. Optional SEP-990 ID-JAG configuration for
                 identity-bound token exchange. Disabled by default.
         """
         # Apply defaults and ensure authkit_domain is a full URL

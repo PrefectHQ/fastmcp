@@ -199,7 +199,7 @@ async def resolve_hostname(hostname: str, port: int = 443) -> list[str]:
         ips = list(dict.fromkeys(info[4][0] for info in infos))
         if not ips:
             raise SSRFError(f"DNS resolution returned no addresses for {hostname}")
-        return ips  # ty: ignore[invalid-return-type]
+        return ips  # ty: ignore[invalid-explicit-return]
     except socket.gaierror as e:
         raise SSRFError(f"DNS resolution failed for {hostname}: {e}") from e
 
@@ -290,8 +290,20 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
     """
     try:
         parsed = urlparse(url)
+        # Accessing .port raises ValueError for out-of-range or non-numeric
+        # ports (e.g. https://example.com:70000/), so read it inside the
+        # guard instead of below: an invalid URL must surface as SSRFError.
+        port = parsed.port
     except (ValueError, AttributeError) as e:
         raise SSRFError(f"Invalid URL: {e}") from e
+
+    if port is None:
+        port = 443
+    elif port == 0:
+        # parsed.port == 0 means the URL explicitly pinned port 0
+        # (e.g. https://example.com:0/path); don't silently rewrite it
+        # to 443 — the pinned port must match the requested one.
+        raise SSRFError("Invalid URL: port 0 is not valid")
 
     if parsed.scheme != "https":
         raise SSRFError(f"URL must use HTTPS, got: {parsed.scheme}")
@@ -303,7 +315,6 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
         raise SSRFError("URL must have a non-root path")
 
     hostname = parsed.hostname or parsed.netloc
-    port = parsed.port or 443
     path = parsed.path + ("?" + parsed.query if parsed.query else "")
 
     # Proxy mode (FASTMCP_SSRF_TRUST_PROXY): a trusted outbound proxy owns DNS and

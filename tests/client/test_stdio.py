@@ -442,6 +442,31 @@ class TestKeepAlive:
             async with Client(transport) as client:
                 assert (await client.call_tool("pid")).data
 
+    async def test_keep_alive_false_subprocess_outlives_all_but_last_client(
+        self, stdio_script
+    ):
+        transport = PythonStdioTransport(stdio_script, keep_alive=False)
+
+        async with Client(transport) as first:
+            async with Client(transport) as second:
+                pid = (await second.call_tool("pid")).data
+            assert (await first.call_tool("pid")).data == pid
+
+        await wait_for_process_exit(pid)
+
+    async def test_cancelled_scope_stops_shared_subprocess(self, stdio_script):
+        transport = PythonStdioTransport(stdio_script, keep_alive=False)
+        pid: int | None = None
+
+        with anyio.CancelScope() as scope:
+            async with Client(transport) as first, Client(transport) as second:
+                pid = (await first.call_tool("pid")).data
+                assert (await second.call_tool("pid")).data == pid
+                scope.cancel()
+                await anyio.sleep(10)
+
+        await wait_for_process_exit(pid)
+
     async def test_cancelled_scope_still_stops_unshared_subprocess(self, stdio_script):
         transport = PythonStdioTransport(stdio_script, keep_alive=False)
         pid: int | None = None

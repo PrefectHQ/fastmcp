@@ -1,0 +1,96 @@
+---
+title: models
+sidebarTitle: models
+---
+
+# `fastmcp.experimental.events.models`
+
+
+Wire models for the MCP Events extension (SEP-3415), poll and push delivery.
+
+Experimental: this API may change in any release without a deprecation period.
+
+
+## Classes
+
+### `EventType` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L14" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+An event type a server offers, as listed by `events/list`.
+
+
+### `EventOccurrence` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+One delivered event.
+
+
+### `ListEventsParams` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L39" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Parameters for `events/list`.
+
+
+### `PollEventsParams` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Parameters for `events/poll`: one subscription per request.
+
+
+### `ListEventsResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L53" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Result of `events/list`.
+
+
+### `PollEventsResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Result of `events/poll`.
+
+
+### `ListEventsRequest` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L71" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Request for `events/list`.
+
+
+### `PollEventsRequest` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Request for `events/poll`.
+
+
+### `StreamEventsParams` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L87" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Parameters for `events/stream`: one subscription per request.
+
+
+### `StreamEventsResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+The empty result that closes an `events/stream` request.
+
+
+### `StreamEventsRequest` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Request for `events/stream`.
+
+
+### `StreamFrame` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Params of any `notifications/events/*` message on a push stream.
+
+`_meta` carries the stream's subscription ID. The other fields depend on
+the notification: `active` and `heartbeat` carry a cursor, `event` carries
+an occurrence and the cursor after it, `error` and `terminated` an error.
+
+
+### `StreamNotification` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/events/models.py#L131" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A `notifications/events/*` message.
+

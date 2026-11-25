@@ -14,8 +14,26 @@ from mcp.server.auth.provider import (
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
+from fastmcp.server.auth.auth import AccessToken as FastMCPAccessToken
+from fastmcp.server.auth.auth import TokenVerificationError
+
 if TYPE_CHECKING:
     from fastmcp.server.auth.oauth_proxy.proxy import OAuthProxy
+
+
+class RevocableAccessToken(FastMCPAccessToken):
+    """An access token loaded by the revocation route.
+
+    `token` is the upstream token, which every FastMCP access token of one
+    grant shares. `fastmcp_jti` names the FastMCP token the client presented,
+    so revocation can retire that token itself. When the grant's upstream
+    token no longer validates, `token` is the FastMCP token and
+    `upstream_live` is False: there is nothing upstream left to revoke, but
+    the mapping must still go, or the next refresh would revive the token.
+    """
+
+    fastmcp_jti: str
+    upstream_live: bool = True
 
 
 class RevocationProvider:
@@ -65,17 +83,41 @@ class RevocationProvider:
         return await self._proxy.exchange_identity_assertion(client, params)
 
     async def load_access_token(self, token: str) -> AccessToken | None:
-        validated = await self._proxy.load_access_token(token)
-        if validated is None:
-            return None
         try:
             payload = self._proxy.jwt_issuer.verify_token(token)
         except (JoseError, ValueError, KeyError):
             return None
         client_id = payload.get("client_id")
+        jti = payload.get("jti")
         if not isinstance(client_id, str) or not client_id:
             return None
-        return validated.model_copy(update={"client_id": client_id})
+        if not isinstance(jti, str) or not jti:
+            return None
+        try:
+            validated = await self._proxy.load_access_token(token)
+        except TokenVerificationError:
+            validated = None
+        if validated is None:
+            # A genuine FastMCP token whose upstream token no longer validates
+            # (a sibling's revocation, say) still has a mapping to retire.
+            scope = payload.get("scope")
+            exp = payload.get("exp")
+            return RevocableAccessToken(
+                token=token,
+                client_id=client_id,
+                scopes=scope.split() if isinstance(scope, str) else [],
+                expires_at=int(exp) if isinstance(exp, (int, float)) else None,
+                claims=payload,
+                fastmcp_jti=jti,
+                upstream_live=False,
+            )
+        return RevocableAccessToken(
+            **{
+                **validated.model_dump(exclude_none=True),
+                "client_id": client_id,
+                "fastmcp_jti": jti,
+            }
+        )
 
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str

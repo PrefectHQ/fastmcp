@@ -1,0 +1,15 @@
+# App Engine standard, in the prefect-sbx-natenowack sandbox.
+# Deploy from a folder holding this file, main.py and triage_floor_feed.py:
+#   see scripts/floor_receiver/deploy-appengine.sh
+runtime: python312
+entrypoint: python main.py
+instance_class: F1
+service_account: floor-receiver@prefect-sbx-natenowack.iam.gserviceaccount.com
+# one warm instance: no cold starts, one PDS session, inside the free 28 F1 hours a day
+automatic_scaling:
+  min_instances: 1
+  max_instances: 1
+env_variables:
+  ATPROTO_HANDLE: prefect.io
+  ATPROTO_PDS: https://witchesbutter.us-west.host.bsky.network
+  SECRETS_PROJECT: prefect-sbx-natenowack

@@ -11,7 +11,9 @@ on:
       - "scripts/public_triage.py"
       - "tests/test_public_triage.py"
       - "tests/test_status_refresh.cjs"
+      - "tests/test_status_pbt.cjs"
       - "status-site/app.js"
+      - "status-site/pbt.js"
 permissions: {}
 concurrency:
   group: backlog-status-${{ github.event.pull_request.number || 'publisher' }}
@@ -26,6 +28,8 @@ jobs:
       pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Read published history
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,11 +53,13 @@ jobs:
       pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "26"
-      - name: Check dashboard refresh ordering
-        run: node --test tests/test_status_refresh.cjs
+      - name: Check dashboard refresh ordering and coverage map links
+        run: node --test tests/test_status_refresh.cjs tests/test_status_pbt.cjs
       - name: Collect optional public triage analytics
         env:
           GH_TOKEN: ${{ github.token }}

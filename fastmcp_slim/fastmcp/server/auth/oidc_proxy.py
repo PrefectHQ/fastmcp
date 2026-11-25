@@ -303,6 +303,8 @@ class OIDCProxy(OAuthProxy):
         fastmcp_access_token_expiry_seconds: int | None = None,
         # Token refresh threshold
         token_expiry_threshold_seconds: int = 0,
+        # Dynamic client registration lifetime
+        client_registration_ttl_seconds: int | None = None,
         # CIMD configuration
         enable_cimd: bool = True,
         # Identity assertion (SEP-990 ID-JAG) support
@@ -382,6 +384,9 @@ class OIDCProxy(OAuthProxy):
                 Example: {"prompt": "consent", "access_type": "offline"}
             extra_token_params: Additional parameters to forward to the upstream token endpoint.
                 Useful for provider-specific parameters during token exchange.
+            client_registration_ttl_seconds: How long a dynamically registered client is
+                kept without getting tokens; each token exchange or refresh renews it.
+                Defaults to None (never expire). See OAuthProxy.
             fallback_access_token_expiry_seconds: Expiry time to use when upstream provider
                 doesn't return `expires_in` in the token response. If not set, uses smart
                 defaults: 1 hour if a refresh token is available (since we can refresh),
@@ -405,7 +410,7 @@ class OIDCProxy(OAuthProxy):
             enable_cimd: Whether to enable CIMD (Client ID Metadata Document) client support.
                 When True, clients can use their metadata document URL as client_id instead of
                 Dynamic Client Registration. Default is True.
-            identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
+            identity_assertion: Beta. Optional SEP-990 identity assertion (ID-JAG) configuration.
                 When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
                 carrying an ID-JAG issued by one of the configured trusted issuers.
         """
@@ -499,6 +504,7 @@ class OIDCProxy(OAuthProxy):
             "fallback_refresh_token_expiry_seconds": fallback_refresh_token_expiry_seconds,
             "fastmcp_access_token_expiry_seconds": fastmcp_access_token_expiry_seconds,
             "token_expiry_threshold_seconds": token_expiry_threshold_seconds,
+            "client_registration_ttl_seconds": client_registration_ttl_seconds,
             "enable_cimd": enable_cimd,
             "identity_assertion": identity_assertion,
         }

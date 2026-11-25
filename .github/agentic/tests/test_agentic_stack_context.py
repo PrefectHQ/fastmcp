@@ -212,4 +212,4 @@ def test_contribution_moving_during_collection_is_a_requeued_change():
     with pytest.raises(EvidenceChanged):
         revisions(pr, read)
     review = {"bins": {"operational": [{"issue_number": 1, "status": "stale"}]}}
-    assert attention(review) == []
+    assert attention(review, {1}) == []

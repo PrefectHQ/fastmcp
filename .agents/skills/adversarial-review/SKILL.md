@@ -58,4 +58,4 @@ Check the outcome against these.
 
 ### Escalate to a maintainer
 
-Return `maintainer` instead of deciding these yourself: new public surface, renames and deprecations, core vs integration package, protocol-era policy, and releases.
+Return `maintainer` instead of deciding these yourself: renames, removals, and deprecations of released public surface; a new default-on behavior on the wire; core vs integration package; protocol-era policy; security disclosure; and releases. Naming, draft status, and defaults of unreleased surface are reversible implementation calls: decide them with a recommendation and say what you picked.

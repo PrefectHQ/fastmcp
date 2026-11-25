@@ -104,6 +104,15 @@ class Provider:
         """
         return ()
 
+    def _served_servers(self) -> Sequence[FastMCP]:
+        """FastMCP servers whose components this provider serves.
+
+        A server that adds this provider links itself to each of them, so
+        their `notify_*` also reaches its listening clients. Composite
+        providers should include their children's servers.
+        """
+        return ()
+
     @contextmanager
     def _extension_runtime(
         self, available: frozenset[str], *, root: FastMCP | None

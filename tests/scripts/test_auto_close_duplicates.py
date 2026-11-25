@@ -91,8 +91,13 @@ def test_duplicate_close_uses_complete_evidence(
         ("CONTRIBUTOR", "label_removed", ["timeline", "issue"]),
     ],
 )
-def test_duplicate_followup_reopens_only_current_marvin_closure(
-    association: str, scenario: str, expected_requests: list[str]
+@pytest.mark.parametrize(
+    "closer",
+    [duplicate.MARVIN_BOT_ID, duplicate.ACTIONS_BOT_ID],
+    ids=["marvin", "actions"],
+)
+def test_duplicate_followup_reopens_only_current_bot_closure(
+    association: str, scenario: str, expected_requests: list[str], closer: int
 ) -> None:
     closed_at = "2026-01-01T00:00:04Z"
     issue = {
@@ -122,15 +127,13 @@ def test_duplicate_followup_reopens_only_current_marvin_closure(
     timeline = [
         {
             "event": "commented",
-            "user": {"id": duplicate.MARVIN_BOT_ID},
+            "user": {"id": closer},
             "body": duplicate.CLOSURE_NOTICE,
             "created_at": "2026-01-01T00:00:02Z",
         },
         {
             "event": "closed",
-            "actor": {
-                "id": 4 if scenario == "manual_close" else duplicate.MARVIN_BOT_ID
-            },
+            "actor": {"id": 4 if scenario == "manual_close" else closer},
             "created_at": closed_at,
         },
     ]

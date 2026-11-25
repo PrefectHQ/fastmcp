@@ -1,0 +1,179 @@
+{
+  "schema_version": "0.2",
+  "kind": "ExecutionPlan",
+  "inputs": {
+    "instructions": {
+      "schema": {
+        "type": "object"
+      },
+      "required": true
+    },
+    "context": {
+      "schema": {
+        "type": "object"
+      },
+      "required": true
+    }
+  },
+  "nodes": {
+    "digest": {
+      "kind": "AgentNode",
+      "model": {
+        "connection_id": "06ad84ea-0b25-7034-8000-caab9dbc44f6",
+        "id": "gpt-6.1-sol",
+        "effort": "medium"
+      },
+      "objective": "You write the fastmcp triage workflow's Slack messages to its one maintainer.\nHe reads them on his phone between other work. A message he can't act on is noise, and\nnoise teaches him to ignore the channel, so most of the time the right answer is to\nsay less, or nothing.\n\ncontext.mode is \"morning\" (the daily digest) or \"check\" (a periodic look for anything\nthat can't wait until morning). context.queue holds the open issues labeled\nneeds:triage, each with its title, labels, age and the next step triage recorded.\ncontext.runs summarizes the last day of intake runs, including issues triage gave up\non and why. context.recent holds the messages already posted, so you don't repeat them.\n\nDecide what actually matters today, then say it in plain, short sentences:\n- Lead with what he should do, most important first. Name each item by its linked\n  number (<https://github.com/PrefectHQ/fastmcp/issues/N|#N>) and say the action\n  in words: review PR #X, decide whether Y, close as a duplicate of #Z. Group or\n  skip items whose next step is the same or that can wait; link context.queue_url\n  for the rest instead of listing everything.\n- Say why an item matters when it isn't obvious: a contributor waiting on him, a\n  security report, a regression users are hitting, something going stale.\n- Report triage's own health only when he would want to know: a failure that keeps\n  repeating, most runs failing, a cause he could fix. One sentence, with the cause.\n  Retries that succeeded and requeued work are not news.\n- Never paste raw error text, run ids or internal terms (bins, routes, artifacts).\n\nIn \"check\" mode post only for something that shouldn't wait for the morning: a\nsecurity report, a contributor blocked on assignment, or triage broken across the\nboard. Otherwise return post false.\n\nUse Slack mrkdwn. Keep it under about 12 lines. Return post false with an empty text\nwhen there is nothing worth his attention, and say in why what you decided.\n\nYou have read-only triage_memory search and read tools over fastmcp's past issues, PRs\nand human comments. Use them when an item's history changes what he should do (it was\ndecided before, it duplicates something, it keeps coming back), not to pad the message.",
+      "inputs": {
+        "instructions": {
+          "schema": {
+            "type": "object"
+          }
+        },
+        "context": {
+          "schema": {
+            "type": "object"
+          }
+        }
+      },
+      "outputs": {
+        "result": {
+          "schema": {
+            "additionalProperties": false,
+            "description": "What the triage workflow tells the maintainer in Slack, if anything.",
+            "properties": {
+              "post": {
+                "title": "Post",
+                "type": "boolean"
+              },
+              "text": {
+                "maxLength": 3000,
+                "title": "Text",
+                "type": "string"
+              },
+              "why": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "title": "Why",
+                "type": "string"
+              }
+            },
+            "required": [
+              "post",
+              "text",
+              "why"
+            ],
+            "title": "Digest",
+            "type": "object"
+          }
+        }
+      },
+      "mcp": {
+        "mcpServers": {
+          "triage_memory": {
+            "type": "http",
+            "url": "https://fastmcp-triage-memory.fastmcp.app/mcp",
+            "headers": {
+              "Authorization": {
+                "$ref": {
+                  "block_document_id": "4c9b600b-6940-4e83-8ac0-f72810c08e85"
+                }
+              }
+            },
+            "tools": [
+              "search",
+              "read"
+            ]
+          }
+        }
+      },
+      "orchestration": {
+        "output_selection": "exactly_one",
+        "evaluate_when": "all_required_inputs_produced",
+        "on_failure": {
+          "retry": {
+            "max_attempts": 1
+          }
+        },
+        "limits": {
+          "max_activations": 1,
+          "max_concurrent": 1
+        }
+      }
+    }
+  },
+  "edges": [
+    {
+      "id": "instructions",
+      "from": {
+        "type": "plan_input",
+        "input": "instructions"
+      },
+      "to": {
+        "node": "digest",
+        "input": "instructions"
+      }
+    },
+    {
+      "id": "context",
+      "from": {
+        "type": "plan_input",
+        "input": "context"
+      },
+      "to": {
+        "node": "digest",
+        "input": "context"
+      }
+    }
+  ],
+  "outputs": {
+    "result": {
+      "fields": {
+        "decision": {
+          "schema": {
+            "additionalProperties": false,
+            "description": "What the triage workflow tells the maintainer in Slack, if anything.",
+            "properties": {
+              "post": {
+                "title": "Post",
+                "type": "boolean"
+              },
+              "text": {
+                "maxLength": 3000,
+                "title": "Text",
+                "type": "string"
+              },
+              "why": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "title": "Why",
+                "type": "string"
+              }
+            },
+            "required": [
+              "post",
+              "text",
+              "why"
+            ],
+            "title": "Digest",
+            "type": "object"
+          },
+          "source": {
+            "type": "node_output",
+            "node": "digest",
+            "output": "result"
+          }
+        }
+      },
+      "required": [
+        "decision"
+      ]
+    }
+  },
+  "orchestration": {
+    "limits": {
+      "max_active_nodes": 1,
+      "max_active_child_flow_runs": 1
+    }
+  }
+}

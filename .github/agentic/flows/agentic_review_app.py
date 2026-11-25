@@ -16,9 +16,24 @@ class ReviewApp(BaseModel):
     private_key_block: str = Field(pattern=r"^[a-z0-9-]{1,100}$")
 
 
+REVIEW_PERMISSIONS = {
+    "pull_requests": "write",
+    "contents": "read",
+    "issues": "read",
+    "checks": "read",
+    "statuses": "read",
+}
+# Comments and labels on issues; nothing else.
+LABEL_PERMISSIONS = {"issues": "write"}
+
+
 @contextmanager
 def review_client(
-    app: ReviewApp, private_key: str, *, url: str = "https://api.github.com"
+    app: ReviewApp,
+    private_key: str,
+    *,
+    url: str = "https://api.github.com",
+    permissions: dict[str, str] | None = None,
 ) -> Generator[GitHub]:
     import jwt
 
@@ -46,13 +61,7 @@ def review_client(
         f"app/installations/{installation['id']}/access_tokens",
         {
             "repositories": ["fastmcp"],
-            "permissions": {
-                "pull_requests": "write",
-                "contents": "read",
-                "issues": "read",
-                "checks": "read",
-                "statuses": "read",
-            },
+            "permissions": permissions or REVIEW_PERMISSIONS,
         },
     )
     if not isinstance(result, dict) or not isinstance(result.get("token"), str):
