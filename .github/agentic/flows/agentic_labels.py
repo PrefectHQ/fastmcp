@@ -7,6 +7,9 @@ Triage writes only labels that are cheap to be wrong about:
 - `needs:triage` on every issue whose outcome waits on a person: review a linked PR,
   fix a reproduced bug, decide a direction, ask the reporter for something, or
   close it. A person removing it clears the hand-off, and triage never re-adds it.
+  An issue triage takes on for the first time gets it on admission, before any
+  outcome, so a run that fails still leaves the issue where follow-through and
+  maintainers look (#6814).
 
 Triage never starts a closing clock on its own. Asking the reporter for a
 reproducer (`needs MRE`, closed after 7 days) and flagging a duplicate
@@ -113,6 +116,32 @@ def triage_labels(
                 and not cleared(number)
             ):
                 writes.append({"issue_number": number, "label": TRIAGE_LABEL})
+    return writes
+
+
+def admission_labels(
+    numbers: list[int],
+    live: Live,
+    first_time: Callable[[int], bool],
+    cleared: Callable[[int], bool] = lambda number: False,
+) -> list[dict]:
+    """`needs:triage` on each issue intake takes on for the first time.
+
+    Until triage records a result for an issue, it owes one. Labeling on admission
+    makes that debt GitHub state instead of a private retry queue: follow-through
+    restarts the issue if the run fails, and after the last try it stays in the
+    maintainer's queue.
+    """
+    writes = []
+    for number in numbers:
+        current = live(number)
+        if (
+            writable(current)
+            and not labels_of(current) & {TRIAGE_LABEL, MRE_LABEL, DUPLICATE_LABEL}
+            and first_time(number)
+            and not cleared(number)
+        ):
+            writes.append({"issue_number": number, "label": TRIAGE_LABEL})
     return writes
 
 

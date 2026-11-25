@@ -42,6 +42,7 @@ from flows.agentic_github import can_write
 from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
 from flows.agentic_labels import (
     CONFIG_VARIABLE,
+    admission_labels,
     apply_writes,
     cleared_by_person,
     mode,
@@ -526,6 +527,14 @@ def triage(
     plan = admit(config, runtime, controller_id, owner)
     if plan["phase"] == "committed":
         return plan
+    if plan["batch"]:
+        numbers = [item["issue_number"] for item in plan["batch"]["groups"][0]["items"]]
+        write_labels(
+            owner,
+            config.scope() + "-admission",
+            runtime,
+            lambda: admission_labels(numbers, live_item, first_time, cleared),
+        )
     try:
         run_id = dispatch(plan) if plan["batch"] else None
     except ValueError as error:
@@ -539,7 +548,13 @@ def triage(
         time.sleep(5)
     result = finish(plan, owner, config.scope(), run_id)
     announce(owner, result)
-    write_labels(owner, config.scope(), runtime, result)
+    if result["review"]:
+        write_labels(
+            owner,
+            config.scope(),
+            runtime,
+            lambda: triage_labels(result["review"], live_item, cleared),
+        )
     # Retries are quiet; the run is Degraded (and alerts) only for issues that
     # used their last try.
     exhausted = {
@@ -568,19 +583,18 @@ def announce(owner: UUID, state: dict) -> None:
         record_next_step(owner, number, line)
 
 
-def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None:
-    """Label assessed issues with their area and the maintainer queue.
+def write_labels(
+    owner: UUID, scope: str, runtime: Runtime, plan: Callable[[], list[dict]]
+) -> None:
+    """Apply the label writes `plan` returns, as the triage GitHub App.
 
-    A failure here is reported on the run but never fails the intake: the
-    outcome is already retained and announced.
+    A failure here is reported on the run but never fails the intake.
     """
-    if not state["review"]:
-        return
     try:
         current_mode = mode(Variable.get(CONFIG_VARIABLE, default={}))
         if current_mode == "off":
             return
-        writes = triage_labels(state["review"], live_item, cleared)
+        writes = plan()
         if writes and current_mode == "on":
             app = runtime.reviewer_app
             if app is None:
@@ -613,6 +627,11 @@ def cleared(number: int) -> bool:
     except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
         return True
     return True
+
+
+def first_time(number: int) -> bool:
+    """Whether triage has never recorded a result for this issue."""
+    return latest(handled_key(number)) is None
 
 
 def live_item(number: int) -> dict | None:
