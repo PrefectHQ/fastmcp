@@ -12,6 +12,7 @@ import inspect
 import json
 import time
 import warnings
+import weakref
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -1936,10 +1937,71 @@ def _restore_request_context(
         _current_server.set(weakref.ref(fastmcp))
 
 
+@dataclass(slots=True)
+class _ForwardingEntry:
+    token: object
+    rc_ref: list[Any]
+    pending_logs: set[anyio.Event]
+
+
+class _SessionForwardingTarget:
+    """Tracks active ProxyClient calls sharing a single ClientSession.
+
+    A keep-alive transport (such as ``StdioTransport(keep_alive=True)``) reuses
+    the ``ClientSession`` created by the first ``ProxyClient`` copy across
+    later ``new()`` copies. Keying forwarding state by ``ClientSession`` ensures
+    reused sessions route callbacks to the active copy without sharing mutable
+    state across distinct backend sessions.
+    """
+
+    def __init__(self) -> None:
+        self._entries: list[_ForwardingEntry] = []
+
+    def register(
+        self,
+        token: object,
+        rc_ref: list[Any],
+        pending_logs: set[anyio.Event],
+    ) -> None:
+        self.unregister(token)
+        self._entries.append(
+            _ForwardingEntry(token=token, rc_ref=rc_ref, pending_logs=pending_logs)
+        )
+
+    def unregister(self, token: object) -> None:
+        self._entries = [e for e in self._entries if e.token is not token]
+
+    def active(self) -> _ForwardingEntry | None:
+        for entry in reversed(self._entries):
+            if entry.rc_ref[0] is not None:
+                return entry
+        return self._entries[-1] if self._entries else None
+
+
+_SESSION_FORWARDING_TARGETS: weakref.WeakKeyDictionary[
+    ClientSession, _SessionForwardingTarget
+] = weakref.WeakKeyDictionary()
+
+
+def _register_session_forwarding(
+    session: ClientSession,
+    token: object,
+    rc_ref: list[Any],
+    pending_logs: set[anyio.Event],
+) -> _SessionForwardingTarget:
+    target = _SESSION_FORWARDING_TARGETS.get(session)
+    if target is None:
+        target = _SessionForwardingTarget()
+        _SESSION_FORWARDING_TARGETS[session] = target
+    target.register(token, rc_ref, pending_logs)
+    return target
+
+
 def _make_restoring_handler(
     handler: Callable,
     rc_ref: list[Any],
     pending: set[anyio.Event] | None = None,
+    session_target_ref: list[_SessionForwardingTarget | None] | None = None,
 ) -> Callable:
     """Wrap a proxy handler to restore request_ctx before delegating.
 
@@ -1948,15 +2010,24 @@ def _make_restoring_handler(
     """
 
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
-        _restore_request_context(rc_ref)
-        if pending is None:
+        active_rc_ref = rc_ref
+        active_pending = pending
+        target = session_target_ref[0] if session_target_ref is not None else None
+        if target is not None:
+            entry = target.active()
+            if entry is not None:
+                active_rc_ref = entry.rc_ref
+                if pending is not None:
+                    active_pending = entry.pending_logs
+        _restore_request_context(active_rc_ref)
+        if active_pending is None:
             return await handler(*args, **kwargs)
         done = anyio.Event()
-        pending.add(done)
+        active_pending.add(done)
         try:
             return await handler(*args, **kwargs)
         finally:
-            pending.discard(done)
+            active_pending.discard(done)
             done.set()
 
     return wrapper
@@ -1991,6 +2062,8 @@ class ProxyClient(Client[ClientTransportT]):
     # ContextVar-dependent and would resolve stale values in the receive loop.
     _proxy_rc_ref: list[Any]
     _pending_proxy_logs: set[anyio.Event]
+    _forwarding_token: object
+    _session_target_ref: list[_SessionForwardingTarget | None]
     _proxy_restoring_handler_keys: set[str]
 
     # A proxy forwards calls; it must not advertise task support to its backend.
@@ -2036,6 +2109,8 @@ class ProxyClient(Client[ClientTransportT]):
         # registers them with the Client's session kwargs.
         self._proxy_rc_ref = [None]
         self._pending_proxy_logs = set()
+        self._forwarding_token = object()
+        self._session_target_ref = [None]
         self._proxy_restoring_handler_keys = set()
         for key, default_fn in (
             ("roots", default_proxy_roots_handler),
@@ -2050,6 +2125,7 @@ class ProxyClient(Client[ClientTransportT]):
                     default_fn,
                     self._proxy_rc_ref,
                     self._pending_proxy_logs if key == "log_handler" else None,
+                    self._session_target_ref,
                 )
                 self._proxy_restoring_handler_keys.add(key)
         super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
@@ -2065,7 +2141,20 @@ class ProxyClient(Client[ClientTransportT]):
         # opens it, including on a client shared between front connections.
         self._mirror_front_capabilities()
         async with super()._context_manager():
-            yield
+            target = _register_session_forwarding(
+                self.session,
+                self._forwarding_token,
+                self._proxy_rc_ref,
+                self._pending_proxy_logs,
+            )
+            # Keep pointing to this session's target after exit so callbacks
+            # created with this copy still resolve active calls on a kept-alive
+            # session reused by later ProxyClient copies.
+            self._session_target_ref[0] = target
+            try:
+                yield
+            finally:
+                target.unregister(self._forwarding_token)
 
     def _mirror_front_capabilities(self) -> None:
         """Declare to the backend only the relayed features the front client declared.
@@ -2097,18 +2186,26 @@ class ProxyClient(Client[ClientTransportT]):
     def _bind_restoring_handlers(self) -> None:
         if "roots" in self._proxy_restoring_handler_keys:
             self._session_kwargs["list_roots_callback"] = create_roots_callback(
-                _make_restoring_handler(default_proxy_roots_handler, self._proxy_rc_ref)
+                _make_restoring_handler(
+                    default_proxy_roots_handler,
+                    self._proxy_rc_ref,
+                    session_target_ref=self._session_target_ref,
+                )
             )
         if "sampling_handler" in self._proxy_restoring_handler_keys:
             self._session_kwargs["sampling_callback"] = create_sampling_callback(
                 _make_restoring_handler(
-                    default_proxy_sampling_handler, self._proxy_rc_ref
+                    default_proxy_sampling_handler,
+                    self._proxy_rc_ref,
+                    session_target_ref=self._session_target_ref,
                 )
             )
         if "elicitation_handler" in self._proxy_restoring_handler_keys:
             self._session_kwargs["elicitation_callback"] = create_elicitation_callback(
                 _make_restoring_handler(
-                    default_proxy_elicitation_handler, self._proxy_rc_ref
+                    default_proxy_elicitation_handler,
+                    self._proxy_rc_ref,
+                    session_target_ref=self._session_target_ref,
                 )
             )
         if "log_handler" in self._proxy_restoring_handler_keys:
@@ -2117,15 +2214,20 @@ class ProxyClient(Client[ClientTransportT]):
                     default_proxy_log_handler,
                     self._proxy_rc_ref,
                     self._pending_proxy_logs,
+                    self._session_target_ref,
                 )
             )
         if "progress_handler" in self._proxy_restoring_handler_keys:
             self._progress_handler = _make_restoring_handler(
-                default_proxy_progress_handler, self._proxy_rc_ref
+                default_proxy_progress_handler,
+                self._proxy_rc_ref,
+                session_target_ref=self._session_target_ref,
             )
         if "message_handler" in self._proxy_restoring_handler_keys:
             message_handler = _make_restoring_handler(
-                default_proxy_message_handler, self._proxy_rc_ref
+                default_proxy_message_handler,
+                self._proxy_rc_ref,
+                session_target_ref=self._session_target_ref,
             )
             self._base_message_handler = message_handler
             self._session_kwargs["message_handler"] = (
@@ -2150,6 +2252,8 @@ class ProxyClient(Client[ClientTransportT]):
         new_client = cast(ProxyClient[ClientTransportT], super().new())
         new_client._proxy_rc_ref = [None]
         new_client._pending_proxy_logs = set()
+        new_client._forwarding_token = object()
+        new_client._session_target_ref = [None]
         new_client._proxy_restoring_handler_keys = set(
             self._proxy_restoring_handler_keys
         )
