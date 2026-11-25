@@ -326,6 +326,25 @@ def _stash_proxy_request_context(client: Client, ctx: Context) -> None:
         )
 
 
+def _per_request_progress_handler(client: Client, ctx: Context) -> Callable:
+    """Return a progress handler bound to this request's context.
+
+    Concurrent tool calls on a shared ``StatefulProxyClient`` overwrite
+    ``client._proxy_rc_ref[0]`` before awaiting the backend. Binding the
+    default proxy progress handler to a per-request ``rc_ref`` keeps each
+    call's progress notifications routed to its own downstream caller.
+    """
+    if (
+        isinstance(client, ProxyClient)
+        and "progress_handler" in client._proxy_restoring_handler_keys
+    ):
+        return _make_restoring_handler(
+            default_proxy_progress_handler,
+            [(ctx.request_context, ctx._fastmcp)],
+        )
+    return client._progress_handler
+
+
 class ProxyInitializeMiddleware(Middleware):
     """Deprecated middleware for forwarding instructions during initialization."""
 
@@ -480,6 +499,7 @@ class ProxyTool(Tool):
                 # submission is a first-class params field rather than context
                 # state, so there is no separate task-metadata injection here.
                 meta = _forwardable_request_meta(ctx)
+                progress_handler = _per_request_progress_handler(client, ctx)
 
                 if client.protocol_version in MODERN_PROTOCOL_VERSIONS:
                     # Modern backend: call the session directly (not
@@ -517,7 +537,7 @@ class ProxyTool(Tool):
                                 # legacy `call_tool_mcp` path does — without this
                                 # handler a backend tool's `ctx.report_progress()`
                                 # is dropped on modern proxy calls.
-                                progress_callback=client._progress_handler,
+                                progress_callback=progress_handler,
                                 input_responses=input_responses,
                                 request_state=request_state,
                                 allow_input_required=True,
@@ -535,7 +555,10 @@ class ProxyTool(Tool):
                     # Legacy backend: the multi-round-trip result type does not
                     # exist there, so keep the original path.
                     tool_result = await client.call_tool_mcp(
-                        name=backend_name, arguments=arguments, meta=meta
+                        name=backend_name,
+                        arguments=arguments,
+                        progress_handler=progress_handler,
+                        meta=meta,
                     )
             # Pass an upstream error result through faithfully rather than
             # collapsing it into a raised ToolError — this preserves the

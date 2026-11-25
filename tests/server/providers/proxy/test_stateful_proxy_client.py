@@ -151,6 +151,50 @@ class TestStatefulProxyClient:
         assert results["logger_a"].logger == "a"
         assert results["logger_b"].logger == "b"
 
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_concurrent_progress_handlers_no_mixing(self, mode: str):
+        """Concurrent tool calls on a StatefulProxyClient must route progress to their own handlers (fixes #6817)."""
+        backend = FastMCP("backend")
+        count = 0
+        sessions: set[str] = set()
+        ready = asyncio.Event()
+        received: dict[str, list[str | None]] = {"first": [], "second": []}
+
+        @backend.tool
+        async def read_only(label: str, ctx: Context) -> str:
+            nonlocal count
+            count += 1
+            sessions.add(ctx.session_id)
+            if count == 2:
+                ready.set()
+            await asyncio.wait_for(ready.wait(), timeout=2)
+            await ctx.report_progress(1, 1, label)
+            return label
+
+        stateful = StatefulProxyClient(backend, mode=mode)
+        proxy = FastMCPProxy(client_factory=stateful.new_stateful)
+        async with Client(proxy, mode=mode) as client:
+
+            async def call(label: str) -> str:
+                async def progress(
+                    value: float, total: float | None, message: str | None
+                ) -> None:
+                    received[label].append(message)
+
+                result = await client.call_tool(
+                    "read_only", {"label": label}, progress_handler=progress
+                )
+                return result.data
+
+            results = await asyncio.wait_for(
+                asyncio.gather(call("first"), call("second")), timeout=3
+            )
+
+        assert results == ["first", "second"]
+        assert received == {"first": ["first"], "second": ["second"]}
+        if mode == "legacy":
+            assert len(sessions) == 1
+
     async def test_stateful_proxy(self, stateful_proxy_server: FastMCP):
         """Test that the state shared across multiple calls for the same client (fixes #959)."""
         # See stateful_proxy_server fixture: its backend is pinned to legacy.
