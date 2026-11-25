@@ -27,15 +27,10 @@ def _parse_resource_uri(uri: str) -> tuple[str, str, tuple[str, ...]]:
     if not parsed.scheme:
         raise ValueError("resource URI must include a scheme")
 
-    segments: list[str] = []
-    for raw_segment in parsed.path.split("/"):
-        if not raw_segment:
-            continue
-        segment = unquote(raw_segment)
-        if segment in {".", ".."} or "/" in segment or "\\" in segment:
-            raise ValueError("resource URI path contains an invalid segment")
-        segments.append(segment)
-    return parsed.scheme.lower(), parsed.netloc, tuple(segments)
+    segments = tuple(unquote(segment) for segment in parsed.path.split("/") if segment)
+    if any(segment in {".", ".."} for segment in segments):
+        raise ValueError("resource URI path contains an invalid segment")
+    return parsed.scheme.lower(), parsed.netloc, segments
 
 
 class SkillFrontmatter(RootModel[dict[str, JsonValue]]):
@@ -186,6 +181,9 @@ class MCPSkill(BaseModel):
                     raise ValueError(
                         "every resource URI must identify a file within the skill directory"
                     )
+                file_segments = resource_path[len(skill_path) :]
+                if any("/" in segment or "\\" in segment for segment in file_segments):
+                    raise ValueError("resource URI path contains an invalid segment")
         return self
 
 

@@ -153,6 +153,51 @@ def test_skill_accepts_non_skill_scheme_and_nested_path() -> None:
     assert skill.uri == uri
 
 
+def test_skill_path_prefix_may_percent_encode_a_slash() -> None:
+    prefix = (
+        "skill://atlassian/"
+        "ari%3Acloud%3Aplatform%3A%3Askill%2F3eb3c9b0-b5f8-45cd-8f7e-a50718d4772a"
+    )
+    uri = f"{prefix}/review/SKILL.md"
+    skill = make_skill(
+        uri=uri,
+        resources=[
+            {"uri": uri, "digest": DIGEST, "size": 42},
+            {
+                "uri": f"{prefix}/review/references/guide.md",
+                "digest": DIGEST,
+                "size": 8,
+            },
+        ],
+    )
+
+    assert skill.uri == uri
+
+
+@pytest.mark.parametrize(
+    "file_path",
+    [
+        "references%2Fguide.md",
+        "references%2F..%2F..%2Foutside.md",
+        "references%5Cguide.md",
+    ],
+)
+def test_static_manifest_rejects_encoded_separators_in_file_paths(
+    file_path: str,
+) -> None:
+    with pytest.raises(ValidationError, match="invalid segment"):
+        make_skill(
+            resources=[
+                {"uri": "skill://acme/review/SKILL.md", "digest": DIGEST, "size": 42},
+                {
+                    "uri": f"skill://acme/review/{file_path}",
+                    "digest": DIGEST,
+                    "size": 8,
+                },
+            ]
+        )
+
+
 def test_static_manifest_requires_skill_md() -> None:
     with pytest.raises(ValidationError, match="must include"):
         make_skill(
