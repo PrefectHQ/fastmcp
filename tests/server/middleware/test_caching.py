@@ -724,6 +724,100 @@ class TestCacheableToolResult:
 
         assert cached_tool_result.is_error is True
 
+    def test_cached_raw_mcp_result_uses_edited_public_fields(self):
+        original = mcp_types.CallToolResult(
+            content=[mcp_types.TextContent(type="text", text="secret")],
+            structured_content={"secret": "original"},
+            _meta={"source": "backend"},
+        )
+        cached = CacheableToolResult.wrap(ToolResult.from_mcp_result(original)).unwrap()
+        edited = cached.model_copy(
+            update={
+                "content": [mcp_types.TextContent(type="text", text="redacted")],
+                "structured_content": {"secret": "redacted"},
+                "meta": {"source": "middleware"},
+            }
+        )
+
+        wire = edited.to_mcp_result()
+        assert isinstance(wire, mcp_types.CallToolResult)
+        assert isinstance(wire.content[0], mcp_types.TextContent)
+        assert wire.content[0].text == "redacted"
+        assert wire.structured_content == {"secret": "redacted"}
+        assert wire.meta == {"source": "middleware"}
+
+
+class TestCachedPromptResult:
+    async def test_resource_link_survives_cache(self):
+        link = mcp_types.ResourceLink(
+            type="resource_link", uri="docs://guide", name="guide"
+        )
+        mcp = FastMCP("PromptCachingTestServer")
+        mcp.add_middleware(ResponseCachingMiddleware(cache_storage=MemoryStore()))
+
+        call_count = 0
+
+        @mcp.prompt
+        def review_guide() -> list[Message]:
+            nonlocal call_count
+            call_count += 1
+            return [Message(link)]
+
+        async with Client(mcp) as client:
+            first = await client.get_prompt("review_guide")
+            second = await client.get_prompt("review_guide")
+
+        assert call_count == 1
+        assert first.messages[0].content == link
+        assert second.messages[0].content == link
+
+
+class TestCacheableResourceResult:
+    def test_wrap_and_unwrap_preserves_hints(self):
+        resource_result = ResourceResult("hello", ttl_ms=5000, cache_scope="public")
+        cached = CacheableResourceResult.wrap(resource_result).unwrap()
+        assert cached.ttl_ms == 5000
+        assert cached.cache_scope == "public"
+
+    def test_old_serialized_entry_without_new_fields_deserializes(self):
+        old_json = {
+            "contents": [
+                {
+                    "content": "hello",
+                    "mime_type": "text/plain",
+                    "meta": None,
+                    "is_binary": False,
+                }
+            ],
+            "meta": None,
+        }
+        entry = CacheableResourceResult.model_validate(old_json)
+        assert entry.ttl_ms is None
+        assert entry.cache_scope is None
+        unwrapped = entry.unwrap()
+        assert unwrapped.ttl_ms is None
+        assert unwrapped.cache_scope is None
+
+    async def test_middleware_cached_second_read_preserves_ttl_zero(self):
+        mcp = FastMCP("CachingTestServer", cache_ttl=3600)
+        mcp.add_middleware(ResponseCachingMiddleware(cache_storage=MemoryStore()))
+
+        calls = 0
+
+        @mcp.resource("data://dynamic-stale")
+        def dynamic_stale() -> ResourceResult:
+            nonlocal calls
+            calls += 1
+            return ResourceResult(f"read-{calls}", ttl_ms=0)
+
+        async with Client(mcp, mode="auto") as client:
+            first = await client.session.read_resource("data://dynamic-stale")
+            second = await client.session.read_resource("data://dynamic-stale")
+
+        assert calls == 1  # ttl_ms=0 does NOT bypass the server-side middleware cache
+        assert first.ttl_ms == 0
+        assert second.ttl_ms == 0
+
 
 class TestErrorResultsAreNotCached:
     """Regression tests for issue #4395: an error result was cached for the full

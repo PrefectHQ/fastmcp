@@ -14,7 +14,7 @@ protecting against userinfo-based bypass attacks like http://localhost@evil.com.
 
 ## Functions
 
-### `add_query_params` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L23" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `add_query_params` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_query_params(url: str, params: dict[str, str]) -> str
@@ -30,7 +30,7 @@ signed query strings whose exact bytes matter to the receiving client
 non-UTF-8 percent-encoded sequences must not be replaced).
 
 
-### `replace_query_param` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `replace_query_param` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 replace_query_param(url: str, key: str, value: str) -> str
@@ -48,7 +48,7 @@ segment's encoding is replaced (with `key=value`, freshly
 `add_query_params`'s behavior.
 
 
-### `build_client_redirect` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `build_client_redirect` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L115" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 build_client_redirect(url: str, params: dict[str, str]) -> str
@@ -68,12 +68,13 @@ it -- this is what every client-facing redirect site must get right,
 and the reason this helper exists instead of five call sites each
 reimplementing the same invariant by hand.
 
-`params` is appended to `url` via `add_query_params` (verbatim, without
-re-encoding the existing query -- see that function's docstring), and
-`iss` is then set idempotently via `replace_query_param`: an existing
-occurrence -- whether contributed by the registered redirect_uri or
-already present in `url` -- is overwritten with the canonical value;
-otherwise `iss` is appended.
+Each of `params`, then `iss`, is set idempotently via
+`replace_query_param` (without re-encoding the rest of the existing
+query): an existing occurrence -- whether contributed by the registered
+redirect_uri or already present in `url` -- is overwritten; otherwise
+the parameter is appended. Any *further* occurrence the redirect_uri
+carried is dropped (see `_drop_repeated_query_param`), so the result
+holds each parameter exactly once.
 
 `iss` is keyword-only and required so a caller cannot forget to pass
 it. `params` must not itself contain an `"iss"` key -- pass it via the
@@ -94,7 +95,7 @@ discovery document's `issuer` (`str(self.base_url)` /
 - set to `iss`.
 
 
-### `is_loopback_host` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L174" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_loopback_host` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L225" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_loopback_host(host: str | None) -> bool
@@ -130,7 +131,7 @@ e.g. `localhost.` or `127.0.0.1.`) is stripped, since it denotes the same
 host. Non-IP hosts fall through to the name check without raising.
 
 
-### `matches_allowed_pattern` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L302" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `matches_allowed_pattern` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L380" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 matches_allowed_pattern(uri: str, pattern: str) -> bool
@@ -148,6 +149,20 @@ Patterns support wildcards:
 - https://*.example.com/* matches any subdomain of example.com
 - https://app.example.com/auth/* matches any path under /auth/
 
+The query component must also match the pattern's query exactly
+(RFC 6749 §3.1.2) — unless the pattern is a wildcard pattern with
+no query of its own, in which case any query is accepted, so
+operators using wildcard patterns do not break silently. A pattern
+that carries a query, or that has no wildcard at all, always
+compares queries byte-for-byte. There is no loopback special case:
+`http://localhost:*` accepts any query because it is a wildcard
+pattern without a query, while `http://localhost/callback?x=1`
+rejects `?x=2` because it has no wildcard.
+
+A redirect URI must not carry a fragment at all (RFC 6749 §3.1.2),
+so a registered pattern never has one and any URI with a fragment
+is rejected, loopback patterns included.
+
 Security: Rejects URIs with userinfo (user:pass@host) which could bypass
 naive string matching (e.g., http://localhost@evil.com).
 
@@ -159,7 +174,7 @@ naive string matching (e.g., http://localhost@evil.com).
 - True if the URI matches the pattern
 
 
-### `is_redirect_uri_allowed_for_application_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L369" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `is_redirect_uri_allowed_for_application_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L519" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 is_redirect_uri_allowed_for_application_type(redirect_uri: str | AnyUrl, application_type: str | None) -> bool
@@ -200,7 +215,7 @@ registered-client record carries when the field was never set — is treated
 the same way.
 
 
-### `validate_redirect_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L427" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `validate_redirect_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/redirect_validation.py#L588" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_redirect_uri(redirect_uri: str | AnyUrl | None, allowed_patterns: list[str] | None) -> bool

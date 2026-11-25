@@ -21,7 +21,35 @@ from flows.agentic_stack_runtime import (
     secret_sync,
     skills,
 )
-from flows.agentic_triage_records import Admission, AdmissionRef
+from flows.agentic_triage_nodes import finalize, verify_branch
+from flows.agentic_triage_records import (
+    Admission,
+    AdmissionRef,
+    redirect_unadmitted,
+    resolve_assessment,
+)
+
+
+def settle_native(
+    ref: AdmissionRef, admission: Admission, run_id: UUID, observation: dict
+) -> dict | None:
+    """Verify and bin a finished plan run here, in intake.
+
+    These used to be DeploymentNodes in the plan, but a DeploymentNode can't
+    wait on the assessment: Cloud passes only `parameters` to its child run.
+    """
+    output = resolve_assessment(admission, run_id)
+    if output is None:
+        return None
+    verification = None
+    if redirect_unadmitted(admission, output)[0] == "verify":
+        retained = saved(ref.owner, ref.key + "-verification")
+        verification = (
+            retained["result"]
+            if retained is not None
+            else verify_branch(ref, admission, run_id)
+        )
+    return finalize(ref, admission, run_id, observation, verification)
 
 
 def run_native_stage(
@@ -38,15 +66,6 @@ def run_native_stage(
     active = api("GET", f"/flows/{plan.flow_id}/execution-plan")
     if active["active_version"]["id"] != str(plan.version_id):
         raise ValueError("Native triage plan changed since batch configuration")
-    with get_client(sync_client=True) as client:
-        for deployment_id in (runtime.triage_verify_id, runtime.triage_finalize_id):
-            assert deployment_id is not None
-            deployment = client.read_deployment(deployment_id)
-            if (
-                deployment.version != runtime.source_sha
-                or deployment.work_pool_name != "managed"
-            ):
-                raise ValueError("Native triage deployment changed or is not managed")
     prior_intent = saved(owner, key + "-intent")
     reused = find_native_result(admission) if prior_intent is None else None
     if reused is not None:
@@ -64,7 +83,6 @@ def run_native_stage(
     intent: dict | None = prior_intent
     if intent is None:
         parameters = {
-            "parameters": {"ref": ref.model_dump(mode="json")},
             "reproduce_request": {
                 **admission.reproduce_request,
                 "allowed": admission.requested.mode != "review"
@@ -105,10 +123,17 @@ def run_native_stage(
     if (
         observation["snapshot"]["execution_plan_version_id"] != str(plan.version_id)
         or run.flow_id != plan.flow_id
-        or run.parameters != intent["parameters"]
+        # Parameters come back from the API through JSON, so compare digests:
+        # an in-memory value that isn't JSON-native (an int dict key) would
+        # otherwise never equal its own round-trip and discard a finished run.
+        or digest(run.parameters) != intent["parameters_sha256"]
     ):
         raise ValueError("Native run changed the pinned admission")
-    outcome = verified_outcome(ref, admission, run_id)
+    outcome = saved(owner, key + "-outcome")
+    if outcome is None:
+        outcome = settle_native(ref, admission, run_id, observation)
+    else:
+        outcome = verified_outcome(ref, admission, run_id)
     if outcome is None:
         record(
             owner, key + "-failure", {"run_id": str(run_id), "observation": observation}

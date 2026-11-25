@@ -98,6 +98,15 @@ class TestBaseProviderGetTasks:
         assert len(tasks) == 1
         assert tasks[0].name == "api_my_tool"
 
+    async def test_aggregate_get_tasks_applies_own_transforms(self):
+        tool = CustomTool(name="my_tool", description="A tool")
+        aggregate = AggregateProvider([SimpleProvider(tools=[tool])])
+        aggregate.add_transform(Namespace("api"))
+
+        tasks = await aggregate.get_tasks()
+
+        assert [t.key for t in tasks] == ["tool:api_my_tool@"]
+
 
 class TestAggregateProviderErrors:
     async def test_provider_errors_warn_by_default(self):

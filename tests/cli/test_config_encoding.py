@@ -3,6 +3,7 @@
 import builtins
 import io
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -75,11 +76,11 @@ class TestConfigFilesReadAsUtf8:
 
     def test_load_and_merge_fastmcp_json(self, tmp_path: Path):
         path = tmp_path / "fastmcp.json"
-        _write_utf8_json(path, {"source": {"path": ARABIC_PATH}})
+        _write_utf8_json(path, {"source": {"path": "فاطمة.py"}})
 
         config, _ = load_and_merge_config(str(path))
 
-        assert config.source.path == ARABIC_PATH
+        assert config.source.path == os.path.abspath(tmp_path / "فاطمة.py")
 
     async def test_install_reads_fastmcp_json(self, tmp_path: Path):
         path = tmp_path / "fastmcp.json"

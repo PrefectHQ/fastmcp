@@ -51,6 +51,10 @@ We recommend the [inline-snapshot library](https://github.com/15r10nk/inline-sna
 ```python
 from inline_snapshot import snapshot
 
+from fastmcp.client import Client
+from fastmcp.client.transports import FastMCPTransport
+
+
 async def test_list_tools(main_mcp_client: Client[FastMCPTransport]):
     list_tools = await main_mcp_client.list_tools()
 
@@ -71,6 +75,8 @@ from my_project.main import mcp
 
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
+
+
 @pytest.fixture
 async def main_mcp_client():
     async with Client(mcp) as client:

@@ -1,7 +1,25 @@
 """Client initialization tests."""
 
+import mcp_types
+import pytest
+
+import fastmcp
 from fastmcp.client import Client
+from fastmcp.server.context import Context
 from fastmcp.server.server import FastMCP
+
+
+def _client_info_server() -> FastMCP:
+    server = FastMCP("ClientInfoServer")
+
+    @server.tool
+    def who(ctx: Context) -> dict[str, str | None]:
+        params = ctx.session.client_params
+        assert params is not None
+        info = params.client_info
+        return {"name": info.name, "version": info.version}
+
+    return server
 
 
 class TestInitialize:
@@ -113,3 +131,20 @@ class TestInitialize:
             # Should be able to call tools after manual initialization
             result = await client.call_tool("greet", {"name": "World"})
             assert "Hello, World!" in str(result.content)
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+class TestClientInfo:
+    async def test_identifies_as_fastmcp_by_default(self, mode: str):
+        async with Client(_client_info_server(), mode=mode) as client:
+            result = await client.call_tool("who")
+
+        assert result.data == {"name": "fastmcp", "version": fastmcp.__version__}
+
+    async def test_explicit_client_info_wins(self, mode: str):
+        info = mcp_types.Implementation(name="my-client", version="1.2.3")
+
+        async with Client(_client_info_server(), mode=mode, client_info=info) as client:
+            result = await client.call_tool("who")
+
+        assert result.data == {"name": "my-client", "version": "1.2.3"}

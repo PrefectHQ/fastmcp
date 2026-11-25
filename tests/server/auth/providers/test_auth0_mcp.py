@@ -275,7 +275,7 @@ class TestAuth0MCPMetadataForwarding:
         real_httpx_client = httpx2.AsyncClient
 
         monkeypatch.setattr(
-            "fastmcp.server.auth.providers.auth0.httpx2.AsyncClient",
+            "fastmcp.server.auth.auth.httpx2.AsyncClient",
             DummyAsyncClient,
         )
 

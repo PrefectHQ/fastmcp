@@ -20,11 +20,11 @@ Works with both in-memory and Redis backends:
     # Redis (distributed, needs a worker running separately)
     #   Terminal 1: docker compose -f examples/tasks/docker-compose.yml up -d
     #   Terminal 2: FASTMCP_DOCKET_URL=redis://localhost:24242/0 \
-    #               uv run fastmcp tasks worker examples/task_elicitation.py
+    #               uv run python -m fastmcp_tasks.worker_cli worker examples/task_elicitation.py
     #   Terminal 3: FASTMCP_DOCKET_URL=redis://localhost:24242/0 \
     #               uv run python examples/task_elicitation.py
 
-Requires the `docket` extra (included in dev dependencies).
+Requires the `tasks` extra (included in dev dependencies).
 """
 
 import asyncio

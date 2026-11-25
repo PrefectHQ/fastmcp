@@ -35,7 +35,7 @@ The standard uses a `mcpServers` object where each key represents a server name 
 
 ### Server Configuration Fields
 
-#### `command` (required)
+#### `command` (required for local servers)
 The executable command to run the MCP server. This should be an absolute path or a command available in the system PATH.
 
 ```json
@@ -66,13 +66,33 @@ An object containing environment variables to set when launching the server. All
 }
 ```
 
+### Remote Servers
+
+A server that is already running over HTTP is configured with a `url` instead of `command`. Not every client accepts remote entries in this file; FastMCP's `Client` does, along with any client that supports remote servers:
+
+```json
+{
+  "mcpServers": {
+    "weather": {
+      "url": "https://weather.example.com/mcp",
+      "transport": "http",
+      "headers": {
+        "X-Api-Key": "your-key"
+      }
+    }
+  }
+}
+```
+
+`transport` is optional; FastMCP infers it from the URL. A URL ending in `/sse` uses SSE, and anything else uses Streamable HTTP. `headers` is sent with every request. See [client transports](/clients/transports) for the full set of options, including `auth` and per-server timeouts.
+
 ### Client Adoption
 
 This format is widely adopted across the MCP ecosystem:
 
 - **Claude Desktop**: Uses `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows
 - **Cursor**: Uses `~/.cursor/mcp.json`
-- **VS Code**: Uses workspace `.vscode/mcp.json`
+- **VS Code**: Uses workspace `.vscode/mcp.json`, with servers under a top-level `servers` key instead of `mcpServers`
 - **Other clients**: Many MCP-compatible applications follow this standard
 
 ## Overview
@@ -239,7 +259,7 @@ fastmcp install mcp-json server.py --copy
 ```
 
 <Note>
-The `--copy` flag requires the `pyperclip` Python package. If not installed, you'll see an error message with installation instructions.
+`--copy` uses the `pyperclip` package, which installs with FastMCP. On Linux, `pyperclip` also needs a system clipboard tool such as `xclip`, `xsel`, or `wl-clipboard`.
 </Note>
 
 ## Usage Examples
@@ -381,19 +401,7 @@ Output:
 }
 ```
 
-You can also use `fastmcp.json` with a local project:
-
-```json fastmcp.json
-{
-  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-  "source": {
-    "path": "server.py"
-  },
-  "environment": {
-    "project": "."
-  }
-}
-```
+When you install from a `fastmcp.json` file, `fastmcp install mcp-json` reads its `source` and `environment.dependencies` and ignores the rest of `environment`. Pass `--project` on the command line even when the file sets `environment.project`.
 
 If your server needs additional packages beyond those in `pyproject.toml`, add them via the `dependencies` array or `--with`.
 
@@ -462,8 +470,8 @@ Copy the `mcpServers` object into Claude Desktop's config file (`~/Library/Appli
 </Note>
 Add to `~/.cursor/mcp.json`
 
-### VS Code  
-Add to your workspace's `.vscode/mcp.json` file
+### VS Code
+Add the server object to the top-level `servers` key in your workspace's `.vscode/mcp.json` file. VS Code does not read `mcpServers`.
 
 ### Custom Applications
 Use the JSON configuration with any application that supports the MCP protocol
@@ -498,7 +506,7 @@ To use this in an MCP client, add it to the client's `mcpServers` configuration 
 ## Requirements
 
 - **uv**: Must be installed and available in your system PATH
-- **pyperclip** (optional): Required only for `--copy` functionality
+- **A system clipboard tool** (Linux only, optional): `--copy` needs `xclip`, `xsel`, or `wl-clipboard`
 
 Install uv if not already available:
 
@@ -506,6 +514,11 @@ Install uv if not already available:
 # macOS
 brew install uv
 
-# Linux/Windows  
+# macOS/Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```powershell
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```

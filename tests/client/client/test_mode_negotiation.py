@@ -127,7 +127,7 @@ class TestAutoMode:
                             code=METHOD_NOT_FOUND, message="Method not found"
                         )
 
-                    session.send_discover = _reject_discover  # ty: ignore[invalid-assignment]
+                    session.send_discover = _reject_discover
                     yield session
 
         transport = _DiscoverRejectingTransport(fastmcp_server)
@@ -194,7 +194,7 @@ class TestNonConformantModernPeer:
                     async def _fixed_discover(version: str) -> dict[str, Any]:
                         return body
 
-                    session.send_discover = _fixed_discover  # ty: ignore[invalid-assignment]
+                    session.send_discover = _fixed_discover
                     yield session
 
         return _FixedDiscoverTransport(server)

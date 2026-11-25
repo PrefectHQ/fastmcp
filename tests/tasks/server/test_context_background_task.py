@@ -36,7 +36,7 @@ from mcp_types import (
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
-from fastmcp.server.context import Context
+from fastmcp.server.context import _CONNECTION_LOG_LEVEL_KEY, Context
 from fastmcp.server.dependencies import get_access_token
 from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import (
@@ -192,6 +192,7 @@ class TestContextBackgroundTaskLogging:
         class MockConnection:
             def __init__(self, session_id: str) -> None:
                 self.session_id = session_id
+                self.state: dict[str, Any] = {}
 
         class MockSession:
             def __init__(self, session_id: str) -> None:
@@ -211,9 +212,9 @@ class TestContextBackgroundTaskLogging:
         its logs, so sub-threshold messages are not sent to the client."""
         mcp = FastMCP("test")
         session_id = "session-abc"
-        mcp._client_log_levels[session_id] = "error"
 
         ctx, send_log_message = self._make_task_context(mcp, session_id)
+        ctx.session._connection.state[_CONNECTION_LOG_LEVEL_KEY] = "error"
         assert ctx.is_background_task is True
         assert ctx.request_context is None
 
@@ -353,6 +354,35 @@ class TestBackgroundTaskIntegration:
         assert final.status == "completed"
         assert final.result is not None
         assert final.result["structuredContent"] == {"result": "done"}
+
+    @pytest.mark.parametrize(
+        "items", [[], ["a", "b"]], ids=["empty-batch", "two-items"]
+    )
+    async def test_report_progress_with_item_count_total_in_background_task(
+        self, items: list[str]
+    ):
+        """The documented `total=len(items)` pattern completes in a background
+        task even when the batch is empty and the total is 0."""
+        mcp = FastMCP("progress-zero-total")
+        mcp.add_extension(TasksExtension())
+
+        @mcp.tool(task=True)
+        async def process(items: list[str], ctx: Context) -> str:
+            total = len(items)
+            for i, item in enumerate(items):
+                await ctx.report_progress(progress=i, total=total, message=item)
+            await ctx.report_progress(progress=total, total=total)
+            return f"processed {total}"
+
+        async with running_task_server(mcp):
+            created = await submit_task(mcp, "process", {"items": items})
+            final = await wait_for_task(mcp, created.task_id)
+
+        assert final.status == "completed"
+        assert final.result is not None
+        assert final.result["structuredContent"] == {
+            "result": f"processed {len(items)}"
+        }
 
     async def test_context_wiring_in_background_task(self):
         """A worker Context is wired as a background task with no live session."""

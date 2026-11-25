@@ -15,7 +15,7 @@ Bearer Token authentication is only relevant for HTTP-based transports.
 
 You can configure your FastMCP client to use **bearer authentication** by supplying a valid access token. This is most appropriate for service accounts, long-lived API keys, CI/CD, applications where authentication is managed separately, or other non-interactive authentication methods.
 
-A Bearer token is a JSON Web Token (JWT) that is used to authenticate a request. It is most commonly used in the `Authorization` header of an HTTP request, using the `Bearer` scheme:
+A bearer token grants access to whoever presents it. It is often a JSON Web Token (JWT), but it can be any opaque string the server accepts. The client sends it in the `Authorization` header of each HTTP request, using the `Bearer` scheme:
 
 ```http
 Authorization: Bearer <token>
@@ -47,7 +47,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
 transport = StreamableHttpTransport(
-    "http://your-server.fastmcp.app/mcp", 
+    "https://your-server.fastmcp.app/mcp", 
     auth="<your-token>",
 )
 
@@ -74,7 +74,7 @@ async with Client(
 
 If the MCP server expects a custom header or token scheme, you can manually set the client's `headers` instead of using the `auth` parameter by setting them on your transport:
 
-```python {5}
+```python {7}
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 

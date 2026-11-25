@@ -321,6 +321,67 @@ async def test_known_route_survives_an_unrelated_dead_client():
             await group.call_tool("doomed_echo", {"value": "hi"})
 
 
+async def test_known_route_survives_the_group_context():
+    """An adapter that resolved a route inside the group can call it later
+    with only the owning client connected."""
+    calc = Client(make_server("calc"))
+    greet = Client(make_server("greet"))
+    group = ClientGroup({"calc": calc, "greet": greet})
+
+    async with group:
+        await group.list_tools()
+        route = await group.resolve_tool("calc_echo")
+    assert not calc.is_connected()
+
+    with (
+        patch.object(calc, "list_tools", wraps=calc.list_tools) as calc_list,
+        patch.object(greet, "list_tools", wraps=greet.list_tools) as greet_list,
+    ):
+        async with route.client:
+            assert await group.resolve_tool("calc_echo") is route
+            result = await group.call_tool("calc_echo", {"value": "hi"})
+            assert result.data == "calc: hi"
+
+            with pytest.raises(RuntimeError, match="'greet' is not connected"):
+                await group.call_tool("greet_echo", {"value": "hi"})
+
+    assert calc_list.call_count == 0
+    assert greet_list.call_count == 0
+
+
+async def test_unknown_tool_after_reconnect_rediscovers_lazily():
+    server = make_server("server")
+    client = Client(server)
+    group = ClientGroup({"server": client})
+
+    async with group:
+        await group.list_tools()
+
+    @server.tool
+    def added() -> str:
+        return "new"
+
+    async with group:
+        result = await group.call_tool("server_added")
+        assert result.data == "new"
+        assert (await group.call_tool("server_echo", {"value": "x"})).data == (
+            "server: x"
+        )
+
+
+async def test_unknown_tool_after_exit_needs_every_client_for_discovery():
+    calc = Client(make_server("calc"))
+    greet = Client(make_server("greet"))
+    group = ClientGroup({"calc": calc, "greet": greet})
+
+    async with group:
+        await group.list_tools()
+
+    async with calc:
+        with pytest.raises(RuntimeError, match="not connected: 'greet'"):
+            await group.call_tool("calc_missing")
+
+
 async def test_partial_connect_failure_unwinds_connected_clients():
     ok = Client(FastMCPTransport(make_server("ok")))
     bad = Client(FastMCPTransport(make_server("bad")))
@@ -468,6 +529,40 @@ async def test_failed_entry_leaves_group_reenterable():
     async with group:
         result = await group.call_tool("good_echo", {"value": "recovered"})
         assert result.data == "good: recovered"
+
+
+async def test_cancelled_entry_disconnects_connected_members():
+    """Cancelling group entry while one member is still connecting must
+    disconnect the members that already connected."""
+    a = Client(make_server("a"))
+    b = Client(make_server("b"))
+    group = ClientGroup({"a": a, "b": b})
+    b_entering = anyio.Event()
+
+    async def held_entry() -> Client[Any]:
+        b_entering.set()
+        await anyio.sleep_forever()
+        raise AssertionError("unreachable")
+
+    with patch.object(b, "__aenter__", held_entry):
+        entry = asyncio.create_task(group.__aenter__())
+        with anyio.fail_after(3):
+            await b_entering.wait()
+            while not a.is_connected():
+                await anyio.sleep(0.01)
+        entry.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await entry
+
+    assert not a.is_connected()
+    assert group._exit_stack is None
+    assert group._nesting_counter == 0
+
+    async with group:
+        result = await group.call_tool("b_echo", {"value": "recovered"})
+        assert result.data == "b: recovered"
+    assert not a.is_connected()
+    assert not b.is_connected()
 
 
 async def test_exit_under_cancelled_scope_disconnects_members():

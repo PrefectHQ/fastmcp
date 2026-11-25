@@ -8,7 +8,7 @@ current records give creation and latest closure dates, not every reopen cycle.
 import argparse
 import json
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -25,7 +25,7 @@ def fetch_items() -> list[dict]:
             "--paginate",
             f"repos/{REPO}/issues?state=all&per_page=100&sort=created&direction=asc",
             "--jq",
-            ".[] | {number, title, state, state_reason, created_at, closed_at, draft, pull_request: (if .pull_request then {merged_at: .pull_request.merged_at} else null end)}",
+            ".[] | {number, title, state, state_reason, created_at, closed_at, draft, body, author_association, labels, user: {login: .user.login, type: .user.type}, pull_request: (if .pull_request then {merged_at: .pull_request.merged_at} else null end)}",
         ],
         capture_output=True,
         text=True,
@@ -76,7 +76,7 @@ def outcome(item: dict) -> str | None:
 
 
 def sample(items: list[dict], at: datetime, source: str) -> dict:
-    row = {"at": at.isoformat(), "source": source}
+    row: dict = {"at": at.isoformat(), "source": source}
     for category in ("issues", "prs"):
         eligible = [
             item
@@ -105,7 +105,7 @@ def build(items: list[dict], previous: dict, now: datetime) -> dict:
         key=lambda row: parse_time(row["at"]),
     )
     today = now.astimezone(CENTRAL).date()
-    daily = {}
+    daily: dict = {}
     for offset in range(365, -1, -1):
         day = (today - timedelta(days=offset)).isoformat()
         daily[day] = {
@@ -158,6 +158,7 @@ def main() -> None:
     parser.add_argument("--previous", type=Path)
     parser.add_argument("--import-history", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--triage-output", type=Path)
     args = parser.parse_args()
     previous = json.loads(args.previous.read_text()) if args.previous else {}
     if args.previous and previous.get("schema") != SCHEMA:
@@ -175,7 +176,7 @@ def main() -> None:
         ]
     # Timestamp the beginning of collection so updates during pagination are
     # not represented as a snapshot from after an item was read.
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     # Pages are oldest-first, so a listing that stops early silently drops the
     # newest items. Anything created before collection began must be present.
     newest = newest_number()
@@ -183,6 +184,14 @@ def main() -> None:
     require_complete(items, newest)
     doc = build(items, previous, now)
     args.output.write_text(json.dumps(doc, separators=(",", ":")) + "\n")
+    if args.triage_output:
+        from public_triage import build as triage
+
+        report = triage(items, now)
+        report["source_sha"] = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        args.triage_output.write_text(json.dumps(report, separators=(",", ":")) + "\n")
 
 
 if __name__ == "__main__":

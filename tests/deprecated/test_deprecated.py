@@ -13,7 +13,7 @@ class TestRemovedKwargs:
         mcp = FastMCP()
         assert not hasattr(mcp, "_deprecated_settings")
         with pytest.raises(AttributeError):
-            mcp.settings  # noqa: B018  # ty: ignore[unresolved-attribute]
+            mcp.settings  # noqa: B018  # ty: ignore[missing-attribute]
 
 
 def test_http_app_with_sse_transport():

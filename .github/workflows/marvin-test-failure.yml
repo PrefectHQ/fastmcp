@@ -26,14 +26,14 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout trusted workflow code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
 
       - name: Collect investigation context
         id: collect
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const { collect } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/analyze-ci-failure.mjs`);
@@ -41,7 +41,7 @@ jobs:
 
       - name: Checkout PR source for reading
         if: steps.collect.outputs.ready == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ steps.collect.outputs.repository }}
           ref: ${{ steps.collect.outputs.sha }}
@@ -100,7 +100,7 @@ jobs:
       - name: Validate investigation result
         if: steps.collect.outputs.ready == 'true'
         id: analyze
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const { acceptResult } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/analyze-ci-failure.mjs`);
@@ -109,7 +109,7 @@ jobs:
       - name: Generate narrowly scoped publishing token
         if: steps.analyze.outputs.publish == 'true'
         id: marvin-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
@@ -120,7 +120,7 @@ jobs:
 
       - name: Publish current diagnosis
         if: steps.analyze.outputs.publish == 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           github-token: ${{ steps.marvin-token.outputs.token }}
           script: |

@@ -61,18 +61,6 @@ def _get_npx_command():
     return "npx"  # On Unix-like systems, just use npx
 
 
-def _parse_env_var(env_var: str) -> tuple[str, str]:
-    """Parse environment variable string in format KEY=VALUE."""
-    if "=" not in env_var:
-        logger.error("Invalid environment variable format. Must be KEY=VALUE")
-        sys.exit(1)
-    key, value = env_var.split("=", 1)
-    if not key.strip():
-        logger.error("Invalid environment variable format. KEY cannot be empty")
-        sys.exit(1)
-    return key.strip(), value.strip()
-
-
 @contextmanager
 def with_argv(args: list[str] | None):
     """Temporarily replace sys.argv if args provided.
@@ -184,7 +172,7 @@ async def inspector(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_requirements: Annotated[
@@ -260,10 +248,9 @@ async def inspector(
             sys.exit(1)
         assert config is not None  # For type checker
 
-        # Skip server-object validation in module mode — the module
-        # manages its own startup and may not expose an importable server.
-        if not module:
-            await config.source.load_server()
+        # Let the child server load the source. Importing it here would happen
+        # outside the configured uv environment and would invoke factories a
+        # second time when `fastmcp run` starts.
 
         env_vars = {}
         if ui_port:
@@ -451,7 +438,7 @@ async def run(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_packages: Annotated[
@@ -811,7 +798,7 @@ async def inspect(
         str | None,
         cyclopts.Parameter(
             "--python",
-            help="Python version to use (e.g., 3.10, 3.11)",
+            help="Python version to use (e.g., 3.12, 3.13)",
         ),
     ] = None,
     with_packages: Annotated[
@@ -1136,6 +1123,29 @@ app.command(list_command, name="list")
 app.command(call_command, name="call")
 app.command(discover_command, name="discover")
 app.command(generate_cli_command, name="generate-cli")
+
+# Experimental commands may change in any release without a deprecation period
+experimental_app = cyclopts.App(
+    name="experimental",
+    help="Experimental commands that may change in any release",
+)
+if importlib.util.find_spec("fastmcp_events") is not None:
+    # Lazy, so `fastmcp` startup does not import the events package; cyclopts
+    # 4.0 refuses extra settings such as `help=` on a lazily imported App.
+    experimental_app.command("fastmcp_events.cli:events_app", name="events")
+else:
+
+    @experimental_app.command(name="events")
+    def events_not_installed(*_tokens: str) -> None:
+        """Subscribe to a server's events (needs the `events` extra)."""
+        console.print(
+            "[bold red]Error:[/bold red] [cyan]fastmcp experimental events[/cyan] "
+            'needs fastmcp-events: [cyan]pip install "fastmcp\\[events]"[/cyan]'
+        )
+        sys.exit(1)
+
+
+app.command(experimental_app)
 
 # Add auth subcommand group (includes CIMD commands)
 app.command(auth_app)

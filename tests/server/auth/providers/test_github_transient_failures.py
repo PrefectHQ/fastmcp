@@ -1,0 +1,432 @@
+"""Regression coverage for operational GitHub token verification failures."""
+
+import time
+from unittest.mock import AsyncMock, MagicMock
+
+import httpx2
+import pytest
+from key_value.aio.stores.memory import MemoryStore
+
+from fastmcp.server.auth import TokenVerificationError, TokenVerifier
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.models import JTIMapping, UpstreamTokenSet
+from fastmcp.server.auth.providers.github import GitHubProvider, GitHubTokenVerifier
+
+
+def _response(
+    status_code: int,
+    text: str = "simulated",
+    *,
+    headers: dict[str, str] | None = None,
+    json_data: dict | None = None,
+) -> MagicMock:
+    response = MagicMock()
+    response.status_code = status_code
+    response.text = text
+    response.headers = headers or {}
+    response.json.return_value = json_data or {}
+    return response
+
+
+def _github_user_response() -> MagicMock:
+    return _response(
+        200,
+        json_data={
+            "id": 12345,
+            "login": "testuser",
+            "name": "Test User",
+            "email": "test@example.com",
+            "avatar_url": "https://github.com/testuser.png",
+        },
+    )
+
+
+async def _store_proxy_access_token(
+    proxy: OAuthProxy,
+    *,
+    upstream_scope: str,
+) -> str:
+    proxy.set_mcp_path("/mcp")
+    now = time.time()
+    upstream_token_id = "upstream-token-id"
+    jti = "access-jti"
+    await proxy._upstream_token_store.put(
+        key=upstream_token_id,
+        value=UpstreamTokenSet(
+            upstream_token_id=upstream_token_id,
+            access_token="upstream-access-token",
+            refresh_token=None,
+            refresh_token_expires_at=None,
+            expires_at=now + 3600,
+            token_type="Bearer",
+            scope=upstream_scope,
+            client_id="mcp-client",
+            created_at=now,
+            raw_token_data={"access_token": "upstream-access-token"},
+        ),
+        ttl=3600,
+    )
+    await proxy._jti_mapping_store.put(
+        key=jti,
+        value=JTIMapping(
+            jti=jti,
+            upstream_token_id=upstream_token_id,
+            created_at=now,
+        ),
+        ttl=3600,
+    )
+    return proxy.jwt_issuer.issue_access_token(
+        client_id="mcp-client",
+        scopes=upstream_scope.split(),
+        jti=jti,
+        expires_in=3600,
+    )
+
+
+_RATE_LIMITED = [
+    (403, {"x-ratelimit-remaining": "0"}),
+    (403, {"retry-after": "60"}),
+    (429, {}),
+]
+
+
+async def test_github_401_is_still_an_invalid_token():
+    client = AsyncMock()
+    client.get.return_value = _response(401, "Bad credentials")
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    assert await verifier.verify_token("bad-token") is None
+
+
+@pytest.mark.parametrize("status_code, headers", [*_RATE_LIMITED, (500, {}), (503, {})])
+async def test_github_operational_http_failure_raises_typed_error(status_code, headers):
+    client = AsyncMock()
+    client.get.return_value = _response(status_code, headers=headers)
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    with pytest.raises(TokenVerificationError, match=str(status_code)):
+        await verifier.verify_token("still-valid-token")
+
+
+@pytest.mark.parametrize("headers", [{}, {"x-ratelimit-remaining": "42"}])
+async def test_secondary_rate_limit_message_is_operational_error(
+    headers: dict[str, str],
+):
+    client = AsyncMock()
+    client.get.return_value = _response(
+        403,
+        headers=headers,
+        json_data={"message": "You have exceeded a secondary rate limit."},
+    )
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    with pytest.raises(TokenVerificationError, match="HTTP 403"):
+        await verifier.verify_token("still-valid-token")
+
+
+async def test_github_transport_failure_raises_typed_error():
+    client = AsyncMock()
+    client.get.side_effect = httpx2.ConnectError(
+        "simulated transport failure",
+        request=httpx2.Request("GET", "https://api.github.com/user"),
+    )
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    with pytest.raises(TokenVerificationError, match="transport"):
+        await verifier.verify_token("still-valid-token")
+
+
+async def test_github_malformed_user_json_raises_typed_error():
+    client = AsyncMock()
+    response = _response(200)
+    response.json.side_effect = ValueError("malformed json")
+    client.get.return_value = response
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    with pytest.raises(TokenVerificationError, match="invalid user response"):
+        await verifier.verify_token("still-valid-token")
+
+
+async def test_github_missing_user_id_raises_typed_error():
+    client = AsyncMock()
+    client.get.return_value = _response(200, json_data={"login": "testuser"})
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    with pytest.raises(TokenVerificationError, match="invalid user response"):
+        await verifier.verify_token("still-valid-token")
+
+
+async def test_non_rate_limited_403_message_still_rejects_token():
+    client = AsyncMock()
+    client.get.return_value = _response(
+        403,
+        headers={"x-ratelimit-remaining": "42"},
+        json_data={"message": "Resource not accessible by integration"},
+    )
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    assert await verifier.verify_token("rejected-token") is None
+
+
+@pytest.mark.parametrize("status_code", [403, 404])
+async def test_github_permanent_client_error_is_an_invalid_token(status_code):
+    """A forbidden or missing user is a final answer, so the client re-authenticates."""
+    client = AsyncMock()
+    client.get.return_value = _response(status_code)
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    assert await verifier.verify_token("rejected-token") is None
+
+
+@pytest.mark.parametrize("status_code, headers", _RATE_LIMITED)
+async def test_scope_rate_limit_raises_typed_error(status_code, headers):
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(status_code, headers=headers),
+    ]
+    verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
+
+    with pytest.raises(TokenVerificationError, match=str(status_code)):
+        await verifier.verify_token("still-valid-token")
+
+
+async def test_scope_secondary_rate_limit_message_is_operational_error():
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(
+            403,
+            headers={"x-ratelimit-remaining": "42"},
+            json_data={"message": "You have exceeded a secondary rate limit."},
+        ),
+    ]
+    verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
+
+    with pytest.raises(TokenVerificationError, match="HTTP 403"):
+        await verifier.verify_token("still-valid-token")
+
+
+@pytest.mark.parametrize("status_code", [500, 503])
+async def test_scope_server_failure_does_not_grant_required_user_scope_and_recovers(
+    status_code,
+):
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(status_code),
+        _github_user_response(),
+        _response(200, headers={"x-oauth-scopes": "user"}),
+    ]
+    verifier = GitHubTokenVerifier(
+        required_scopes=["user"],
+        cache_ttl_seconds=300,
+        http_client=client,
+    )
+
+    with pytest.raises(TokenVerificationError, match="scope verification unavailable"):
+        await verifier.verify_token("still-valid-token")
+
+    assert len(verifier._cache._entries) == 0
+
+    recovered = await verifier.verify_token("still-valid-token")
+    assert recovered is not None
+    assert recovered.scopes == ["user"]
+    assert client.get.call_count == 4
+
+
+@pytest.mark.parametrize("status_code", [500, 503])
+async def test_unverified_scopes_are_not_cached_without_required_scopes(status_code):
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(status_code),
+        _github_user_response(),
+        _response(200, headers={"x-oauth-scopes": "repo, user"}),
+    ]
+    verifier = GitHubTokenVerifier(cache_ttl_seconds=300, http_client=client)
+
+    degraded = await verifier.verify_token("still-valid-token")
+    assert degraded is not None
+    assert degraded.scopes == []
+    assert len(verifier._cache._entries) == 0
+
+    recovered = await verifier.verify_token("still-valid-token")
+    assert recovered is not None
+    assert recovered.scopes == ["repo", "user"]
+    assert client.get.call_count == 4
+
+
+async def test_scope_transport_failure_does_not_grant_user_scope_and_recovers():
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        httpx2.ConnectError(
+            "simulated scope transport failure",
+            request=httpx2.Request("GET", "https://api.github.com/user/repos"),
+        ),
+        _github_user_response(),
+        _response(200, headers={"x-oauth-scopes": "user"}),
+    ]
+    verifier = GitHubTokenVerifier(
+        required_scopes=["user"],
+        cache_ttl_seconds=300,
+        http_client=client,
+    )
+
+    with pytest.raises(TokenVerificationError, match="scope verification unavailable"):
+        await verifier.verify_token("still-valid-token")
+
+    assert len(verifier._cache._entries) == 0
+
+    recovered = await verifier.verify_token("still-valid-token")
+    assert recovered is not None
+    assert recovered.scopes == ["user"]
+    assert client.get.call_count == 4
+
+
+async def test_scope_401_is_still_an_invalid_token():
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(401, "Bad credentials"),
+    ]
+    verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
+
+    assert await verifier.verify_token("revoked-token") is None
+
+
+@pytest.mark.parametrize("status_code", [403, 404])
+async def test_scope_permanent_client_error_is_an_invalid_token(status_code):
+    client = AsyncMock()
+    client.get.side_effect = [_github_user_response(), _response(status_code)]
+    verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
+
+    assert await verifier.verify_token("rejected-token") is None
+
+
+async def test_github_app_token_without_scope_header_has_user_scope():
+    """GitHub App user tokens send no X-OAuth-Scopes; the default required scope still passes."""
+    client = AsyncMock()
+    client.get.side_effect = [_github_user_response(), _response(200, headers={})]
+    verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
+
+    result = await verifier.verify_token("github-app-user-token")
+
+    assert result is not None
+    assert result.scopes == ["user"]
+    assert result.subject == "12345"
+
+
+async def test_successful_scope_verification_is_cached():
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(200, headers={"x-oauth-scopes": "user"}),
+    ]
+    verifier = GitHubTokenVerifier(
+        required_scopes=["user"],
+        cache_ttl_seconds=300,
+        http_client=client,
+    )
+
+    first = await verifier.verify_token("valid-token")
+    second = await verifier.verify_token("valid-token")
+
+    assert first is not None
+    assert first.scopes == ["user"]
+    assert second is not None
+    assert second.scopes == ["user"]
+    assert second.client_id == first.client_id
+    assert second is not first
+    assert client.get.call_count == 2
+
+
+class UnavailableVerifier(TokenVerifier):
+    async def verify_token(self, token: str):
+        raise TokenVerificationError("upstream verifier unavailable")
+
+
+async def test_oauth_proxy_propagates_operational_verification_error():
+    proxy = OAuthProxy(
+        upstream_authorization_endpoint="https://idp.example.com/authorize",
+        upstream_token_endpoint="https://idp.example.com/token",
+        upstream_client_id="upstream-client",
+        upstream_client_secret="upstream-secret",
+        token_verifier=UnavailableVerifier(),
+        base_url="https://proxy.example.com",
+        jwt_signing_key="test-signing-key",
+        client_storage=MemoryStore(),
+    )
+    fastmcp_token = await _store_proxy_access_token(proxy, upstream_scope="user")
+
+    with pytest.raises(TokenVerificationError, match="upstream verifier unavailable"):
+        await proxy.load_access_token(fastmcp_token)
+
+
+async def test_github_provider_scope_outage_propagates_operational_error():
+    client = AsyncMock()
+    client.get.side_effect = [_github_user_response(), _response(503)]
+    provider = GitHubProvider(
+        client_id="github-client",
+        client_secret="github-secret",
+        base_url="https://proxy.example.com",
+        required_scopes=["repo"],
+        http_client=client,
+        jwt_signing_key="test-signing-key",
+        client_storage=MemoryStore(),
+    )
+    fastmcp_token = await _store_proxy_access_token(provider, upstream_scope="repo")
+
+    with pytest.raises(TokenVerificationError, match="503"):
+        await provider.load_access_token(fastmcp_token)
+
+
+async def test_github_provider_secondary_rate_limit_recovers():
+    client = AsyncMock()
+    client.get.side_effect = [
+        _response(
+            403,
+            headers={"x-ratelimit-remaining": "42"},
+            json_data={"message": "You have exceeded a secondary rate limit."},
+        ),
+        _github_user_response(),
+        _response(200, headers={"x-oauth-scopes": "user"}),
+    ]
+    provider = GitHubProvider(
+        client_id="github-client",
+        client_secret="github-secret",
+        base_url="https://proxy.example.com",
+        required_scopes=["user"],
+        http_client=client,
+        jwt_signing_key="test-signing-key",
+        client_storage=MemoryStore(),
+    )
+    fastmcp_token = await _store_proxy_access_token(provider, upstream_scope="user")
+
+    with pytest.raises(TokenVerificationError, match="HTTP 403"):
+        await provider.load_access_token(fastmcp_token)
+
+    recovered = await provider.load_access_token(fastmcp_token)
+    assert recovered is not None
+    assert client.get.call_count == 3
+
+
+async def test_github_provider_scope_401_stays_invalid():
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(401, "Bad credentials"),
+    ]
+    provider = GitHubProvider(
+        client_id="github-client",
+        client_secret="github-secret",
+        base_url="https://proxy.example.com",
+        required_scopes=["repo"],
+        http_client=client,
+        jwt_signing_key="test-signing-key",
+        client_storage=MemoryStore(),
+    )
+    fastmcp_token = await _store_proxy_access_token(provider, upstream_scope="repo")
+
+    assert await provider.load_access_token(fastmcp_token) is None

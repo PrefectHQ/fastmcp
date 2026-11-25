@@ -144,9 +144,7 @@ def worker_admission(
     return admission, parent.id, parent.parameters, observation
 
 
-def resolve_assessment(
-    admission: Admission, run_id: UUID, parameters: dict, observation: dict
-) -> tuple[str, dict] | None:
+def resolve_assessment(admission: Admission, run_id: UUID) -> tuple[str, dict] | None:
     plan = admission.runtime.triage_plan
     if plan is None:
         raise ValueError("Native triage is not configured")

@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 from .auth import (
     OAuthProvider,
     TokenVerifier,
+    TokenVerificationError,
     RemoteAuthProvider,
     MultiAuth,
     AccessToken,
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
 
 
 # --- Lazy imports for performance (see #3292) ---
-# These providers pull in heavy deps (authlib, cryptography, key_value.aio,
+# These providers pull in heavy deps (joserfc, cryptography, key_value.aio,
 # beartype) that most users never need. Keeping them behind __getattr__
 # avoids ~150ms+ of import overhead for the common server-only case.
 # Do not convert these back to top-level imports.
@@ -75,6 +76,7 @@ __all__ = [
     "OIDCProxy",
     "RemoteAuthProvider",
     "StaticTokenVerifier",
+    "TokenVerificationError",
     "TokenVerifier",
     "require_roles",
     "require_scopes",

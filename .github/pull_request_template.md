@@ -14,12 +14,12 @@ it in the final merged commit. See the contributor-credit policy in the guide. -
 
 - [ ] Bug fix (simple, well-scoped fix for a clearly broken behavior)
 - [ ] Documentation improvement
-- [ ] Enhancement (maintainers typically implement enhancements — see [CONTRIBUTING.md](../CONTRIBUTING.md))
+- [ ] Enhancement (maintainers typically implement enhancements — see [CONTRIBUTING.md](https://github.com/PrefectHQ/fastmcp/blob/main/CONTRIBUTING.md))
 
 ## Checklist
 
 - [ ] This PR addresses an existing issue (or fixes a self-evident bug)
-- [ ] I have read [CONTRIBUTING.md](../CONTRIBUTING.md)
+- [ ] I have read [CONTRIBUTING.md](https://github.com/PrefectHQ/fastmcp/blob/main/CONTRIBUTING.md)
 - [ ] I have added tests that cover my changes
 - [ ] I have run `uv run prek run --all-files` and all checks pass
 - [ ] I have self-reviewed my changes

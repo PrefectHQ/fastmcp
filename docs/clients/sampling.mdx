@@ -19,9 +19,10 @@ The handler receives the conversation the server wants completed, the parameters
 
 ```python
 from pathlib import Path
+
 from fastmcp import Client
-from fastmcp.client.sampling import SamplingMessage, SamplingParams, RequestContext
-from mcp.types import TextContent
+from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
+from mcp_types import TextContent
 
 
 async def sampling_handler(
@@ -55,8 +56,8 @@ Everything the server sends arrives in the first two arguments. The messages are
   The role of the message
 </ResponseField>
 
-<ResponseField name="content" type="TextContent | ImageContent | AudioContent">
-  The content of the message. TextContent has a `.text` attribute.
+<ResponseField name="content" type="TextContent | ImageContent | AudioContent | ToolUseContent | ToolResultContent | list[...]">
+  The content of the message: one content block or a list of them. `TextContent` has a `.text` attribute; tool-use and tool-result blocks appear only in requests that carry tools.
 </ResponseField>
 </Card>
 
@@ -86,7 +87,7 @@ Everything the server sends arrives in the first two arguments. The messages are
 </ResponseField>
 
 <ResponseField name="tool_choice" type="ToolChoice | None">
-  Tool usage behavior (`auto`, `required`, or `none`)
+  Tool usage behavior; its `mode` is `auto`, `required`, or `none`
 </ResponseField>
 </Card>
 
@@ -99,11 +100,13 @@ Writing the provider call yourself is rarely worth it. FastMCP ships handlers fo
 <VersionBadge version="2.11.0" />
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     sampling_handler=OpenAISamplingHandler(default_model="gpt-4o"),
 )
 ```
@@ -111,12 +114,14 @@ client = Client(
 Point the handler at any OpenAI-compatible API, including a local model server, by passing your own provider client:
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 from openai import AsyncOpenAI
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     sampling_handler=OpenAISamplingHandler(
         default_model="llama-3.1-70b",
         client=AsyncOpenAI(base_url="http://localhost:8000/v1"),
@@ -133,11 +138,13 @@ Install the OpenAI handler with `pip install 'fastmcp[openai]'`.
 <VersionBadge version="2.14.1" />
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.sampling.handlers.anthropic import AnthropicSamplingHandler
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     sampling_handler=AnthropicSamplingHandler(default_model="claude-sonnet-4-5"),
 )
 ```
@@ -153,11 +160,13 @@ When upgrading to Anthropic SDK 1.x, custom HTTP clients passed to `AsyncAnthrop
 <VersionBadge version="3.1.0" />
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.sampling.handlers.google_genai import GoogleGenaiSamplingHandler
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     sampling_handler=GoogleGenaiSamplingHandler(default_model="gemini-2.0-flash"),
 )
 ```
@@ -172,21 +181,19 @@ The [source of these handlers](https://github.com/PrefectHQ/fastmcp/tree/main/fa
 
 A sampling request can carry tools. When it does, your handler passes them to the model and returns whatever comes back, tool calls included — the server executes the tools itself and sends a follow-up sampling request with the results if it needs another turn. Your handler never runs a tool.
 
-Registering any `sampling_handler` advertises full sampling support, tools included. A handler that only generates text should say so, so servers know not to send tools it will drop:
+Registering a `sampling_handler` advertises basic sampling only, and the protocol lets a server send tools only to a client that declares the `sampling.tools` capability. When your handler can pass tools to its model, as the built-in handlers can, declare it with `sampling_capabilities`:
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
-from mcp.types import SamplingCapability
-
-
-async def text_only_handler(messages, params, context) -> str:
-    return "Generated response based on the messages"
-
+from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
+from mcp_types import SamplingCapability, SamplingToolsCapability
 
 client = Client(
-    "my_mcp_server.py",
-    sampling_handler=text_only_handler,
-    sampling_capabilities=SamplingCapability(),
+    Path("my_mcp_server.py"),
+    sampling_handler=OpenAISamplingHandler(default_model="gpt-4o"),
+    sampling_capabilities=SamplingCapability(tools=SamplingToolsCapability()),
 )
 ```
 

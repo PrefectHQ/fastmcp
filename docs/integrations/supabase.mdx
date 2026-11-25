@@ -50,7 +50,7 @@ In your Supabase Dashboard:
 
 ### Step 3: FastMCP Configuration
 
-Create your FastMCP server using the `SupabaseProvider`:
+Create your FastMCP server using the `SupabaseProvider`. It verifies tokens against the JWKS published under `{project_url}/auth/v1`; pass `auth_route` if a self-hosted Supabase Auth instance serves a different path.
 
 ```python server.py
 from fastmcp import FastMCP

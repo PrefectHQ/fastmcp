@@ -8,7 +8,12 @@ from prefect import task
 from flows.agentic_claims import claim_work
 from flows.agentic_intake import held
 from flows.agentic_review_app import review_client
-from flows.agentic_review_publication import before_delivery, post_review, review_body
+from flows.agentic_review_publication import (
+    EvidenceChanged,
+    before_delivery,
+    post_review,
+    review_body,
+)
 from flows.agentic_stack import digest
 from flows.agentic_stack_policy import Batch, Group, review_revision
 from flows.agentic_stack_runtime import (
@@ -43,11 +48,14 @@ def deliver_reviews(
         raise ValueError("Review publication is not configured")
     number = outcome["issue_number"]
     independent = saved(owner, f"{batch.id}-issue-{number}-triage-review")
-    if (
-        independent is None
-        or independent["run_id"] != outcome["triage_review_run_id"]
-        or independent["result"] != outcome["adversarial_review"]
-    ):
+    if independent is None:
+        raise ValueError("Independent review record is not readable yet")
+    if independent["run_id"] != outcome["triage_review_run_id"]:
+        raise ValueError(
+            f"Review came from run {outcome['triage_review_run_id']}, "
+            f"but the retained independent review is run {independent['run_id']}"
+        )
+    if independent["result"] != outcome["adversarial_review"]:
         raise ValueError("Review differs from retained independent evidence")
     verified = outcome.get("verification", [])
     if len({v["pr_number"] for v in verified}) != len(verified):
@@ -86,27 +94,43 @@ def deliver_reviews(
                     or check["head_sha"] != pr["head_sha"]
                     or check["baseline_sha"] != evidence["base_sha"]
                 ):
-                    raise ValueError(
+                    raise EvidenceChanged(
                         "Contribution verification is unavailable or stale"
                     )
-                revision = digest([check["head_sha"], check["baseline_sha"], app.slug])[
-                    :24
-                ]
+                body = review_body(
+                    pr["number"], check["head_sha"], check["baseline_sha"], outcome
+                )
+                revision = digest(
+                    [check["head_sha"], check["baseline_sha"], app.slug, body]
+                )[:24]
                 key = f"{batch.id}-pr-{pr['number']}-review-{revision}"
                 receipt = saved(owner, key)
-                if receipt is not None and any(
-                    receipt.get(name) != value
-                    for name, value in {
-                        "pr_number": pr["number"],
-                        "head_sha": check["head_sha"],
-                        "baseline_sha": check["baseline_sha"],
-                        "reviewer_login": app.slug + "[bot]",
-                    }.items()
-                ):
-                    raise ValueError(
-                        "Retained publication receipt has a different revision"
+                suppressed = (
+                    receipt is not None
+                    and receipt.get("status") == "unchanged_feedback"
+                )
+                if receipt is not None:
+                    expected = (
+                        {
+                            "pr_number": pr["number"],
+                            "verified_head_sha": check["head_sha"],
+                            "verified_baseline_sha": check["baseline_sha"],
+                        }
+                        if suppressed
+                        else {
+                            "pr_number": pr["number"],
+                            "head_sha": check["head_sha"],
+                            "baseline_sha": check["baseline_sha"],
+                            "reviewer_login": app.slug + "[bot]",
+                        }
                     )
-                if receipt is None:
+                    if any(
+                        receipt.get(name) != value for name, value in expected.items()
+                    ):
+                        raise ValueError(
+                            "Retained publication receipt has a different revision"
+                        )
+                if receipt is None or suppressed:
 
                     def guard() -> None:
                         owner_alive(owner, batch.expires_at)
@@ -116,13 +140,10 @@ def deliver_reviews(
                         ) != review_revision(
                             before_delivery(evidence, receipts, app.slug + "[bot]")
                         ):
-                            raise ValueError(
+                            raise EvidenceChanged(
                                 "Issue or contribution changed after review"
                             )
 
-                    body = review_body(
-                        pr["number"], check["head_sha"], check["baseline_sha"], outcome
-                    )
                     with claim_work(
                         [f"fastmcp-pr-{pr['number']}-review"], owner, batch.expires_at
                     ):
@@ -136,7 +157,10 @@ def deliver_reviews(
                             guard,
                         )
                     record(owner, key, receipt)
-                receipts.append(receipt)
+                if receipt["status"] == "unchanged_feedback":
+                    skipped.append(receipt)
+                else:
+                    receipts.append(receipt)
         except (
             ValueError,
             RuntimeError,
@@ -144,6 +168,8 @@ def deliver_reviews(
             httpx.HTTPError,
             OSError,
         ) as error:
+            if isinstance(error, EvidenceChanged):
+                raise EvidenceChanged(str(error), receipts) from error
             if not receipts:
                 raise
             # Keep reviews that are already public visible to the queue.

@@ -26,14 +26,14 @@ With the configuration file in place, you can run the server in several ways:
 
 ```bash
 # Auto-detect fastmcp.json in current directory
-cd examples/mcp_server_config_demo
+cd examples/fastmcp_config_demo
 fastmcp run
 
 # Or specify the config file explicitly
-fastmcp run examples/mcp_server_config_demo/fastmcp.json
+fastmcp run examples/fastmcp_config_demo/fastmcp.json
 
 # Or use development mode with the Inspector UI
-fastmcp dev examples/mcp_server_config_demo/fastmcp.json
+fastmcp dev inspector examples/fastmcp_config_demo/fastmcp.json
 ```
 
 ## Benefits
@@ -48,7 +48,7 @@ fastmcp dev examples/mcp_server_config_demo/fastmcp.json
 
 The `fastmcp.json` file supports three main sections:
 
-1. **entrypoint** (required): The Python file containing your server
+1. **source** (required): Where the server lives (`path`, optional `entrypoint`)
 2. **environment** (optional): Python version and dependencies
 3. **deployment** (optional): Runtime settings like transport and logging
 

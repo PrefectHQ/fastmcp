@@ -280,6 +280,8 @@ async def test_list_list_multi_select_untitled():
         assert value_schema["type"] == "array"
         assert "enum" in value_schema["items"]
         assert value_schema["items"]["enum"] == ["bug", "feature", "documentation"]
+        # Required by the 2025-11-25 multi-select schema; validating clients reject it otherwise
+        assert value_schema["items"]["type"] == "string"
 
         return ElicitResult(action="accept", content={"value": ["bug", "feature"]})
 

@@ -1,0 +1,205 @@
+"""Recursive objects with the same display name must retain their own fields."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Any
+
+import pytest
+from pydantic import BaseModel, TypeAdapter
+
+from fastmcp import Client, FastMCP
+from fastmcp.utilities import json_schema_type
+
+
+@pytest.fixture(autouse=True)
+def isolated_class_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        json_schema_type,
+        "_classes",
+        json_schema_type._LRUCache(max_entries=5000, max_weight=4_000_000),
+    )
+    monkeypatch.setattr(
+        json_schema_type,
+        "_adapters",
+        json_schema_type._LRUCache(max_entries=1000, max_weight=4_000_000),
+    )
+
+
+@pytest.mark.parametrize("model", [False, True], ids=["dataclass", "pydantic"])
+@pytest.mark.parametrize("titles", [False, True], ids=["untitled", "same-title"])
+def test_mutual_recursion_keeps_distinct_types(model: bool, titles: bool) -> None:
+    person: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "pet": {"anyOf": [{"$ref": "#/$defs/Pet"}, {"type": "null"}]},
+        },
+        "required": ["name"],
+    }
+    pet: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "owner": {"anyOf": [{"$ref": "#/$defs/Person"}, {"type": "null"}]},
+        },
+        "required": ["name"],
+    }
+    for definition in (person, pet):
+        if model:
+            definition["additionalProperties"] = True
+        if titles:
+            definition["title"] = "Record"
+    schema = {
+        "type": "object",
+        "properties": {"person": {"$ref": "#/$defs/Person"}},
+        "$defs": {"Person": person, "Pet": pet},
+    }
+    original = deepcopy(schema)
+    generated = json_schema_type.json_schema_to_type(schema)
+    result = TypeAdapter[Any](generated).validate_python(
+        {
+            "person": {
+                "name": "Ann",
+                "pet": {
+                    "name": "Rex",
+                    "owner": {"name": "Bob", "pet": {"name": "Max"}},
+                },
+            }
+        }
+    )
+
+    assert result.person.pet.owner.pet.name == "Max"
+    assert result.person.pet.owner.pet.owner is None
+    assert type(result.person.pet.owner) is type(result.person)
+    assert type(result.person.pet.owner.pet) is type(result.person.pet)
+    assert type(result.person).__name__ == ("Record" if titles else "Root_2")
+    assert schema == original
+    assert json_schema_type.json_schema_to_type(schema) is generated
+
+
+@pytest.mark.parametrize("model", [False, True], ids=["dataclass", "pydantic"])
+def test_mutual_recursion_with_root_reference(model: bool) -> None:
+    definitions: dict[str, Any] = {
+        "A": {
+            "type": "object",
+            "properties": {
+                "b": {"$ref": "#/$defs/B"},
+                "doc": {"$ref": "#"},
+            },
+        },
+        "B": {
+            "type": "object",
+            "properties": {"a": {"$ref": "#/$defs/A"}},
+        },
+    }
+    if model:
+        for definition in definitions.values():
+            definition["additionalProperties"] = True
+    generated = json_schema_type.json_schema_to_type(
+        {
+            "type": "object",
+            "title": "Doc",
+            "properties": {"first": {"$ref": "#/$defs/A"}},
+            "$defs": definitions,
+        }
+    )
+    result = TypeAdapter[Any](generated).validate_python(
+        {"first": {"b": {"a": {"doc": {}}}}}
+    )
+    assert type(result.first.b.a) is type(result.first)
+    assert type(result.first.b.a.doc) is generated
+    assert result.first.b.a.doc.first is None
+
+
+def test_recursive_default_hydrates_after_resolution() -> None:
+    generated = json_schema_type.json_schema_to_type(
+        {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {"node": {"$ref": "#/$defs/Node", "default": {"name": "x"}}},
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "child": {"$ref": "#/$defs/Node"},
+                    },
+                }
+            },
+        }
+    )
+    result = TypeAdapter[Any](generated).validate_python({})
+    assert not isinstance(result.node, dict)
+    assert result.node.name == "x"
+    assert result.node.child is None
+
+
+def test_recursive_default_on_a_reserved_property_name() -> None:
+    generated = json_schema_type.json_schema_to_type(
+        {
+            "type": "object",
+            "properties": {"node": {"$ref": "#/$defs/Node"}},
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "name": {"type": "string"},
+                        "_children": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Node"},
+                            "default": [],
+                        },
+                    },
+                }
+            },
+        }
+    )
+    result = TypeAdapter[Any](generated).validate_python({"node": {"name": "x"}})
+    assert result.node.field_children == []
+
+
+class HydrationPerson(BaseModel):
+    name: str
+    pet: HydrationPet | None = None
+
+
+class HydrationPet(BaseModel):
+    name: str
+    owner: HydrationPerson | None = None
+
+
+HydrationPerson.model_rebuild()
+HydrationPet.model_rebuild()
+
+
+async def test_client_hydrates_mutually_recursive_models() -> None:
+    server = FastMCP()
+
+    @server.tool
+    def get_person() -> HydrationPerson:
+        return HydrationPerson(
+            name="Ann",
+            pet=HydrationPet(
+                name="Rex",
+                owner=HydrationPerson(name="Bob", pet=HydrationPet(name="Max")),
+            ),
+        )
+
+    async with Client(server) as client:
+        first = await client.call_tool("get_person", {})
+        second = await client.call_tool("get_person", {})
+
+    for result in (first, second):
+        assert result.structured_content == {
+            "name": "Ann",
+            "pet": {
+                "name": "Rex",
+                "owner": {"name": "Bob", "pet": {"name": "Max", "owner": None}},
+            },
+        }
+        assert result.data.pet.owner.pet.name == "Max"
+        assert result.data.pet.owner.pet.owner is None
+        assert type(result.data.pet.owner.pet) is type(result.data.pet)
+    assert type(first.data) is type(second.data)

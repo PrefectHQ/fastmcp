@@ -45,7 +45,7 @@ class TestCamelCaseBridge:
     def test_tool_input_schema_bridged(self):
         tool = mcp_types.Tool(name="t", input_schema={"type": "object"})
         with pytest.warns(FastMCPDeprecationWarning):
-            assert tool.inputSchema == {"type": "object"}  # ty: ignore[unresolved-attribute]
+            assert tool.inputSchema == {"type": "object"}  # ty: ignore[missing-attribute]
 
     def test_tool_output_schema_bridged(self):
         tool = mcp_types.Tool(
@@ -54,7 +54,7 @@ class TestCamelCaseBridge:
             output_schema={"type": "string"},
         )
         with pytest.warns(FastMCPDeprecationWarning):
-            assert tool.outputSchema == {"type": "string"}  # ty: ignore[unresolved-attribute]
+            assert tool.outputSchema == {"type": "string"}  # ty: ignore[missing-attribute]
 
     @pytest.mark.parametrize(
         ("camel", "snake", "value"),
@@ -73,44 +73,44 @@ class TestCamelCaseBridge:
     def test_call_tool_result_is_error_bridged(self):
         result = mcp_types.CallToolResult(content=[], is_error=True)
         with pytest.warns(FastMCPDeprecationWarning):
-            assert result.isError is True  # ty: ignore[unresolved-attribute]
+            assert result.isError is True  # ty: ignore[missing-attribute]
 
     def test_call_tool_result_structured_content_bridged(self):
         result = mcp_types.CallToolResult(content=[], structured_content={"a": 1})
         with pytest.warns(FastMCPDeprecationWarning):
-            assert result.structuredContent == {"a": 1}  # ty: ignore[unresolved-attribute]
+            assert result.structuredContent == {"a": 1}  # ty: ignore[missing-attribute]
 
     def test_resource_mime_type_bridged(self):
         resource = mcp_types.Resource(name="r", uri="file:///x", mime_type="text/plain")
         with pytest.warns(FastMCPDeprecationWarning):
-            assert resource.mimeType == "text/plain"  # ty: ignore[unresolved-attribute]
+            assert resource.mimeType == "text/plain"  # ty: ignore[missing-attribute]
 
     def test_resource_template_uri_template_bridged(self):
         template = mcp_types.ResourceTemplate(name="rt", uri_template="file:///{id}")
         with pytest.warns(FastMCPDeprecationWarning):
-            assert template.uriTemplate == "file:///{id}"  # ty: ignore[unresolved-attribute]
+            assert template.uriTemplate == "file:///{id}"  # ty: ignore[missing-attribute]
 
     def test_completion_has_more_bridged(self):
         completion = mcp_types.Completion(values=["a"], has_more=True)
         with pytest.warns(FastMCPDeprecationWarning):
-            assert completion.hasMore is True  # ty: ignore[unresolved-attribute]
+            assert completion.hasMore is True  # ty: ignore[missing-attribute]
 
     def test_list_tools_result_next_cursor_bridged(self):
         result = mcp_types.ListToolsResult(tools=[], next_cursor="abc")
         with pytest.warns(FastMCPDeprecationWarning):
-            assert result.nextCursor == "abc"  # ty: ignore[unresolved-attribute]
+            assert result.nextCursor == "abc"  # ty: ignore[missing-attribute]
 
     def test_sampling_params_max_tokens_bridged(self):
         params = mcp_types.CreateMessageRequestParams(messages=[], max_tokens=100)
         with pytest.warns(FastMCPDeprecationWarning):
-            assert params.maxTokens == 100  # ty: ignore[unresolved-attribute]
+            assert params.maxTokens == 100  # ty: ignore[missing-attribute]
 
     def test_elicit_form_params_requested_schema_bridged(self):
         params = mcp_types.ElicitRequestFormParams(
             message="hi", requested_schema={"type": "object", "properties": {}}
         )
         with pytest.warns(FastMCPDeprecationWarning):
-            assert params.requestedSchema == {"type": "object", "properties": {}}  # ty: ignore[unresolved-attribute]
+            assert params.requestedSchema == {"type": "object", "properties": {}}  # ty: ignore[missing-attribute]
 
 
 class TestWarnOnce:
@@ -119,9 +119,9 @@ class TestWarnOnce:
             warnings.simplefilter("always")
             t1 = mcp_types.Tool(name="a", input_schema={"type": "object"})
             t2 = mcp_types.Tool(name="b", input_schema={"type": "string"})
-            _ = t1.inputSchema  # ty: ignore[unresolved-attribute]
-            _ = t2.inputSchema  # ty: ignore[unresolved-attribute]
-            _ = t1.inputSchema  # ty: ignore[unresolved-attribute]
+            _ = t1.inputSchema  # ty: ignore[missing-attribute]
+            _ = t2.inputSchema  # ty: ignore[missing-attribute]
+            _ = t1.inputSchema  # ty: ignore[missing-attribute]
         deprecations = [
             w for w in caught if issubclass(w.category, FastMCPDeprecationWarning)
         ]
@@ -135,8 +135,8 @@ class TestWarnOnce:
                 input_schema={"type": "object"},
                 output_schema={"type": "string"},
             )
-            _ = tool.inputSchema  # ty: ignore[unresolved-attribute]
-            _ = tool.outputSchema  # ty: ignore[unresolved-attribute]
+            _ = tool.inputSchema  # ty: ignore[missing-attribute]
+            _ = tool.outputSchema  # ty: ignore[missing-attribute]
         deprecations = [
             w for w in caught if issubclass(w.category, FastMCPDeprecationWarning)
         ]
@@ -149,7 +149,7 @@ class TestModelRoundTrip:
         copied = tool.model_copy()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            assert copied.inputSchema == {"type": "object"}  # ty: ignore[unresolved-attribute]
+            assert copied.inputSchema == {"type": "object"}  # ty: ignore[missing-attribute]
 
     def test_survives_model_validate(self):
         tool = mcp_types.Tool.model_validate(
@@ -157,7 +157,7 @@ class TestModelRoundTrip:
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            assert tool.inputSchema == {"type": "object"}  # ty: ignore[unresolved-attribute]
+            assert tool.inputSchema == {"type": "object"}  # ty: ignore[missing-attribute]
             assert tool.input_schema == {"type": "object"}
 
 
@@ -175,7 +175,7 @@ class TestGuards:
         _compat.install()
         tool = mcp_types.Tool(name="t", input_schema={"type": "object"})
         with pytest.warns(FastMCPDeprecationWarning):
-            assert tool.inputSchema == {"type": "object"}  # ty: ignore[unresolved-attribute]
+            assert tool.inputSchema == {"type": "object"}  # ty: ignore[missing-attribute]
 
 
 class TestSettingOff:
@@ -185,7 +185,7 @@ class TestSettingOff:
         monkeypatch.setattr(fastmcp.settings, "mcp_camelcase_compat", False)
         tool = mcp_types.Tool(name="t", input_schema={"type": "object"})
         with pytest.raises(AttributeError):
-            _ = tool.inputSchema  # ty: ignore[unresolved-attribute]
+            _ = tool.inputSchema  # ty: ignore[missing-attribute]
 
     def test_setting_off_attribute_error_message(self, monkeypatch):
         monkeypatch.setattr(fastmcp.settings, "mcp_camelcase_compat", False)
@@ -194,7 +194,7 @@ class TestSettingOff:
             AttributeError,
             match=r"'Tool' object has no attribute 'inputSchema'",
         ):
-            _ = tool.inputSchema  # ty: ignore[unresolved-attribute]
+            _ = tool.inputSchema  # ty: ignore[missing-attribute]
 
     def test_runtime_toggle_on_off_on(self, monkeypatch):
         # The bridge honours the live setting on every read: on -> off -> on.
@@ -202,18 +202,18 @@ class TestSettingOff:
 
         # On (default): bridged read works and warns.
         with pytest.warns(FastMCPDeprecationWarning):
-            assert tool.inputSchema == {"type": "object"}  # ty: ignore[unresolved-attribute]
+            assert tool.inputSchema == {"type": "object"}  # ty: ignore[missing-attribute]
 
         # Off: same attribute now raises.
         monkeypatch.setattr(fastmcp.settings, "mcp_camelcase_compat", False)
         with pytest.raises(AttributeError):
-            _ = tool.inputSchema  # ty: ignore[unresolved-attribute]
+            _ = tool.inputSchema  # ty: ignore[missing-attribute]
 
         # Back on: resolves again (warn-once may have fired already, so ignore).
         monkeypatch.setattr(fastmcp.settings, "mcp_camelcase_compat", True)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            assert tool.inputSchema == {"type": "object"}  # ty: ignore[unresolved-attribute]
+            assert tool.inputSchema == {"type": "object"}  # ty: ignore[missing-attribute]
 
 
 class TestExceptionAlias:

@@ -5,8 +5,6 @@ description: Connect FastMCP servers to the Google Gemini SDK
 icon: message-code
 ---
 
-import { VersionBadge } from "/snippets/version-badge.mdx"
-
 Google's Gemini API includes built-in support for MCP servers in their Python and JavaScript SDKs, allowing you to connect directly to MCP servers and use their tools seamlessly with Gemini models.
 
 ## Gemini Python SDK
@@ -43,7 +41,7 @@ if __name__ == "__main__":
 ### Call the Server
 
 
-To use the Gemini API with MCP, you'll need to install the Google Generative AI SDK:
+To use the Gemini API with MCP, you'll need to install the Google Gen AI SDK:
 
 ```bash
 pip install google-genai
@@ -57,7 +55,7 @@ export GEMINI_API_KEY="your-api-key"
 
 Gemini's SDK interacts directly with the MCP client session. To call the server, you'll need to instantiate a FastMCP client, enter its connection context, and pass the client session to the Gemini SDK.
 
-```python {5, 9, 15}
+```python {6, 10, 16}
 from pathlib import Path
 from fastmcp import Client
 from google import genai
@@ -66,7 +64,7 @@ import asyncio
 mcp_client = Client(Path("server.py"))
 gemini_client = genai.Client()
 
-async def main():    
+async def main():
     async with mcp_client:
         response = await gemini_client.aio.models.generate_content(
             model="gemini-2.0-flash",
@@ -99,7 +97,7 @@ from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
 
 mcp_client = Client(
-    "https://my-server.com/mcp/",
+    "https://my-server.com/mcp",
     auth=BearerAuth("<your-token>"),
 )
 ```

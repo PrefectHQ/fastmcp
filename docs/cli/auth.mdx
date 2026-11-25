@@ -45,7 +45,7 @@ By default, the generated document includes a placeholder `client_id`. Update it
 | Logo URI | `--logo-uri` | Client's logo URL |
 | Scope | `--scope` | Space-separated list of scopes |
 | Output | `--output`, `-o` | Save to file (default: stdout) |
-| Pretty | `--pretty` | Pretty-print JSON (default: true) |
+| Pretty | `--pretty` | Pretty-print JSON (default: true; pass `--pretty=false` for compact output) |
 
 ### Example
 
@@ -72,7 +72,7 @@ The validator checks that the URL is valid (HTTPS, non-root path), the document 
 
 On success:
 
-```
+```text
 → Fetching https://myapp.example.com/oauth/client.json...
 ✓ Valid CIMD document
 

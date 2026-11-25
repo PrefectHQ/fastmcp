@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from fastmcp.server.providers.skills import (
     ClaudeSkillsProvider,
     CodexSkillsProvider,
@@ -13,6 +15,12 @@ from fastmcp.server.providers.skills import (
     GooseSkillsProvider,
     OpenCodeSkillsProvider,
     VSCodeSkillsProvider,
+)
+
+# These providers are deprecated; tests/skills/test_deprecated_paths.py checks
+# the warnings.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::fastmcp._warnings.FastMCPDeprecationWarning"
 )
 
 

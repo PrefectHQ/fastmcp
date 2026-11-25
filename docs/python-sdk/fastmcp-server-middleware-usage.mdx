@@ -1,0 +1,88 @@
+---
+title: usage
+sidebarTitle: usage
+---
+
+# `fastmcp.server.middleware.usage`
+
+
+Per-user, per-component usage metrics.
+
+FastMCP's spans already carry the user, tool, latency and error for every
+request, but traces are often sampled, which makes them a poor source for
+usage counts. `UsageMiddleware` records the same facts as an OpenTelemetry
+metric, independently of trace sampling.
+
+
+## Classes
+
+### `UsageMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/usage.py#L69" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Record tool and prompt usage as an OpenTelemetry metric.
+
+Each `tools/call` and `prompts/get` request is recorded once on the
+`mcp.server.operation.duration` histogram (seconds), following the
+OpenTelemetry MCP semantic conventions for that metric. The histogram's
+count is the number of calls, so one instrument answers "who called what,
+how often, how fast, and how often it failed".
+
+Attributes on each data point:
+
+- `mcp.method.name`: `tools/call` or `prompts/get`
+- `gen_ai.tool.name` or `gen_ai.prompt.name`: the component name the
+  client asked for, omitted for routing and access failures
+- `gen_ai.operation.name`: `execute_tool`, on tool calls only
+- `error.type`: present only when the call failed. A JSON-RPC error
+  reports its code, an error tool result reports `tool_error`, and a
+  cancelled or timed-out request reports `cancelled`
+- `rpc.status_code`: the JSON-RPC error code, when the response is a
+  JSON-RPC error. Codes that the conventions classify as client errors,
+  such as `-32602`, are reported here without `error.type`
+- `mcp.protocol.version`, `network.transport`, `network.protocol.name`
+  and `network.protocol.version`: when the request came over a transport
+- `fastmcp.server.name`: the server handling the request
+- `enduser.pseudo.id` (default) or `enduser.id`: the authenticated
+  user, when the server has auth (see `user_id`)
+
+The duration runs from when the request reaches this middleware until the
+result returns to it, so add `UsageMiddleware` first, before error
+handling and any middleware that can answer without calling the next
+handler. In that position the duration comes as close as middleware can to
+the conventions' receipt-to-response definition, and the error
+classification matches the response the client receives.
+
+FastMCP depends only on the OpenTelemetry API, so this middleware records
+nothing until you configure an OpenTelemetry SDK `MeterProvider` with an
+exporter.
+
+Background tasks measure submission, not eventual execution or failure.
+Guard continuations count as separate requests.
+
+**Args:**
+- `user_id`: How to report the authenticated user. `"hashed"` (default)
+reports a keyed SHA-256 digest as `enduser.pseudo.id`, so usage
+can be grouped per user without exporting the identity itself.
+`"raw"` reports the token subject (or client ID) as `enduser.id`.
+`"omit"` reports no user attribute.
+- `user_id_salt`: Secret key for the `"hashed"` digest. Required when
+`user_id="hashed"`, because an unkeyed digest of a known
+identifier such as an email address can be recomputed and
+matched. Ignored for `"raw"` and `"omit"`.
+- `meter_provider`: Meter provider to use. Defaults to the global
+provider.
+
+
+**Methods:**
+
+#### `on_call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/usage.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_call_tool(self, context: MiddlewareContext[mt.CallToolRequestParams], call_next: CallNext[mt.CallToolRequestParams, ToolResult]) -> ToolResult
+```
+
+#### `on_get_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/usage.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_get_prompt(self, context: MiddlewareContext[mt.GetPromptRequestParams], call_next: CallNext[mt.GetPromptRequestParams, PromptResult]) -> PromptResult
+```

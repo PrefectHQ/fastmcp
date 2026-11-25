@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from typing import Any
 
+import anyio
 import httpx2
 from httpx2 import ASGITransport
 from starlette.middleware import Middleware
@@ -10,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import BaseRoute, Route
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Message
 
 from fastmcp.server import FastMCP
 from fastmcp.server.http import create_sse_app, create_streamable_http_app
@@ -227,3 +228,51 @@ async def test_multiple_middleware_ordering():
         assert response.status_code == 200
         assert response.headers["X-First-Header"] == "first"
         assert response.headers["X-Second-Header"] == "second"
+
+
+class PassthroughMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable):
+        return await call_next(request)
+
+
+async def test_sse_stream_closes_cleanly_through_base_http_middleware():
+    """The SSE endpoint must not send a second response after its stream ends."""
+    server = FastMCP(name="TestServer")
+    app = server.http_app(
+        transport="sse",
+        middleware=[Middleware(PassthroughMiddleware)],  # type: ignore[arg-type]
+    )
+
+    sent: list[Message] = []
+    stream_opened = anyio.Event()
+
+    async def receive() -> Message:
+        await stream_opened.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+        if message["type"] == "http.response.body" and message.get("body"):
+            stream_opened.set()
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/sse",
+        "raw_path": b"/sse",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"host", b"127.0.0.1")],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 80),
+    }
+
+    with anyio.fail_after(5):
+        await app(scope, receive, send)
+
+    response_starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert len(response_starts) == 1
+    assert response_starts[0]["status"] == 200

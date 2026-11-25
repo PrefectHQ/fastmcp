@@ -20,7 +20,7 @@ which avoids leaking task existence across callers.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
 import mcp_types
@@ -98,7 +98,7 @@ def _normalize_iso_timestamp(stored: str | None) -> str:
             return datetime.fromisoformat(stored.replace("Z", "+00:00")).isoformat()
         except (ValueError, AttributeError):
             pass
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _parse_key_version(key_suffix: str) -> tuple[str, str | None]:
@@ -208,7 +208,38 @@ async def _resolve_tool(server: FastMCP, task_key: str) -> Tool:
     return tool
 
 
-def _inline_result(tool: Tool, raw_value: Any) -> dict[str, Any]:
+async def _delegation_chain(tool: Tool) -> list[Tool]:
+    """The tool and each mounted child tool it delegates to, outermost first.
+
+    A foreground call applies each mount level's result transforms as the result
+    unwinds through the child servers' ``call_tool``. A task's raw value comes
+    from the innermost function and skips that unwinding, so the levels are
+    recovered here to apply the same transforms.
+    """
+    from fastmcp.server.providers.fastmcp_provider import FastMCPProviderTool
+    from fastmcp.tools.tool_transform import TransformedTool
+
+    chain = [tool]
+    while True:
+        # A TransformedTool already carries its parent's result transforms, so
+        # walk through it to the delegating tool without adding a level.
+        while isinstance(tool, TransformedTool):
+            tool = tool.parent_tool
+        if not (isinstance(tool, FastMCPProviderTool) and tool._original_name):
+            break
+        version = VersionSpec(eq=tool.version) if tool.version else None
+        try:
+            inner = await tool._server.get_tool(tool._original_name, version)
+        except NotFoundError:
+            break
+        if inner is None:
+            break
+        chain.append(inner)
+        tool = inner
+    return chain
+
+
+def _inline_result(chain: list[Tool], raw_value: Any) -> dict[str, Any]:
     """Convert a completed task's raw return into an inlined CallToolResult dict.
 
     A completed task should never carry an ``InputRequiredResult``: a function
@@ -219,6 +250,7 @@ def _inline_result(tool: Tool, raw_value: Any) -> dict[str, Any]:
     wrapper does not wrap (e.g. a base ``Tool``) returned one, which the task
     path cannot drive — a safety net, not an expected path.
     """
+    tool = chain[0]
     if isinstance(raw_value, mcp_types.InputRequiredResult | InputRequiredToolResult):
         raise MCPError(
             code=mcp_types.INTERNAL_ERROR,
@@ -232,9 +264,12 @@ def _inline_result(tool: Tool, raw_value: Any) -> dict[str, Any]:
     # (end-and-reenter G2); use it directly so isError round-trips. A normal
     # return is converted through the tool's own result coercion.
     if isinstance(raw_value, ToolResult):
-        mcp_result = raw_value.to_mcp_result()
+        tool_result = raw_value
     else:
-        mcp_result = tool.convert_result(raw_value).to_mcp_result()
+        tool_result = tool.convert_result(raw_value)
+    for level in reversed(chain):
+        tool_result = level._apply_result_transforms(tool_result)
+    mcp_result = tool_result.to_mcp_result()
     if isinstance(mcp_result, mcp_types.CallToolResult):
         call_tool_result = mcp_result
     elif isinstance(mcp_result, tuple):
@@ -264,7 +299,7 @@ async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:
     await execution.sync()
 
     created_at_iso = _normalize_iso_timestamp(created_at)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     ttl_ms = _ttl_ms(docket)
 
     def build(
@@ -300,7 +335,8 @@ async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:
             return build("input_required", input_requests=outstanding)
         raw_value = await execution.get_result(timeout=timedelta(seconds=0))
         tool = await _resolve_tool(server, base_task_key)
-        return build("completed", result=_inline_result(tool, raw_value))
+        chain = await _delegation_chain(tool)
+        return build("completed", result=_inline_result(chain, raw_value))
 
     if execution.state == ExecutionState.FAILED:
         message = "Task failed"

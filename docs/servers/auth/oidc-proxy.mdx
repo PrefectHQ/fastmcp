@@ -108,13 +108,24 @@ mcp = FastMCP(name="My Server", auth=auth)
 </ParamField>
 
 <ParamField body="algorithm" type="str | None">
-  JWT algorithm to use for token verification (e.g., "RS256"). If not specified,
-  uses the provider's default. Only used when `token_verifier` is not provided.
+  JWT algorithm to use for token verification (e.g., "ES256"). Defaults to
+  `RS256`. Only used when `token_verifier` is not provided.
 </ParamField>
 
 <ParamField body="required_scopes" type="list[str] | None">
   List of OAuth scopes for token validation. These are automatically
   included in authorization requests. Only used when `token_verifier` is not provided.
+</ParamField>
+
+<ParamField body="verify_id_token" type="bool" default="False">
+
+<VersionBadge version="3.0.1" />
+  Verify the upstream OIDC `id_token` instead of the access token. Use this for
+  providers that issue opaque access tokens but standard JWT ID tokens. The
+  default verifier then checks the ID token's audience against `client_id`, and
+  `required_scopes` is enforced on FastMCP-issued tokens instead of the upstream
+  token, since ID tokens carry no scope claim. The upstream access token is
+  still stored for calls to the provider's APIs.
 </ParamField>
 
 <ParamField body="redirect_path" type="str" default="/auth/callback">
@@ -224,25 +235,28 @@ auth = OIDCProxy(
 </ParamField>
 </Card>
 
+`OIDCProxy` also accepts `issuer_url`, `forward_resource`, `extra_authorize_params`, `extra_token_params`, the token expiry options, and `identity_assertion`, with the same meaning as on [`OAuthProxy`](/servers/auth/oauth-proxy#configuration-parameters). When you set `audience`, it is added to both the authorization and token requests; an `audience` key in `extra_authorize_params` or `extra_token_params` takes precedence.
+
 ### Using Built-in Providers
 
 FastMCP includes pre-configured OIDC providers for common services:
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.server.auth.providers.auth0 import Auth0Provider
 
 auth = Auth0Provider(
-    config_url="https://.../.well-known/openid-configuration",
+    config_url="https://your-tenant.us.auth0.com/.well-known/openid-configuration",
     client_id="your-auth0-client-id",
     client_secret="your-auth0-client-secret",
-    audience="https://...",
-    base_url="https://localhost:8000"
+    audience="https://your-api-identifier.com",
+    base_url="http://localhost:8000"
 )
 
 mcp = FastMCP(name="My Server", auth=auth)
 ```
 
-Available providers include `Auth0Provider` at present.
+Available providers include [`Auth0Provider`](/integrations/auth0), [`AWSCognitoProvider`](/integrations/aws-cognito), and [`OCIProvider`](/integrations/oci).
 
 ### Scope Configuration
 
@@ -281,7 +295,7 @@ auth = Auth0Provider(
     client_id=os.environ.get("AUTH0_CLIENT_ID"),
     client_secret=os.environ.get("AUTH0_CLIENT_SECRET"),
     audience=os.environ.get("AUTH0_AUDIENCE"),
-    base_url=os.environ.get("BASE_URL", "https://localhost:8000")
+    base_url=os.environ.get("BASE_URL", "http://localhost:8000")
 )
 
 mcp = FastMCP(name="My Server", auth=auth)

@@ -16,10 +16,10 @@ The available modules can be viewed in the [contrib directory](https://github.co
 
 ## Usage
 
-To use a contrib module, import it from the `fastmcp.contrib` package:
+To use a contrib module, import it from its subpackage under `fastmcp.contrib`. For example, the `mcp_mixin` module:
 
-```python test="skip"
-from fastmcp.contrib import my_module
+```python
+from fastmcp.contrib.mcp_mixin import MCPMixin, mcp_tool
 ```
 
 ## Important Considerations

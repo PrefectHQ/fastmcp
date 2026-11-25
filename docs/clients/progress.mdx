@@ -18,6 +18,8 @@ MCP servers can report progress during operations. The client receives these upd
 Set a handler when creating the client:
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 
 async def progress_handler(
@@ -25,14 +27,14 @@ async def progress_handler(
     total: float | None,
     message: str | None
 ) -> None:
-    if total is not None:
+    if total:
         percentage = (progress / total) * 100
         print(f"Progress: {percentage:.1f}% - {message or ''}")
     else:
         print(f"Progress: {progress} - {message or ''}")
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     progress_handler=progress_handler
 )
 ```

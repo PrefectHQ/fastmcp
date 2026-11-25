@@ -5,17 +5,17 @@ description: Add policy-based authorization to your FastMCP servers with Eunomia
 icon: shield-check
 ---
 
-Add **policy-based authorization** to your FastMCP servers with one-line code addition with the **[Eunomia][eunomia-github] authorization middleware**.
+Add **policy-based authorization** to your FastMCP servers with a single line of code using the **[Eunomia][eunomia-github] authorization middleware**.
 
 Control which tools, resources and prompts MCP clients can view and execute on your server. Define dynamic JSON-based policies and obtain a comprehensive audit log of all access attempts and violations.
 
 ## How it Works
 
-Exploiting FastMCP's [Middleware][fastmcp-middleware], the Eunomia middleware intercepts all MCP requests to your server and automatically maps MCP methods to authorization checks.
+Built on FastMCP's [Middleware][fastmcp-middleware], the Eunomia middleware intercepts all MCP requests to your server and automatically maps MCP methods to authorization checks.
 
 ### Listing Operations
 
-The middleware behaves as a filter for listing operations (`tools/list`, `resources/list`, `prompts/list`), hiding to the client components that are not authorized by the defined policies.
+The middleware behaves as a filter for listing operations (`tools/list`, `resources/list`, `prompts/list`), hiding components that the defined policies do not authorize.
 
 ```mermaid
 sequenceDiagram
@@ -116,7 +116,7 @@ Start your FastMCP server normally:
 python server.py
 ```
 
-The middleware will now intercept all MCP requests and check them against your policies. Requests include agent identification through headers like `X-Agent-ID`, `X-User-ID`, `User-Agent`, or `Authorization` and an automatic mapping of MCP methods to authorization resources and actions.
+The middleware now intercepts all MCP requests and checks them against your policies, mapping each MCP method to an authorization resource and action. Over HTTP transports, the middleware identifies the caller from the `X-Agent-ID`, `X-User-ID`, and `User-Agent` headers; over stdio there are no headers, so requests are evaluated as an unknown agent.
 
 <Tip>
   For detailed policy configuration, custom authentication, and remote

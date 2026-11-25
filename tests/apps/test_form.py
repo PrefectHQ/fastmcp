@@ -61,7 +61,7 @@ class TestFormInputProvider:
             hashed_backend_name("Contact", "submit_form"),
             {"data": {"name": "Alice", "email": "alice@example.com"}},
         )
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         parsed = json.loads(text)
         assert parsed["name"] == "Alice"
         assert parsed["email"] == "alice@example.com"
@@ -83,7 +83,7 @@ class TestFormInputProvider:
             hashed_backend_name("Contact", "submit_form"),
             {"data": {"name": "Bob", "email": "bob@example.com"}},
         )
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         assert "Saved Bob" in text
         assert len(saved) == 1
         assert saved[0].name == "Bob"
@@ -103,7 +103,7 @@ class TestFormInputProvider:
             hashed_backend_name("NoteForm", "submit_form"),
             {"data": {"title": "My Note", "content": "Hello"}},
         )
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         parsed = json.loads(text)
         assert parsed["title"] == "My Note"
         assert parsed["archived"] is False
@@ -116,7 +116,7 @@ class TestFormInputProvider:
             hashed_backend_name("NoteForm", "submit_form"),
             {"data": {"title": "My Note", "content": "Hello", "archived": True}},
         )
-        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        text = result.content[0].text  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
         parsed = json.loads(text)
         assert parsed["archived"] is True
 

@@ -58,6 +58,143 @@ def is_agent_author(author: dict[str, Any]) -> bool:
 
 
 def fetch_prs(numbers: list[int]) -> dict[int, dict[str, Any]]:
+    """Fetch attribution metadata, over REST where GraphQL is unavailable.
+
+    Some agent sandboxes refuse GraphQL. The REST path builds the same shape;
+    it can only map co-author trailers with GitHub noreply addresses to
+    accounts, so other trailers surface as unmapped commit authors to check.
+    """
+    try:
+        return fetch_prs_graphql(numbers)
+    except subprocess.CalledProcessError:
+        return {number: fetch_pr_rest(number) for number in numbers}
+
+
+CLOSING = re.compile(
+    r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*"
+    r"(?:"
+    + re.escape(REPO)
+    + r"#|#|https?://github\.com/"
+    + re.escape(REPO)
+    + r"/issues/)(\d+)",
+    re.I,
+)
+TRAILER = re.compile(
+    r"^co-authored-by:\s*(?P<name>.*?)\s*<(?P<email>[^>]+)>\s*$", re.I | re.M
+)
+NOREPLY = re.compile(
+    r"^(?:\d+\+)?(?P<login>[\w-]+(?:\[bot\])?)@users\.noreply\.github\.com$", re.I
+)
+
+
+def rest_actor(user: dict[str, Any] | None) -> dict[str, str] | None:
+    if not user:
+        return None
+    return {
+        "login": user["login"],
+        "__typename": "Bot" if user["type"] == "Bot" else "User",
+    }
+
+
+def user_for_email(email: str) -> dict[str, str] | None:
+    match = NOREPLY.match(email)
+    if match is None:
+        return None
+    login = match["login"]
+    return {"login": login, "__typename": "Bot" if login.endswith("[bot]") else "User"}
+
+
+_associations: dict[str, str] = {}
+MAINTAINER_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+
+
+def association(login: str) -> str:
+    """The login's repository association, from any item they authored here."""
+    key = login.lower()
+    if key not in _associations:
+        items = json.loads(
+            subprocess.check_output(
+                [
+                    "gh",
+                    "api",
+                    f"repos/{REPO}/issues?creator={login}&state=all&per_page=1",
+                ],
+                text=True,
+            )
+        )
+        _associations[key] = items[0]["author_association"] if items else "NONE"
+    return _associations[key]
+
+
+def rest_authors(commit: dict[str, Any]) -> dict[str, Any]:
+    """A REST commit's author plus its co-author trailers, in GraphQL's shape."""
+    nodes = [
+        {
+            "name": commit["commit"]["author"]["name"],
+            "email": commit["commit"]["author"]["email"],
+            "user": rest_actor(commit.get("author")),
+        }
+    ]
+    for trailer in TRAILER.finditer(commit["commit"]["message"]):
+        nodes.append(
+            {
+                "name": trailer["name"],
+                "email": trailer["email"],
+                "user": user_for_email(trailer["email"]),
+            }
+        )
+    return {"nodes": nodes, "pageInfo": {"hasNextPage": False}}
+
+
+def fetch_pr_rest(number: int) -> dict[str, Any]:
+    pr = api(f"repos/{REPO}/pulls/{number}")
+    _associations.setdefault(pr["user"]["login"].lower(), pr["author_association"])
+    if not pr.get("merged_at") or not pr.get("merge_commit_sha"):
+        raise ValueError("Release notes reference a missing or unmerged PR")
+    if pr["commits"] > 100:
+        raise ValueError(f"PR #{number}: attribution metadata is truncated")
+    commits = json.loads(
+        subprocess.check_output(
+            ["gh", "api", f"repos/{REPO}/pulls/{number}/commits?per_page=100"],
+            text=True,
+        )
+    )
+    issues = []
+    for issue_number in dict.fromkeys(
+        int(n) for n in CLOSING.findall(pr.get("body") or "")
+    ):
+        issue = api(f"repos/{REPO}/issues/{issue_number}")
+        if "pull_request" in issue:
+            continue
+        issues.append(
+            {
+                "number": issue["number"],
+                "url": issue["html_url"],
+                "author": rest_actor(issue["user"]),
+            }
+        )
+    return {
+        "number": number,
+        "author": rest_actor(pr["user"]),
+        "closingIssuesReferences": {
+            "nodes": issues,
+            "pageInfo": {"hasNextPage": False},
+        },
+        "commits": {
+            "nodes": [
+                {"commit": {"authors": rest_authors(commit)}} for commit in commits
+            ],
+            "pageInfo": {"hasNextPage": False},
+        },
+        "mergeCommit": {
+            "authors": rest_authors(
+                api(f"repos/{REPO}/commits/{pr['merge_commit_sha']}")
+            )
+        },
+    }
+
+
+def fetch_prs_graphql(numbers: list[int]) -> dict[int, dict[str, Any]]:
     prs: dict[int, dict[str, Any]] = {}
     for start in range(0, len(numbers), 30):
         fields = "\n".join(
@@ -151,15 +288,25 @@ def scan_notes(
         prs = release_prs(notes)
     actors = note_actors(prs)
     entries = list(PR_ENTRY.finditer(notes))
-    permissions: dict[str, bool] = {}
+    permissions: dict[str, bool | None] = {}
 
-    def is_maintainer(login: str) -> bool:
+    def is_maintainer(login: str) -> bool | None:
+        """True or False when known; None when only the association fallback ran
+        and it couldn't confirm (private org membership shows as CONTRIBUTOR).
+        Unknown errs toward suggesting credit, which the release agent reviews."""
         key = login.lower()
         if key not in permissions:
-            permission = api(f"repos/{REPO}/collaborators/{login}/permission")[
-                "permission"
-            ]
-            permissions[key] = permission in {"admin", "maintain", "write"}
+            try:
+                permission = api(f"repos/{REPO}/collaborators/{login}/permission")[
+                    "permission"
+                ]
+                permissions[key] = permission in {"admin", "maintain", "write"}
+            except subprocess.CalledProcessError:
+                # Sandboxes that refuse the permission endpoint: fall back to
+                # the association GitHub shows on the login's own items.
+                permissions[key] = (
+                    True if association(login) in MAINTAINER_ASSOCIATIONS else None
+                )
         return permissions[key]
 
     candidates = []
@@ -180,7 +327,7 @@ def scan_notes(
         for author in humans:
             if is_human(author.get("user")):
                 login = author["user"]["login"]
-                if login.lower() not in credited and not is_maintainer(login):
+                if login.lower() not in credited and is_maintainer(login) is not True:
                     credited[login.lower()] = login
         issues = [
             issue
@@ -195,10 +342,13 @@ def scan_notes(
         ]
         if extra_reporters and pr["author"]:
             login = pr["author"]["login"]
-            if is_maintainer(login):
+            if is_maintainer(login) is not False:
                 for issue in extra_reporters:
                     reporter = issue["author"]["login"]
-                    if reporter.lower() not in credited and not is_maintainer(reporter):
+                    if (
+                        reporter.lower() not in credited
+                        and is_maintainer(reporter) is not True
+                    ):
                         credited[reporter.lower()] = reporter
                         missing_reporters.append(reporter)
         unmapped = list(

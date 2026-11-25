@@ -92,7 +92,7 @@ A fair question. Any [Interactive Tool](/apps/prefab) can call a server tool —
 
 App tool visibility is not a security boundary. Backend tools remain callable through direct MCP requests by clients that know their names, subject to the server's authentication and authorization checks. Use [authorization](/servers/authorization) and server-side validation to enforce access and approval requirements; [visibility metadata](/apps/low-level#tool-visibility) only declares the intended audience.
 
-Composition is handled by never writing the name down. `CallTool` takes a function reference, and FastMCP resolves it when the UI is serialized — to whatever that tool is actually called by then. Mount the server under a namespace and the button calls `notes_add_note`; put a gateway in front and it calls whatever the gateway lists. Since you never wrote a name, renaming cannot break it. [The architecture page](/apps/architecture) covers how that resolution works.
+Composition is handled at serialization. Inside a `FastMCPApp`, FastMCP resolves every `CallTool` reference, by name or by function, to whatever that tool is actually called when the UI reaches the host. Mount the server under a namespace and the button calls `notes_add_note`; put a gateway in front and it calls whatever the gateway lists. Renaming cannot break it. [The architecture page](/apps/architecture) covers how that resolution works.
 
 The one rule that comes with this: **an app name must be unique within a server.** Composing the same app twice breaks its UI — two copies of `FastMCPApp("notes")` are indistinguishable no matter what namespaces you mount them under, so FastMCP declines to bind rather than picking one. Name apps for what they serve: `FastMCPApp("notes-acme")` and `FastMCPApp("notes-globex")`. [The architecture page](/apps/architecture) explains why identity works this way.
 
@@ -112,7 +112,7 @@ def dashboard() -> PrefabApp:
     return PrefabApp(view=view)
 ```
 
-`@app.ui()` supports the same options as `@mcp.tool`: `name`, `description`, `title`, `tags`, `icons`, `auth`, and `timeout`.
+`@app.ui()` accepts `name`, `description`, `title`, `tags`, `icons`, `annotations`, `auth`, and `timeout`.
 
 ## `@app.tool()` — backend tools
 
@@ -141,14 +141,14 @@ App tool names matching `__<12 lowercase hex>_<name>` (for example, `__abcdef012
 
 ## `CallTool` — UI → backend
 
-`CallTool` is how the UI invokes a backend tool. Pass the tool's name (or a direct function reference):
+`CallTool` is how the UI invokes a backend tool. Pass the tool's name or the function itself; inside a `FastMCPApp`, both resolve to the tool's current address when the UI is serialized:
 
 ```python
 from prefab_ui.actions.mcp import CallTool
 
 CallTool("save_contact", arguments={"name": "Alice", "email": "alice@example.com"})
 
-# Or a function reference — resolves to a stable global key
+# Or pass the function itself
 CallTool(save_contact, arguments={...})
 ```
 
@@ -317,18 +317,18 @@ def create_bug(data: BugReport) -> str:
 
 ## Composition and namespacing
 
-The reason `FastMCPApp` exists — and why you'd pick it over plain `@mcp.tool(app=True)` with string-based `CallTool` — is composition safety.
+The reason `FastMCPApp` exists — and why you'd pick it over a plain `@mcp.tool(app=True)` that calls other tools — is composition safety.
 
 When you mount a server under a namespace, tool names get prefixed:
 
 ```python
 platform = FastMCP("Platform")
-platform.mount("contacts", contacts_server)
+platform.mount(contacts_server, namespace="contacts")
 
 # "save_contact" becomes "contacts_save_contact"
 ```
 
-`CallTool("save_contact")` would now be broken. But `CallTool(save_contact)` with a function reference resolves to a globally stable identifier that bypasses the namespace. Your app works the same whether standalone or mounted.
+In a plain `@mcp.tool(app=True)`, `CallTool("save_contact")` would now point at a tool that no longer exists. Inside a `FastMCPApp`, the same call is addressed by the app's identity and rewritten to `contacts_save_contact` on the way out, so the app works the same whether standalone or mounted.
 
 ### Mounting
 

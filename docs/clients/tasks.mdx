@@ -117,6 +117,8 @@ import asyncio
 from fastmcp import Client
 from fastmcp_tasks import call_tool_task
 
+server = "http://localhost:8000/mcp"
+
 async def main():
     async with Client(server, mode="auto") as client:
         # Return immediately and drive the task yourself

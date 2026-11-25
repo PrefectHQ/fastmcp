@@ -16,6 +16,33 @@ from typing import Any
 
 _PARSERS = ("google", "numpy", "sphinx")
 
+# Griffe's Google parser reads any unindented `word:` line followed by an
+# indented block as an admonition, so prose such as `if enabled:` or `Rules:`
+# parses the same way as `Note:`. Only the Google-style headings griffe leaves
+# as admonitions (Napoleon's section names with no griffe section kind) count
+# as structure that ends the free-form description.
+_SECTION_ADMONITIONS = frozenset(
+    {
+        "attention",
+        "caution",
+        "danger",
+        "error",
+        "example",
+        "hint",
+        "important",
+        "note",
+        "notes",
+        "raise",
+        "references",
+        "return",
+        "see-also",
+        "tip",
+        "todo",
+        "warning",
+        "yield",
+    }
+)
+
 logger = logging.getLogger("griffe")
 # Griffe warns about missing type annotations in docstrings, which is noisy
 # and irrelevant — we only care about descriptions.
@@ -67,6 +94,9 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
                 for param in section.value:
                     parameters[param.name] = param.description
                 found_structured_section = True
+            elif section.kind == DocstringSectionKind.admonition:
+                if section.value.kind in _SECTION_ADMONITIONS:
+                    found_structured_section = True
             elif section.kind != DocstringSectionKind.text:
                 found_structured_section = True
 

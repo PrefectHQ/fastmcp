@@ -4,17 +4,18 @@ from typing import Any, Literal, cast
 
 import mcp_types
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from fastmcp import Context, FastMCP
 from fastmcp.client.client import Client
-from fastmcp.client.elicitation import ElicitResult
+from fastmcp.client.elicitation import ElicitResult, create_elicitation_callback
 from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
     DeclinedElicitation,
+    get_elicitation_schema,
     validate_elicitation_json_schema,
 )
 from fastmcp.utilities.types import TypeAdapter
@@ -663,6 +664,133 @@ async def test_all_primitive_field_types():
         }
 
 
+class Shade(Enum):
+    LIGHT = "light"
+    DARK = "dark"
+
+
+class Contact(BaseModel):
+    name: str
+    phone: str | None = None
+    age: int | None = Field(default=None, description="Optional age")
+    score: float | None = None
+    subscribed: bool | None = None
+    shade: Shade | None = None
+    size: Literal["s", "m"] | None = None
+    country: str | None = "US"
+
+
+class TestOptionalFields:
+    """An `X | None = None` field is offered as a plain property that is not required."""
+
+    def test_optional_fields_are_plain_properties_outside_required(self):
+        assert get_elicitation_schema(Contact) == {
+            "type": "object",
+            "title": "Contact",
+            "properties": {
+                "name": {"title": "Name", "type": "string"},
+                "phone": {"title": "Phone", "type": "string"},
+                "age": {
+                    "description": "Optional age",
+                    "title": "Age",
+                    "type": "integer",
+                },
+                "score": {"title": "Score", "type": "number"},
+                "subscribed": {"title": "Subscribed", "type": "boolean"},
+                "shade": {
+                    "enum": ["light", "dark"],
+                    "title": "Shade",
+                    "type": "string",
+                },
+                "size": {"enum": ["s", "m"], "title": "Size", "type": "string"},
+                "country": {"default": "US", "title": "Country", "type": "string"},
+            },
+            "required": ["name"],
+        }
+
+    @pytest.mark.parametrize(
+        ("content", "expected"),
+        [
+            (
+                {"name": "Ada"},
+                {
+                    "name": "Ada",
+                    "phone": None,
+                    "age": None,
+                    "score": None,
+                    "subscribed": None,
+                    "shade": None,
+                    "size": None,
+                    "country": "US",
+                },
+            ),
+            (
+                {
+                    "name": "Ada",
+                    "phone": "555-0100",
+                    "age": 36,
+                    "score": 0.5,
+                    "subscribed": False,
+                    "shade": "dark",
+                    "size": "m",
+                    "country": "UK",
+                },
+                {
+                    "name": "Ada",
+                    "phone": "555-0100",
+                    "age": 36,
+                    "score": 0.5,
+                    "subscribed": False,
+                    "shade": "dark",
+                    "size": "m",
+                    "country": "UK",
+                },
+            ),
+        ],
+    )
+    async def test_accepted_response_is_validated_into_the_model(
+        self, content: dict[str, Any], expected: dict[str, Any]
+    ):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        async def add_contact(context: Context) -> dict[str, Any]:
+            result = await context.elicit("Enter the contact", response_type=Contact)
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, Contact)
+            return result.data.model_dump(mode="json")
+
+        async def elicitation_handler(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content=content)
+
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
+            result = await client.call_tool("add_contact", {})
+            assert result.data == expected
+
+    def test_required_nullable_field_is_rejected(self):
+        class Answer(BaseModel):
+            value: str | None
+
+        with pytest.raises(TypeError, match="union type 'null'"):
+            get_elicitation_schema(Answer)
+
+    async def test_unset_optional_fields_are_omitted_from_the_response(self):
+        async def elicitation_handler(message, response_type, params, ctx):
+            return response_type(name="Ada")
+
+        callback = create_elicitation_callback(elicitation_handler)
+        params = mcp_types.ElicitRequestFormParams(
+            message="Enter the contact",
+            requested_schema=get_elicitation_schema(Contact),
+        )
+        result = await callback(cast(Any, None), params)
+
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.content == {"name": "Ada", "country": "US"}
+
+
 class TestResponseTypeRequired:
     """`response_type` is required — the empty-schema form was removed in 4.0."""
 
@@ -805,3 +933,88 @@ class TestPatternMatching:
         ) as client:
             result = await client.call_tool("pattern_match_tool", {})
             assert result.data == "Cancelled"
+
+
+class TestAcceptedContentValidation:
+    """Accepted form content must satisfy the requested schema."""
+
+    AGE_SCHEMA: dict[str, Any] = {
+        "type": "object",
+        "properties": {"age": {"type": "integer"}},
+        "required": ["age"],
+    }
+
+    async def _respond(self, schema: dict[str, Any], response: Any):
+        async def handler(message, response_type, params, ctx):
+            return response
+
+        callback = create_elicitation_callback(handler)
+        params = mcp_types.ElicitRequestFormParams(message="?", requested_schema=schema)
+        return await callback(cast(Any, None), params)
+
+    @pytest.mark.parametrize("content", [{"age": "x"}, {}, {"age": "42"}])
+    async def test_invalid_content_is_an_error(self, content: dict[str, Any]):
+        result = await self._respond(self.AGE_SCHEMA, content)
+        assert isinstance(result, mcp_types.ErrorData)
+
+    async def test_valid_content_is_accepted(self):
+        result = await self._respond(self.AGE_SCHEMA, {"age": 42})
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.action == "accept"
+        assert result.content == {"age": 42}
+
+    async def test_auto_wrapped_scalar_is_validated(self):
+        schema = {
+            "type": "object",
+            "properties": {"value": {"type": "integer"}},
+            "required": ["value"],
+        }
+        accepted = await self._respond(schema, 5)
+        assert isinstance(accepted, mcp_types.ElicitResult)
+        assert accepted.content == {"value": 5}
+
+        rejected = await self._respond(schema, "five")
+        assert isinstance(rejected, mcp_types.ErrorData)
+
+    async def test_accept_without_content_on_empty_schema(self):
+        schema = {"type": "object", "properties": {}}
+        result = await self._respond(schema, ElicitResult(action="accept"))
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.action == "accept"
+
+    async def test_date_time_string_is_accepted(self):
+        schema = {
+            "type": "object",
+            "properties": {"when": {"type": "string", "format": "date-time"}},
+            "required": ["when"],
+        }
+        result = await self._respond(schema, {"when": "2024-01-01T00:00:00Z"})
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.content == {"when": "2024-01-01T00:00:00Z"}
+
+    async def test_declined_content_is_not_validated(self):
+        result = await self._respond(
+            self.AGE_SCHEMA, ElicitResult(action="decline", content={"age": "x"})
+        )
+        assert isinstance(result, mcp_types.ElicitResult)
+        assert result.action == "decline"
+
+
+async def test_set_elicitation_callback_updates_a_live_session(fastmcp_server):
+    """`set_elicitation_callback` while connected takes effect without reconnecting."""
+
+    async def first(message, response_type, params, ctx):
+        return ElicitResult(action="accept", content=response_type(name="Alice"))
+
+    async def second(message, response_type, params, ctx):
+        return ElicitResult(action="accept", content=response_type(name="Bob"))
+
+    async with Client(
+        fastmcp_server, mode="legacy", elicitation_handler=first
+    ) as client:
+        before = await client.call_tool("ask_for_name")
+        client.set_elicitation_callback(second)
+        after = await client.call_tool("ask_for_name")
+
+    assert before.data == "Hello, Alice!"
+    assert after.data == "Hello, Bob!"

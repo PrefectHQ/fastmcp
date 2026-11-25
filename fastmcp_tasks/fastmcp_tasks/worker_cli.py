@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from typing import TYPE_CHECKING, Annotated
+from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 import cyclopts
 from rich.console import Console
@@ -51,6 +52,44 @@ def resolve_docket_settings(server: FastMCP) -> DocketSettings:
     return extension.docket_settings
 
 
+def redact_backend_url(url: str) -> str:
+    """Mask the password in a backend URL so it can be printed or logged.
+
+    Redis URLs carry the password in the userinfo component
+    (`redis://user:secret@host`) or in a query parameter
+    (`?password=secret`, `?sentinel_password=secret`, `?ssl_password=secret`).
+    Query keys ending in `password` are decoded before matching. All forms are
+    masked. URLs that cannot be parsed are hidden entirely.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "***"
+
+    netloc = parts.netloc
+    redacted = False
+    if "@" in netloc:
+        userinfo, _, host = netloc.rpartition("@")
+        if ":" in userinfo:
+            username = userinfo.partition(":")[0]
+            netloc = f"{username}:***@{host}"
+            redacted = True
+
+    query_parts: list[str] = []
+    for param in parts.query.split("&"):
+        key, sep, _ = param.partition("=")
+        if sep and unquote_plus(key).lower().endswith("password"):
+            param = f"{key}=***"
+            redacted = True
+        query_parts.append(param)
+
+    if not redacted:
+        return url
+
+    query = "&".join(query_parts)
+    return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+
+
 def check_distributed_backend(settings: DocketSettings) -> None:
     """Check if Docket is configured with a distributed backend.
 
@@ -66,7 +105,7 @@ def check_distributed_backend(settings: DocketSettings) -> None:
             "[bold red]✗ In-memory backend not supported by CLI[/bold red]\n\n"
             "Your Docket configuration uses an in-memory backend (memory://) which\n"
             "only works within a single process.\n\n"
-            "To use [cyan]fastmcp tasks[/cyan] CLI commands (which run in separate\n"
+            "To run [cyan]fastmcp_tasks.worker_cli[/cyan] workers (which run in separate\n"
             "processes), you need a distributed backend:\n\n"
             "[bold]1. Install Redis or Valkey:[/bold]\n"
             "   [dim]macOS:[/dim]     brew install redis\n"
@@ -80,7 +119,7 @@ def check_distributed_backend(settings: DocketSettings) -> None:
             "[bold]4. Try again[/bold]\n\n"
             "The memory backend works great for single-process servers, but the CLI\n"
             "commands need a distributed backend to coordinate across processes.\n\n"
-            "Need help? See: [cyan]https://gofastmcp.com/docs/tasks[/cyan]"
+            "Need help? See: [cyan]https://gofastmcp.com/servers/tasks[/cyan]"
         )
         sys.exit(1)
 
@@ -101,8 +140,8 @@ def worker(
     (FASTMCP_DOCKET_*).
 
     Example:
-        fastmcp tasks worker server.py
-        fastmcp tasks worker examples/tasks/server.py
+        python -m fastmcp_tasks.worker_cli worker server.py
+        python -m fastmcp_tasks.worker_cli worker examples/tasks/server.py
     """
     # Load server to get task functions
     try:
@@ -126,7 +165,7 @@ def worker(
                 f"[bold green]✓[/bold green] Starting worker for [cyan]{server.name}[/cyan]"
             )
             console.print(f"  Docket: {settings.name}")
-            console.print(f"  Backend: {settings.url}")
+            console.print(f"  Backend: {redact_backend_url(settings.url)}")
             console.print(f"  Concurrency: {settings.concurrency}")
 
             # Server's lifespan has started its worker - just camp here forever

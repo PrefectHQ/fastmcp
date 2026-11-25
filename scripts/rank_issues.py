@@ -45,7 +45,7 @@ import sys
 import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
@@ -425,9 +425,7 @@ async def fetch_authors(
             facts[login] = AuthorFacts(**cached)
         else:
             todo.append(login)
-    since = (
-        datetime.now(timezone.utc) - timedelta(days=config.spray_window_days)
-    ).date()
+    since = (datetime.now(UTC) - timedelta(days=config.spray_window_days)).date()
     batches = [todo[start : start + 3] for start in range(0, len(todo), 3)]
     semaphore = asyncio.Semaphore(config.author_concurrency)
     done = 0
@@ -909,9 +907,7 @@ def author_note(r: Ranked) -> str:
     elif author.get("merged_prs_in_repo"):
         parts.append(f"{author['merged_prs_in_repo']} merged")
     if issue.author_created_at:
-        parts.append(
-            f"{(datetime.now(timezone.utc) - issue.author_created_at).days // 365}y"
-        )
+        parts.append(f"{(datetime.now(UTC) - issue.author_created_at).days // 365}y")
     if r.components["spray"] >= 0.5:
         parts.append(
             f"{author.get('recent_prs', 0)} PRs/{author.get('recent_pr_repos', 0)} repos recently"
@@ -981,7 +977,7 @@ async def rank(
             else asyncio.sleep(0, result={}),
             judge_all(judge, issues, config, cache, progress),
         )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ranked = [
         score_issue(
             i, authors.get(i.author), judgments.get(i.number), releases, config, now
@@ -1073,7 +1069,7 @@ def public_snapshot(page: RankedPage, config: Config) -> dict:
     return {
         "schema": "fastmcp-attention/1",
         "repo": config.repo,
-        "as_of": datetime.now(timezone.utc).isoformat(),
+        "as_of": datetime.now(UTC).isoformat(),
         "profile": "public-issue-signals",
         "judge": config.judge,
         "assessment_model": assessment_model(config),

@@ -8,7 +8,21 @@ from copy import deepcopy
 
 from flows.agentic_github import REPOSITORY, GitHub
 from flows.agentic_intake import HOLD
+from flows.agentic_review_feedback import (
+    MARKER,
+    attach_feedback,
+    normalized,
+    read_feedback,
+)
 from flows.agentic_stack_plans import PublicReview
+
+
+class EvidenceChanged(ValueError):
+    """The issue or PR moved after review; the new revision is triaged on its own."""
+
+    def __init__(self, reason: str, posted: list[dict] | None = None):
+        super().__init__(reason)
+        self.posted = posted or []
 
 
 def before_delivery(evidence: dict, receipts: list[dict], reviewer: str) -> dict:
@@ -76,7 +90,8 @@ def review_body(number: int, head: str, baseline: str, result: dict) -> str:
     summary = public.summary
     if public.requested_change:
         summary += "\n\n" + public.requested_change
-    return format_review(number, head, baseline, summary, public.evidence)
+    body = format_review(number, head, baseline, summary, public.evidence)
+    return attach_feedback(body, public)
 
 
 def post_review(
@@ -104,7 +119,7 @@ def post_review(
     def current() -> dict:
         pr = github.request(prefix)
         if not isinstance(pr, dict) or pr.get("head", {}).get("sha") != head:
-            raise ValueError("PR head changed after review")
+            raise EvidenceChanged("PR head changed after review")
         text = "\n".join(
             [pr["title"], pr.get("body") or "", *[x["name"] for x in pr["labels"]]]
         )
@@ -114,31 +129,62 @@ def post_review(
             or (pr["draft"] and not allow_draft)
             or HOLD.search(text)
         ):
-            raise ValueError("PR is closed, draft or explicitly held")
+            raise EvidenceChanged("PR is closed, draft or explicitly held")
         if pr["user"]["login"] == reviewer:
             raise ValueError("Reviewer must differ from PR author")
         return pr
 
     current()
-    existing = [
+    # The caller holds the existing per-PR claim across this read and decision.
+    reviews = [
         value
         for value in github.pages(prefix + "/reviews")
         if value.get("user", {}).get("login") == reviewer
         and value.get("user", {}).get("type") == "Bot"
-        and (value.get("body") or "").startswith(marker)
     ]
-    if len(existing) > 1:
-        raise ValueError("Multiple reviews exist for this revision")
+    latest = max(reviews, key=lambda value: value["id"], default=None)
+    existing = bool(
+        latest
+        and latest.get("state") == "COMMENTED"
+        and latest.get("commit_id") == head
+        and normalized(latest.get("body") or "") == normalized(body)
+    )
     if existing:
-        review = existing[0]
-        # GitHub may normalize line endings; any other difference is new feedback.
-        if (review.get("body") or "").replace("\r\n", "\n") != body.replace(
-            "\r\n", "\n"
-        ):
-            raise ValueError("A different review already exists for this revision")
+        # Reconcile an accepted POST whose response was lost, without posting again.
+        review = latest
     else:
+        feedback = read_feedback(body, number, head)
+        previous = (
+            read_feedback(
+                latest.get("body") or "", number, latest.get("commit_id") or ""
+            )
+            if latest and latest.get("state") == "COMMENTED"
+            else None
+        )
         guard()
         current()
+        if (
+            latest is not None
+            and feedback is not None
+            and feedback["outcome"] != "inconclusive"
+            and feedback == previous
+        ):
+            return {
+                "pr_number": number,
+                "status": "unchanged_feedback",
+                "verified_head_sha": head,
+                "verified_baseline_sha": baseline,
+                "reason": "Fresh review and verification found unchanged public feedback",
+                "previous_review": review_receipt(number, latest, reviewer),
+            }
+        # Legacy/edited same-revision prose must not be silently adopted. Structured
+        # changed findings, including resolutions, can produce a new guarded review.
+        if (
+            latest
+            and (latest.get("body") or "").startswith(marker)
+            and (feedback is None or previous is None)
+        ):
+            raise ValueError("A different review already exists for this revision")
         review = github.request(
             prefix + "/reviews", {"commit_id": head, "event": "COMMENT", "body": body}
         )
@@ -154,12 +200,21 @@ def post_review(
             "Published review differs from its expected identity or revision"
         )
     return {
+        **review_receipt(number, review, reviewer),
+        "status": "already_posted" if existing else "posted",
+    }
+
+
+def review_receipt(number: int, review: dict, reviewer: str) -> dict:
+    marker = MARKER.fullmatch(normalized(review["body"]).split("\n", 1)[0])
+    if marker is None or int(marker[1]) != number or marker[2] != review["commit_id"]:
+        raise ValueError("Published review differs from its expected revision")
+    return {
         "pr_number": number,
-        "head_sha": head,
-        "baseline_sha": baseline,
+        "head_sha": marker[2],
+        "baseline_sha": marker[3],
         "review_id": review["id"],
         "review_url": review["html_url"],
         "reviewer_login": reviewer,
         "body_sha256": hashlib.sha256(review["body"].encode()).hexdigest(),
-        "status": "already_posted" if existing else "posted",
     }

@@ -21,6 +21,7 @@ from flows import agentic_review_delivery as delivery
 from flows.agentic_github import GitHub
 from flows.agentic_review_app import ReviewApp, review_client
 from flows.agentic_review_publication import (
+    EvidenceChanged,
     before_delivery,
     format_review,
     post_review,
@@ -559,7 +560,16 @@ def test_existing_review_with_crlf_feedback_is_adopted(endpoint):
     assert receipt["status"] == "already_posted"
 
 
-def test_partial_delivery_failure_keeps_already_posted_receipts(monkeypatch):
+@pytest.mark.parametrize(
+    ("raised", "expected"),
+    [
+        (ValueError, delivery.PartialReviewDelivery),
+        (EvidenceChanged, EvidenceChanged),
+    ],
+)
+def test_partial_delivery_failure_keeps_already_posted_receipts(
+    monkeypatch, raised, expected
+):
     @flow
     def controller():
         return None
@@ -568,7 +578,7 @@ def test_partial_delivery_failure_keeps_already_posted_receipts(monkeypatch):
 
     def post(github, number, head, baseline, reviewer, body, guard):
         if posted:
-            raise ValueError("Issue or contribution changed after review")
+            raise raised("Issue or contribution changed after review")
         posted.append({"pr_number": number, "head_sha": head, "status": "posted"})
         return posted[-1]
 
@@ -628,7 +638,7 @@ def test_partial_delivery_failure_keeps_already_posted_receipts(monkeypatch):
             "partial-issue-1-triage-review",
             {"run_id": "review-run", "result": review},
         )
-        with pytest.raises((ValueError, RuntimeError)) as failure:
+        with pytest.raises(expected) as failure:
             delivery.deliver_reviews.fn(
                 owner,
                 batch,

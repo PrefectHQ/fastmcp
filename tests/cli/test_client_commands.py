@@ -3,16 +3,18 @@
 import json
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 from unittest.mock import patch
 
 import mcp_types
 import pytest
 from cryptography.fernet import Fernet
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
 from fastmcp.cli import client as client_module
+from fastmcp.cli.cli import app
 from fastmcp.cli.client import (
     Client,
     _build_client,
@@ -32,7 +34,7 @@ from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.client import CallToolResult
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
-from fastmcp.client.transports.stdio import StdioTransport
+from fastmcp.client.transports.stdio import NodeStdioTransport, StdioTransport
 from fastmcp.mcp_config import RemoteMCPServer
 from fastmcp.settings import Settings
 from fastmcp.utilities.tests import temporary_settings
@@ -126,6 +128,99 @@ class TestCoerceValue:
     )
     def test_ambiguous_union_stays_string(self, schema):
         assert coerce_value("42", schema) == "42"
+
+    @pytest.mark.parametrize(
+        ("raw", "schema", "expected"),
+        [
+            # null literal maps to None when schema allows null
+            ("null", {"anyOf": [{"type": "integer"}, {"type": "null"}]}, None),
+            ("null", {"anyOf": [{"type": "array"}, {"type": "null"}]}, None),
+            ("null", {"type": ["integer", "null"]}, None),
+            ("null", {"anyOf": [{"type": "null"}]}, None),
+        ],
+    )
+    def test_null_literal_returns_none_when_nullable(self, raw, schema, expected):
+        """``null`` maps to ``None`` when the schema allows it."""
+        assert coerce_value(raw, schema) is None
+
+    def test_null_literal_stays_string_when_not_nullable(self):
+        """``null`` stays as a string when the schema does not allow null."""
+        assert coerce_value("null", {"type": "string"}) == "null"
+
+    @pytest.mark.parametrize(
+        ("raw", "schema", "expected"),
+        [
+            # int | list[int]: JSON array is parsed, not passed as string
+            ("[1, 2]", {"anyOf": [{"type": "integer"}, {"type": "array"}]}, [1, 2]),
+            # discriminated union (object branches only): JSON object is parsed
+            (
+                '{"kind": "dog"}',
+                {"anyOf": [{"type": "object"}, {"type": "integer"}]},
+                {"kind": "dog"},
+            ),
+            # int | list[int] | None: JSON array is parsed
+            (
+                "[3, 4]",
+                {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "array"},
+                        {"type": "null"},
+                    ]
+                },
+                [3, 4],
+            ),
+            # plain integer in a non-string union: only arrays/objects are
+            # JSON-parsed, so the scalar falls back to the raw string
+            ("42", {"anyOf": [{"type": "integer"}, {"type": "array"}]}, "42"),
+        ],
+    )
+    def test_non_string_union_parses_json(self, raw, schema, expected):
+        """Unions with no string branch parse arrays/objects as JSON."""
+        result = coerce_value(raw, schema)
+        assert result == expected
+
+    def test_non_string_union_null_not_accepted_when_not_nullable(self):
+        """``null`` in a non-nullable union must not silently return None."""
+        schema = {"anyOf": [{"type": "integer"}, {"type": "array"}]}
+        result = coerce_value("null", schema)
+        assert result is not None
+
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            {"type": ["string", "null"]},
+        ],
+    )
+    def test_null_literal_stays_string_when_string_is_nullable(self, schema):
+        """``str | None`` keeps ``null`` as the literal string."""
+        assert coerce_value("null", schema) == "null"
+
+    def test_one_of_object_union_parses_json(self):
+        """Discriminated unions produce ``oneOf``; objects are still decoded."""
+        schema = {
+            "oneOf": [
+                {"type": "object", "properties": {"kind": {"const": "cat"}}},
+                {"type": "object", "properties": {"kind": {"const": "dog"}}},
+            ]
+        }
+        assert coerce_value('{"kind": "dog"}', schema) == {"kind": "dog"}
+
+    @pytest.mark.parametrize(
+        "branch",
+        [{"$ref": "#/$defs/Color"}, {"enum": ["[a]", "b"]}, {}],
+    )
+    def test_untyped_union_branch_preserves_raw_string(self, branch):
+        """A branch without a ``type`` may be a string, so input stays raw."""
+        schema = {"anyOf": [{"type": "array"}, branch]}
+        assert coerce_value("[a]", schema) == "[a]"
+
+    def test_non_string_union_falls_back_to_string_on_invalid_json(self):
+        """When JSON parsing fails for a non-string union, the raw string is returned."""
+        schema = {"anyOf": [{"type": "integer"}, {"type": "array"}]}
+        result = coerce_value("hello", schema)
+        assert result == "hello"
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +401,17 @@ class TestResolveServerSpec:
         assert isinstance(result, StdioTransport)
         assert result.command == "fastmcp"
         assert result.args == ["run", str(py_file.resolve()), "--no-banner"]
+
+    def test_js_file_builds_client_without_deprecation_warning(self, tmp_path: Path):
+        js_file = tmp_path / "server.js"
+        js_file.write_text("// empty")
+        result = resolve_server_spec(str(js_file))
+        assert isinstance(result, NodeStdioTransport)
+        assert result.command == "node"
+        assert result.args == [str(js_file.resolve())]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            Client(result)
 
     def test_json_mcp_config(self, tmp_path: Path):
         config_file = tmp_path / "mcp.json"
@@ -505,7 +611,7 @@ class TestBuildClient:
             assert isinstance(other, OAuth)
             assert await other.token_storage_adapter.get_tokens() is None
 
-        assert not emitted
+        assert not _ignoring_gc_noise(emitted)
         files = [path for path in tmp_path.rglob("*") if path.is_file()]
         assert files
         for path in files:
@@ -535,7 +641,7 @@ class TestBuildClient:
                 warnings.simplefilter("always")
                 first = _build_client("https://example.com/mcp").transport.auth
                 second = _build_client("https://example.com/mcp").transport.auth
-            assert not emitted
+            assert not _ignoring_gc_noise(emitted)
             assert isinstance(first, OAuth) and isinstance(second, OAuth)
             await first.token_storage_adapter.set_tokens(
                 OAuthToken(access_token="ephemeral-token", token_type="Bearer")
@@ -628,6 +734,18 @@ async def test_invalid_oauth_key_is_a_cli_error(
     assert "Traceback" not in output.out + output.err
 
 
+def _ignoring_gc_noise(
+    emitted: list[warnings.WarningMessage],
+) -> list[warnings.WarningMessage]:
+    """Drop ResourceWarnings from sockets other tests leaked.
+
+    Garbage collection can finalize them at any allocation inside a
+    `catch_warnings` block, including while filters are being installed, so
+    they have to be removed after recording rather than filtered out.
+    """
+    return [w for w in emitted if not issubclass(w.category, ResourceWarning)]
+
+
 def test_named_oauth_server_is_quiet(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -645,12 +763,22 @@ def test_named_oauth_server_is_quiet(
         with warnings.catch_warnings(record=True) as emitted:
             warnings.simplefilter("always")
             _build_client(resolve_server_spec("weather"))
-    assert not emitted
+    assert not _ignoring_gc_noise(emitted)
 
 
 # ---------------------------------------------------------------------------
 # Integration tests — invoke actual CLI commands via monkeypatched _build_client
 # ---------------------------------------------------------------------------
+
+
+class Cat(BaseModel):
+    kind: Literal["cat"]
+    lives: int = 9
+
+
+class Dog(BaseModel):
+    kind: Literal["dog"]
+    good: bool = True
 
 
 def _build_test_server() -> FastMCP:
@@ -671,6 +799,21 @@ def _build_test_server() -> FastMCP:
     def total(values: list[int] | None = None) -> int:
         """Sum an optional list of numbers."""
         return sum(values or [])
+
+    @server.tool
+    def union_sum(v: int | list[int]) -> int:
+        """Accept an int or a list of ints."""
+        return v if isinstance(v, int) else sum(v)
+
+    @server.tool
+    def maybe(n: int | None = 5) -> str:
+        """Return repr of an optional int."""
+        return repr(n)
+
+    @server.tool
+    def describe(pet: Annotated[Cat | Dog, Field(discriminator="kind")]) -> str:
+        """Describe a pet from a discriminated union."""
+        return type(pet).__name__
 
     @server.resource("test://greeting")
     def greeting_resource() -> str:
@@ -804,6 +947,170 @@ class TestCallCommandCLI:
     async def test_call_missing_target(self):
         with pytest.raises(SystemExit):
             await call_command("fake://server", "")
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_union_no_string_branch_list(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """JSON list is parsed and passed correctly for int|list[int] params."""
+        await call_command("fake://server", "union_sum", "v=[1, 2]", json_output=True)
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": 3}
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_union_no_string_branch_scalar(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """Plain integer is passed correctly for int|list[int] params."""
+        await call_command("fake://server", "union_sum", "v=7", json_output=True)
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": 7}
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_nullable_non_string_null(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """``null`` is passed as None for int|None params."""
+        await call_command("fake://server", "maybe", "n=null", json_output=True)
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": "None"}
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_discriminated_union_object(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """A JSON object reaches a discriminated ``Cat | Dog`` param as a dict."""
+        await call_command(
+            "fake://server",
+            "describe",
+            'pet={"kind": "dog", "good": true}',
+            json_output=True,
+        )
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": "Dog"}
+
+
+@pytest.fixture()
+def _resolved_targets():
+    """Serve the in-process test server and record what each CLI invocation
+    resolved its server to, so argument parsing and ``resolve_server_spec`` are
+    exercised for real."""
+    server = _build_test_server()
+    resolved: list[Any] = []
+
+    def fake_build_client(target: Any, **kwargs: Any) -> Client:
+        resolved.append(target)
+        return Client(server)
+
+    with patch.object(client_module, "_build_client", side_effect=fake_build_client):
+        yield resolved
+
+
+async def _run_call(*argv: str) -> None:
+    await app.run_async(
+        ["call", *argv], exit_on_error=False, result_action="return_value"
+    )
+
+
+@pytest.mark.usefixtures("_resolved_targets")
+class TestCallCommandParsing:
+    """`fastmcp call` driven through the real argument parser."""
+
+    STDIO_COMMAND = "npx -y @mcp/server"
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["--command", STDIO_COMMAND, "greet", "name=World"],
+            ["greet", "name=World", "--command", STDIO_COMMAND],
+        ],
+    )
+    async def test_command_replaces_server_spec(
+        self,
+        argv: list[str],
+        _resolved_targets: list[Any],
+        capsys: pytest.CaptureFixture[str],
+    ):
+        await _run_call(*argv)
+
+        assert "Hello, World!" in capsys.readouterr().out
+        [transport] = _resolved_targets
+        assert isinstance(transport, StdioTransport)
+        assert transport.command == "npx"
+        assert transport.args == ["-y", "@mcp/server"]
+
+    @pytest.mark.parametrize(
+        ("target_and_arguments", "expected"),
+        [
+            (["total"], {"result": 0}),
+            (["add", "a=1", "b=2"], {"result": 3}),
+            (["add", '{"a": 1, "b": 2}'], {"result": 3}),
+        ],
+    )
+    async def test_command_tool_arguments(
+        self,
+        target_and_arguments: list[str],
+        expected: dict[str, int],
+        capsys: pytest.CaptureFixture[str],
+    ):
+        await _run_call(
+            "--command", self.STDIO_COMMAND, *target_and_arguments, "--json"
+        )
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == expected
+
+    @pytest.mark.parametrize(
+        ("target_and_arguments", "expected"),
+        [
+            (["test://greeting"], "Hello from resource!"),
+            (["ask", "--prompt", "topic=Python"], "Tell me about Python"),
+        ],
+    )
+    async def test_command_resource_and_prompt(
+        self,
+        target_and_arguments: list[str],
+        expected: str,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        await _run_call("--command", self.STDIO_COMMAND, *target_and_arguments)
+
+        assert expected in capsys.readouterr().out
+
+    async def test_server_spec_is_unchanged_without_command(
+        self,
+        _resolved_targets: list[Any],
+        capsys: pytest.CaptureFixture[str],
+    ):
+        url = "http://localhost:9/mcp"
+
+        await _run_call(url, "greet", "name=World")
+
+        assert "Hello, World!" in capsys.readouterr().out
+        assert _resolved_targets == [url]
+
+    async def test_server_spec_and_command_together_is_an_error(
+        self,
+        _resolved_targets: list[Any],
+        capsys: pytest.CaptureFixture[str],
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            await _run_call(
+                "--command",
+                self.STDIO_COMMAND,
+                "http://localhost:9/mcp",
+                "greet",
+                "name=World",
+            )
+
+        assert exc_info.value.code == 1
+        assert "Cannot use both a server spec and --command" in capsys.readouterr().out
+        assert _resolved_targets == []
 
 
 # ---------------------------------------------------------------------------

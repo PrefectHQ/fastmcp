@@ -122,6 +122,9 @@ class UpstreamTokenSet(BaseModel):
     client_id: str  # MCP client this is bound to
     created_at: float  # Unix timestamp
     raw_token_data: dict[str, Any] = Field(default_factory=dict)  # Full token response
+    # Claims re-extracted at the most recent upstream refresh. None until a
+    # refresh happens; an empty dict means the refresh yielded no claims.
+    upstream_claims: dict[str, Any] | None = None
 
 
 class JTIMapping(BaseModel):
@@ -147,6 +150,30 @@ class RefreshTokenMetadata(BaseModel):
     scopes: list[str]
     expires_at: int | None = None
     created_at: float
+
+
+class RotatedRefreshToken(BaseModel):
+    """A refresh token that was already exchanged, kept to detect its reuse.
+
+    Stored keyed by the old token's hash. OAuth 2.1 §4.3.1: presenting a
+    rotated refresh token again means it may have been stolen, so the grant
+    it belonged to is ended.
+    """
+
+    client_id: str
+    upstream_token_id: str
+    rotated_at: float
+
+
+class EndedGrant(BaseModel):
+    """Marks a grant (upstream token record) as ended, keyed by its id.
+
+    Deleting the upstream record alone is not enough: a refresh already
+    waiting on the IdP would write it back. Writers check this marker after
+    they store the record and undo the write if the grant has ended.
+    """
+
+    ended_at: float
 
 
 def _hash_token(token: str) -> str:

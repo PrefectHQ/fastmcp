@@ -26,7 +26,7 @@ This guide focuses specifically on using FastMCP servers with Claude Desktop. Fo
 Claude Desktop traditionally requires MCP servers to run locally using STDIO transport, where your server communicates with Claude through standard input/output rather than HTTP. However, users on certain plans now have access to remote server support as well.
 
 <Tip>
-If you don't have access to remote server support or need to connect to remote servers, you can create a **proxy server** that runs locally via STDIO and forwards requests to remote HTTP servers. See the [Proxy Servers](#proxy-servers) section below.
+If you don't have access to remote server support or need to connect to remote servers, you can create a **proxy server** that runs locally via STDIO and forwards requests to remote HTTP servers. See the [Remote Servers](#remote-servers) section below.
 </Tip>
 
 ## Create a Server
@@ -113,6 +113,12 @@ Alternatively, you can use a `fastmcp.json` configuration file (recommended):
     "dependencies": ["pandas", "requests"]
   }
 }
+```
+
+Pass the configuration file to the install command in place of the server file:
+
+```bash
+fastmcp install claude-desktop fastmcp.json
 ```
 
 
@@ -269,7 +275,7 @@ from fastmcp.server import create_proxy
 
 # Create a proxy to a remote server
 proxy = create_proxy(
-    "https://example.com/mcp/sse",
+    "https://example.com/mcp",
     name="Remote Server Proxy"
 )
 
@@ -281,14 +287,14 @@ if __name__ == "__main__":
 
 For authenticated remote servers, create an authenticated client following the guidance in the [client auth documentation](/clients/auth/bearer) and pass it to the proxy:
 
-```python auth_proxy_server.py {7}
+```python auth_proxy_server.py {8}
 from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
 from fastmcp.server import create_proxy
 
 # Create authenticated client
 client = Client(
-    "https://api.example.com/mcp/sse",
+    "https://api.example.com/mcp",
     auth=BearerAuth(token="your-access-token")
 )
 

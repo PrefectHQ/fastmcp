@@ -27,8 +27,11 @@ from starlette.responses import Response
 from fastmcp.server.auth.redirect_validation import build_client_redirect
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import (
+    DETAIL_BOX_STYLES,
+    DETAILS_STYLES,
     INFO_BOX_STYLES,
     TOOLTIP_STYLES,
+    create_detail_box,
     create_logo,
     create_page,
     create_secure_html_response,
@@ -104,6 +107,23 @@ def create_unregistered_client_html(
         </div>
     """
 
+    # Endpoint details for anyone debugging the failure by hand. The JSON branch
+    # of the same handler returns these values in its body and the response
+    # carries the registration endpoint in a `Link` header, so the HTML branch
+    # should not be the one representation that discards them.
+    endpoints_box = create_detail_box(
+        [
+            ("Registration endpoint", registration_endpoint),
+            ("Authorization server metadata", discovery_endpoint),
+        ]
+    )
+    endpoints_section = f"""
+        <details>
+            <summary>Server endpoints</summary>
+            {endpoints_box}
+        </details>
+    """
+
     # Build page content
     content = f"""
         <div class="container">
@@ -111,6 +131,7 @@ def create_unregistered_client_html(
             <h1>{title}</h1>
             {error_box}
             {warning_box}
+            {endpoints_section}
         </div>
         {help_link}
     """
@@ -119,6 +140,8 @@ def create_unregistered_client_html(
     additional_styles = (
         INFO_BOX_STYLES
         + TOOLTIP_STYLES
+        + DETAILS_STYLES
+        + DETAIL_BOX_STYLES
         + """
         /* Error variant for info-box */
         .info-box.error {
@@ -252,11 +275,16 @@ class AuthorizationHandler(SDKAuthorizationHandler):
             if request.method == "GET":
                 client_id = request.query_params.get("client_id")
             else:
-                form = await request.form()
-                client_id_value = form.get("client_id")
-                # Ensure client_id is a string, not UploadFile
-                if isinstance(client_id_value, str):
-                    client_id = client_id_value
+                # The SDK handler has already parsed POST form data. Re-reading
+                # it here can raise "Stream consumed" when parsing failed and
+                # the request body cannot be replayed. Only enhance errors when
+                # the SDK left a successfully parsed form cached on the request.
+                form = getattr(request, "_form", None)
+                if form is not None:
+                    client_id_value = form.get("client_id")
+                    # Ensure client_id is a string, not UploadFile
+                    if isinstance(client_id_value, str):
+                        client_id = client_id_value
 
             # If we have a client_id and the error is about it not being found,
             # enhance the response

@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.prompts import Message
+from fastmcp.prompts import Message, Prompt
 from fastmcp.server.completions import CompletionValues
 from fastmcp.server.context import Context
 from fastmcp.server.event_store import EventStore
@@ -149,6 +149,34 @@ async def test_multiple_content_types() -> list:
 async def test_error_handling() -> str:
     """Always returns an error."""
     raise ToolError("This tool intentionally returns an error for testing")
+
+
+@server.tool(name="test_trigger_tool_change")
+async def test_trigger_tool_change() -> str:
+    """Adds a tool and notifies listen streams (SEP-2575 diagnostic hook)."""
+    server.add_tool(
+        FunctionTool.from_function(
+            lambda: "added",
+            name="test_dynamic_tool",
+            description="Added by test_trigger_tool_change",
+        )
+    )
+    await server.notify_tools_changed()
+    return "tool list changed"
+
+
+@server.tool(name="test_trigger_prompt_change")
+async def test_trigger_prompt_change() -> str:
+    """Adds a prompt and notifies listen streams (SEP-2575 diagnostic hook)."""
+    server.add_prompt(
+        Prompt.from_function(
+            lambda: "added",
+            name="test_dynamic_prompt",
+            description="Added by test_trigger_prompt_change",
+        )
+    )
+    await server.notify_prompts_changed()
+    return "prompt list changed"
 
 
 @server.tool(name="test_tool_with_logging")

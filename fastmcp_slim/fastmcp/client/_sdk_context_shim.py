@@ -22,11 +22,10 @@ _SessionT = TypeVar("_SessionT")
 
 
 class RequestContext(Generic[_SessionT, LifespanContextT]):
-    """Placeholder for the removed SDK ``RequestContext`` generic.
+    """Subscriptable stand-in for the SDK's removed `RequestContext` generic.
 
-    Subscriptable with two type parameters to match existing client handler
-    annotations. Not instantiated anywhere; exists only so module imports and
-    annotation evaluation succeed until the Phase C client port lands.
+    Takes two type parameters so client handler type aliases keep their
+    signature; never instantiated.
     """
 
     def __class_getitem__(cls, item: Any) -> Any:  # pragma: no cover - typing only

@@ -90,9 +90,10 @@ def test_frontmatter_rejects_non_finite_extra_values() -> None:
     [
         ("license", None, "license must be a string"),
         ("compatibility", None, "compatibility must be a string"),
-        ("metadata", None, "metadata must map"),
-        ("metadata", {"version": 1}, "metadata must map"),
-        ("allowed-tools", None, "allowed-tools must be a string"),
+        ("metadata", None, "metadata must be a mapping"),
+        ("metadata", ["author"], "metadata must be a mapping"),
+        ("allowed-tools", None, "allowed-tools must be a string or a list"),
+        ("allowed-tools", ["Read", 1], "allowed-tools must be a string or a list"),
     ],
 )
 def test_frontmatter_rejects_invalid_known_optional_fields(

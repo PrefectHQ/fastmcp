@@ -1,6 +1,6 @@
 # Code Mode
 
-CodeMode collapses an entire tool catalog into two meta-tools: `search` (keyword-based discovery) and `execute` (run Python scripts that chain tool calls in a sandbox). Instead of burning context tokens on every intermediate result, the LLM writes a script that runs server-side and returns only the final answer.
+CodeMode collapses an entire tool catalog into three meta-tools: `search` (keyword-based discovery), `get_schema` (parameter details), and `execute` (run Python scripts that chain tool calls in a sandbox). Instead of burning context tokens on every intermediate result, the LLM writes a script that runs server-side and returns only the final answer.
 
 ## Run
 
@@ -15,10 +15,11 @@ uv run python client.py   # in another
 ══════════════════ CodeMode Transform ══════════════════
 
 ┌────────────── list_tools() ──────────────┐
-│ Tool     Description                     │
-│ search   Search for available tools ...  │
-│ execute  Chain `await call_tool(...)` ... │
-└── 8 backend tools collapsed into 2 ──────┘
+│ Tool       Description                   │
+│ search     Search for available tools    │
+│ get_schema Get parameter schemas         │
+│ execute    Chain `await call_tool(...)`  │
+└── 8 backend tools collapsed into 3 ──────┘
 
 ┌──── search(query="math arithmetic") ─────┐
 │ #   Tool      Description                │

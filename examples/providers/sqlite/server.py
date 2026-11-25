@@ -24,6 +24,7 @@ from rich import print
 from fastmcp import Client, FastMCP
 from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool, ToolResult
+from fastmcp.utilities.versions import VersionSpec
 
 DB_PATH = Path(__file__).parent / "tools.db"
 
@@ -75,14 +76,16 @@ class SQLiteToolProvider(Provider):
         super().__init__()
         self.db_path = db_path
 
-    async def list_tools(self) -> Sequence[Tool]:
+    async def _list_tools(self) -> Sequence[Tool]:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM tools WHERE enabled = 1") as cursor:
                 rows = await cursor.fetchall()
                 return [self._make_tool(row) for row in rows]
 
-    async def get_tool(self, name: str) -> Tool | None:
+    async def _get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(

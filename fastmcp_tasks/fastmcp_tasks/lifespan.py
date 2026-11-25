@@ -72,7 +72,10 @@ async def docket_lifespan(
         return
 
     async with Docket(
-        name=settings.name, url=settings.url, credential_provider=credential_provider
+        name=settings.name,
+        url=settings.url,
+        execution_ttl=settings.execution_ttl,
+        credential_provider=credential_provider,
     ) as docket:
         server._docket = docket
         for component in task_components:
@@ -85,6 +88,7 @@ async def docket_lifespan(
                 "redelivery_timeout": settings.redelivery_timeout,
                 "reconnection_delay": settings.reconnection_delay,
                 "minimum_check_interval": settings.minimum_check_interval,
+                "parent_task_spans": settings.parent_task_spans,
             }
             if settings.worker_name:
                 worker_kwargs["name"] = settings.worker_name

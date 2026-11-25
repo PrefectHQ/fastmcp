@@ -200,7 +200,7 @@ mcp.add_extension(CallCounterExtension())
 
 Counting is harmless either way, so this example passes unaware callers straight through. The check becomes essential the moment an interceptor short-circuits: returning an extension-specific result to a client that never negotiated the extension hands it a shape it has no way to understand. Request methods have the same requirement, and `self.client_settings(ctx)` is the equivalent inside a handler.
 
-`params` holds the validated `tools/call` params, and `context` is the FastMCP `Context`, so the tool being invoked is reachable as `context.fastmcp.get_tool(params.name)` along with auth scope and the server itself. When several extensions intercept, they nest with the first-registered outermost.
+`params` holds the validated `tools/call` params, and `context` is the FastMCP `Context`, so the tool being invoked is reachable as `await context.fastmcp.get_tool(params.name)` along with auth scope and the server itself. When several extensions intercept, they nest with the first-registered outermost.
 
 Reach for middleware when you want to observe or modify requests generally; reach for an interceptor when the behavior belongs to a negotiated capability and should exist only while that extension is registered.
 

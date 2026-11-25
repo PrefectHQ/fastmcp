@@ -15,7 +15,7 @@ within 7 days.
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -316,7 +316,7 @@ def should_close_as_needs_mre(
         return False
 
     # Check if label is old enough (7 days)
-    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    seven_days_ago = datetime.now(UTC) - timedelta(days=7)
 
     if label_date > seven_days_ago:
         return False

@@ -22,7 +22,7 @@ This documentation exists for completeness - the vast majority of applications s
 
 ## OAuthProvider
 
-FastMCP provides the `OAuthProvider` abstract class that implements the OAuth 2.1 specification. To use this pattern, you must subclass `OAuthProvider` and implement all required abstract methods.
+FastMCP provides the `OAuthProvider` base class that implements the OAuth 2.1 specification. To use this pattern, subclass `OAuthProvider` and implement the methods below. Its constructor takes your server's public `base_url`, plus optional `resource_base_url`, `issuer_url`, `service_documentation_url`, `client_registration_options`, `revocation_options`, and `required_scopes`.
 
 <Note>
 `OAuthProvider` handles OAuth endpoints, protocol flows, and security requirements, but delegates all storage, user management, and business logic to your implementation of the abstract methods.
@@ -30,7 +30,7 @@ FastMCP provides the `OAuthProvider` abstract class that implements the OAuth 2.
 
 ## Required Implementation
 
-You must implement these abstract methods to create a functioning OAuth server:
+You must implement these methods to create a functioning OAuth server:
 
 ### Client Management
 
@@ -206,7 +206,7 @@ You must implement these abstract methods to create a functioning OAuth server:
 </ParamField>
 
 <ParamField body="verify_token" type="async method">
-  Verify bearer token for incoming requests. Return `AccessToken` if valid, `None` if invalid.
+  Verify bearer token for incoming requests. Return `AccessToken` if valid, `None` if invalid. `OAuthProvider` already implements this by calling `load_access_token`, so override it only when verification needs more than that lookup.
   
   <Expandable title="Parameters">
     <ParamField body="token" type="str">

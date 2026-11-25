@@ -39,6 +39,7 @@ from fastmcp.server.middleware.middleware import (
     Middleware,
     MiddlewareContext,
 )
+from fastmcp.server.providers.addressing import parse_hashed_backend_name
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.authorization import (
     AuthCheck,
@@ -112,6 +113,45 @@ class AuthMiddleware(Middleware):
 
     def __init__(self, auth: AuthCheck | list[AuthCheck]) -> None:
         self.auth = auth
+
+    async def on_request(
+        self,
+        context: MiddlewareContext[Any],
+        call_next: CallNext[Any, Any],
+    ) -> Any:
+        """Answer completion for a denied reference like an unknown one."""
+        if context.method != "completion/complete" or await self._may_complete(context):
+            return await call_next(context)
+        # The result envelope differs by protocol era, so keep the one the
+        # server builds and drop only the suggestions.
+        result = await call_next(context)
+        if isinstance(result, Mapping):
+            return {**result, "completion": {"values": []}}
+        return result
+
+    async def _may_complete(self, context: MiddlewareContext[Any]) -> bool:
+        from fastmcp.server.context import _current_transport
+
+        if _current_transport.get() == "stdio":
+            return True
+        message = context.message
+        ref = message.get("ref") if isinstance(message, Mapping) else None
+        if not isinstance(ref, Mapping) or context.fastmcp_context is None:
+            return False
+        ref_type = str(ref.get("type"))
+        key = str(ref.get("name") if ref_type == "ref/prompt" else ref.get("uri"))
+        component = await context.fastmcp_context.fastmcp._completion_target(
+            ref_type, key
+        )
+        if component is None:
+            # Unknown or already hidden; the server answers empty.
+            return True
+        try:
+            return await run_auth_checks(
+                self.auth, AuthContext(token=get_access_token(), component=component)
+            )
+        except AuthorizationError:
+            return False
 
     def _chain_shortfall(
         self,
@@ -228,6 +268,18 @@ class AuthMiddleware(Middleware):
         version = _requested_version(context.message.meta)
         tool = await fastmcp.fastmcp.get_tool(tool_name, version=version)
         if tool is None:
+            # Core routing retries a failed display-name lookup as a hashed
+            # backend name: backend tools callable by apps are addressed as
+            # `<hash>_<local_name>` and resolved through `get_tool_by_hash`.
+            # Mirror that path so such a tool is authorized as the same
+            # component however it was addressed. `get_tool_by_hash` applies
+            # the transforms, visibility, enabled state, and component auth
+            # a name lookup applies, so a refused tool still resolves to None.
+            hashed = parse_hashed_backend_name(tool_name)
+            if hashed is not None:
+                digest, local_name = hashed
+                tool = await fastmcp.fastmcp.get_tool_by_hash(digest, local_name)
+        if tool is None:
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': "
                 "not found or not authorized"
@@ -312,6 +364,20 @@ class AuthMiddleware(Middleware):
             component = await fastmcp.fastmcp.get_resource_template(
                 str(uri),
                 version=version,
+            )
+        if component is None:
+            # Prefab renderer resources (`ui://prefab/renderer/<sha256>/
+            # renderer.html`, plus legacy per-tool hashed URIs) are synthesized
+            # on demand by core `read_resource` rather than stored on a
+            # provider, so neither lookup above can see them. Mirror that path
+            # so the global checks below run against the component core would
+            # actually read.
+            from fastmcp.server.providers.prefab_synthesis import (
+                synthesize_prefab_resource_by_uri,
+            )
+
+            component = await synthesize_prefab_resource_by_uri(
+                fastmcp.fastmcp, str(uri)
             )
         if component is None:
             raise AuthorizationError(

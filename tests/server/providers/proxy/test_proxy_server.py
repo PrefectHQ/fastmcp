@@ -20,6 +20,7 @@ from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.client.transports.base import TransportOptions
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig
+from fastmcp.prompts import Message
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server import create_proxy
 from fastmcp.server.middleware import Middleware
@@ -883,6 +884,31 @@ class TestPrompts:
             proxy_result = await client.list_prompts()
         assert proxy_result == result
 
+    async def test_list_prompts_keeps_argument_titles(self):
+        """A backend's argument titles reach the proxy's clients."""
+        from fastmcp.prompts import Prompt
+        from fastmcp.prompts.base import PromptArgument
+
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(greet)
+        prompt = prompt.model_copy(
+            update={
+                "arguments": [
+                    PromptArgument(name="name", title="Your name", required=True)
+                ]
+            }
+        )
+        backend = FastMCP("Backend")
+        backend.add_prompt(prompt)
+
+        async with Client(create_proxy(backend)) as client:
+            (listed,) = await client.list_prompts()
+        assert listed.arguments == [
+            mcp_types.PromptArgument(name="name", title="Your name", required=True)
+        ]
+
     async def test_render_prompt_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
@@ -958,6 +984,25 @@ class TestPrompts:
         assert isinstance(proxy_result.messages[1].content, mcp_types.ImageContent)
         assert proxy_result.messages[1].content.data == "iVBORw0KGgoAAAANSUhEUg=="
         assert proxy_result.messages[1].content.mime_type == "image/png"
+
+    async def test_proxy_prompt_preserves_resource_link(self):
+        """A resource_link block from the backend is relayed, not flattened to text."""
+        link = mcp_types.ResourceLink(
+            type="resource_link",
+            uri="docs://guide",
+            name="guide",
+            mime_type="text/markdown",
+        )
+        backend = FastMCP("Backend")
+
+        @backend.prompt
+        def review_guide() -> list[Message]:
+            return [Message("Please review this document:"), Message(link)]
+
+        async with Client(create_proxy(backend)) as client:
+            result = await client.get_prompt("review_guide")
+
+        assert result.messages[1].content == link
 
 
 async def test_proxy_handles_multiple_concurrent_tasks_correctly(
@@ -1091,13 +1136,13 @@ class TestProxyProviderCache:
             lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
         )
         await provider._list_tools()
-        first_ts = provider._tools_cache.timestamp  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        first_ts = provider._tools_cache.timestamp  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
         # Tiny sleep so monotonic clock advances
         time.sleep(0.05)
 
         await provider._list_tools()
-        assert provider._tools_cache.timestamp > first_ts  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert provider._tools_cache.timestamp > first_ts  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
     async def test_cache_ttl_zero_disables_caching(self, fastmcp_server):
         """With cache_ttl=0, every _get_tool call should re-fetch."""
@@ -1149,7 +1194,7 @@ class TestProxyProviderCache:
         ) as mock_list:
             result = await proxy.call_tool("greet", {"name": "Alice"})
             mock_list.assert_not_called()
-        assert result.content[0].text == "Hello, Alice!"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "Hello, Alice!"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
 
 
 class TestProxySpanAttributes:

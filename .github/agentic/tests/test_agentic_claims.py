@@ -192,6 +192,13 @@ with claim_issues(Batch.model_validate_json(sys.argv[1]),UUID(sys.argv[2])):
             parameters={"parameters": {"ref": {"owner": str(prior.id)}}},
             state=Running(),
         )
+        # Native plan runs carry no ref; they're named for their batch item.
+        named = client.create_flow_run(
+            controller,
+            name=f"{batch.id}-issue-1-native-initial",
+            parameters={"assess_request": {}, "reproduce_request": {}},
+            state=Running(),
+        )
         shared = client.create_flow_run_from_deployment(
             verification_id, parameters={"spec": {"issue_number": 1}}
         )
@@ -237,12 +244,14 @@ with claim_issues(Batch.model_validate_json(sys.argv[1]),UUID(sys.argv[2])):
             )
         try:
             until = time.monotonic() + 25
-            while not client.read_flow_run(child.id).state.is_cancelling():
-                assert process.poll() is None
-                assert time.monotonic() < until
-                time.sleep(0.05)
+            for run in (child, named):
+                while not client.read_flow_run(run.id).state.is_cancelling():
+                    assert process.poll() is None
+                    assert time.monotonic() < until
+                    time.sleep(0.05)
             assert not marker.exists()
             client.set_flow_run_state(child.id, Cancelled(), force=True)
+            client.set_flow_run_state(named.id, Cancelled(), force=True)
             time.sleep(1.2)
             assert not marker.exists()
             assert client.read_flow_run(shared.id).state.is_running()

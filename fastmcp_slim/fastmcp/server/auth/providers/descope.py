@@ -17,7 +17,7 @@ from mcp.server.auth.routes import build_resource_metadata_url, cors_middleware
 from mcp.shared.auth import ProtectedResourceMetadata
 from pydantic import AnyHttpUrl
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import Response
 from starlette.routing import Route
 
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
@@ -267,6 +267,7 @@ class DescopeProvider(RemoteAuthProvider):
             scopes_supported=parsed_scopes_supported,
             resource_name=resource_name,
             resource_documentation=resource_documentation,
+            required_scopes=parsed_required_scopes,
         )
 
     async def _get_scopes_supported(self) -> list[str] | None:
@@ -346,37 +347,8 @@ class DescopeProvider(RemoteAuthProvider):
             )
             if project_metadata_url != self.oauth_authorization_server_metadata_url:
                 metadata_urls.append(project_metadata_url)
-            try:
-                async with httpx2.AsyncClient() as client:
-                    for metadata_url in metadata_urls:
-                        try:
-                            response = await client.get(metadata_url)
-                            response.raise_for_status()
-                            return JSONResponse(response.json())
-                        except Exception as metadata_error:
-                            # Don't log `metadata_url`: CodeQL's taint tracking
-                            # flags it as sensitive (it's built from the same
-                            # class attributes as authenticated request URLs
-                            # elsewhere in this provider).
-                            logger.debug(
-                                "Failed to fetch Descope metadata: %s", metadata_error
-                            )
-                            continue
-            except Exception as e:
-                return JSONResponse(
-                    {
-                        "error": "server_error",
-                        "error_description": f"Failed to fetch Descope metadata: {e}",
-                    },
-                    status_code=500,
-                )
-
-            return JSONResponse(
-                {
-                    "error": "server_error",
-                    "error_description": "Failed to fetch Descope metadata",
-                },
-                status_code=500,
+            return await self._forward_authorization_server_metadata(
+                metadata_urls, "Descope"
             )
 
         routes.append(

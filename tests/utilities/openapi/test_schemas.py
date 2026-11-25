@@ -762,3 +762,50 @@ class TestExtractOutputSchema:
         responses = {"200": invitation, "201": invitation}
 
         assert extract_output_schema_from_responses(responses) == self.invitation_schema
+
+
+# A pointer into a component, next to a component named like its last segment.
+PET_STATUS_DEFS: dict[str, Any] = {
+    "Pet": {
+        "type": "object",
+        "properties": {"status": {"type": "string", "enum": ["a", "b"]}},
+    },
+    "status": {"type": "integer"},
+}
+
+
+def test_request_defs_keep_the_component_a_pointer_reaches_into():
+    route = HTTPRoute(
+        path="/pets",
+        method="POST",
+        request_body=RequestBodyInfo(
+            required=True,
+            content_schema={
+                "application/json": {
+                    "type": "object",
+                    "properties": {"status": {"$ref": "#/$defs/Pet/properties/status"}},
+                }
+            },
+        ),
+        request_schemas=PET_STATUS_DEFS,
+    )
+
+    schema, _ = _combine_schemas_and_map_params(route)
+
+    assert set(schema["$defs"]) == {"Pet"}
+
+
+def test_output_schema_does_not_inline_a_component_named_like_the_pointer_tail():
+    responses = {
+        "200": ResponseInfo(
+            description="ok",
+            content_schema={
+                "application/json": {"$ref": "#/$defs/Pet/properties/status"}
+            },
+        )
+    }
+
+    schema = extract_output_schema_from_responses(responses, PET_STATUS_DEFS, "3.1.0")
+
+    assert schema is not None
+    assert schema["properties"]["result"] == {"$ref": "#/$defs/Pet/properties/status"}

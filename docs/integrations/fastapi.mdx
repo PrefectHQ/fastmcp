@@ -175,7 +175,7 @@ if __name__ == "__main__":
 
 Once you've converted your FastAPI app to an MCP server, you can interact with it using the FastMCP client to test functionality before deploying it to an LLM-based application.
 
-```python {3, }
+```python {3}
 # Assumes the FastAPI app from above is already defined
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -256,12 +256,12 @@ To learn more about customizing the conversion process, see the [OpenAPI Integra
 
 You can configure headers and other client options via the `httpx_client_kwargs` parameter. For example, to add authentication to your FastAPI app, you can pass a `headers` dictionary to the `httpx_client_kwargs` parameter:
 
-```python {27-31}
+```python {26-30}
 # Assumes the FastAPI app from above is already defined
 from fastmcp import FastMCP
 
 # Add authentication to your FastAPI app
-from fastapi import Depends, Header
+from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 security = HTTPBearer()
@@ -300,7 +300,8 @@ In addition to generating servers, FastMCP can facilitate adding MCP servers to 
 
 To mount an MCP server, you can use the `http_app` method on your FastMCP instance. This will return an ASGI application that can be mounted to your FastAPI application.
 
-```python {23-30}
+```python {24-30}
+# Assumes products_db from the example app above is already defined
 from fastmcp import FastMCP
 from fastapi import FastAPI
 
@@ -331,7 +332,7 @@ app = FastAPI(title="E-commerce API", lifespan=mcp_app.lifespan)
 # Mount the MCP server
 app.mount("/analytics", mcp_app)
 
-# Now: API at /products/*, MCP at /analytics/mcp/
+# Now: MCP at /analytics/mcp
 ```
 
 ### Testing a Mounted Server
@@ -423,7 +424,7 @@ This approach lets you maintain a single codebase while offering both traditiona
 
 ### Operation IDs
 
-FastAPI operation IDs become MCP component names. Always specify meaningful operation IDs:
+FastAPI operation IDs become MCP component names, cut at the first double underscore (`__`). Without an explicit `operation_id`, FastAPI generates one such as `get_user_users__user_id__get`, which becomes the tool name `get_user_users`. Specify meaningful operation IDs:
 
 ```python
 # Good - explicit operation_id

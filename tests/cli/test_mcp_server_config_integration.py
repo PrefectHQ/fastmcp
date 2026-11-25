@@ -3,6 +3,7 @@
 import json
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -291,3 +292,20 @@ class TestConfigValidation:
             )
             assert config.deployment is not None
             assert config.deployment.log_level == level
+
+
+class TestRunServer:
+    async def test_run_server_forwards_port_zero(self, tmp_path):
+        server_file = tmp_path / "server.py"
+        server_file.write_text("from fastmcp import FastMCP\nmcp = FastMCP('test')\n")
+        config = MCPServerConfig(
+            source={"path": str(server_file)},
+            deployment={"transport": "http", "port": 0},
+        )
+
+        with patch(
+            "fastmcp.server.server.FastMCP.run_async", new_callable=AsyncMock
+        ) as run_async:
+            await config.run_server()
+
+        run_async.assert_awaited_once_with(transport="http", port=0)

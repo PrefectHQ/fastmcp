@@ -16,7 +16,6 @@ from fastmcp.server.middleware.authorization import AuthMiddleware
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
-from fastmcp.server.providers.skills import SkillsDirectoryProvider
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
@@ -81,19 +80,18 @@ async def test_forwards_backend_skills_without_reading_files() -> None:
         assert "# Review" in content.text
 
 
-async def test_files_behind_a_backend_template_are_checked_without_reads(
-    tmp_path: Path,
-) -> None:
-    folder = tmp_path / "review"
-    folder.mkdir()
-    (folder / "SKILL.md").write_bytes(
-        b"---\nname: review\ndescription: Review changes\n---\n# Review\n"
-    )
-    (folder / "notes.md").write_bytes(b"Read the diff first.\n")
-    upstream = FastMCP(
-        "backend",
-        providers=[SkillsDirectoryProvider(tmp_path, experimental_skills=True)],
-    )
+async def test_files_behind_a_backend_template_are_checked_without_reads() -> None:
+    class UnlistedNotes(SkillCatalogProvider):
+        async def _list_resources(self):
+            resources = await super()._list_resources()
+            return [r for r in resources if not str(r.uri).endswith("/notes.md")]
+
+    upstream = FastMCP("backend", providers=[UnlistedNotes([REVIEW])])
+
+    @upstream.resource("skill://review/{path*}")
+    def review_file(path: str) -> str:
+        return REVIEW.files[path].decode()
+
     reads = Reads()
     upstream.add_middleware(reads)
 
@@ -137,6 +135,35 @@ async def test_backend_without_skills_has_an_empty_catalog() -> None:
 
 async def test_follows_backend_pagination() -> None:
     async with skills_client(gateway(backend(REVIEW, DEPLOY, page_size=1))) as client:
+        listed = await client.list_skills()
+    assert [skill.uri for skill in listed] == [
+        "skill://deploy/SKILL.md",
+        "skill://review/SKILL.md",
+    ]
+
+
+class EmptyCursorSkillsExtension(SkillsExtension):
+    """Spells the first page's continuation cursor as the empty string."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._first_cursor: str | None = None
+
+    async def _handle_list(self, context, params):
+        if params.cursor == "":
+            params = params.model_copy(update={"cursor": self._first_cursor})
+        result = await super()._handle_list(context, params)
+        if params.cursor is None and result.next_cursor is not None:
+            self._first_cursor = result.next_cursor
+            result = result.model_copy(update={"next_cursor": ""})
+        return result
+
+
+async def test_follows_empty_backend_cursor() -> None:
+    upstream = backend(REVIEW, DEPLOY, page_size=1)
+    upstream.add_extension(EmptyCursorSkillsExtension())
+
+    async with skills_client(gateway(upstream)) as client:
         listed = await client.list_skills()
     assert [skill.uri for skill in listed] == [
         "skill://deploy/SKILL.md",

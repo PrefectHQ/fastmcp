@@ -219,7 +219,7 @@ class HuggingFaceProvider(OAuthProxy):
             valid_scopes: Scopes clients may request. Defaults to required scopes.
             extra_authorize_params: Extra authorization parameters, such as
                 ``{"orgIds": "your-org-id"}`` for organization grants.
-            identity_assertion: Optional SEP-990 ID-JAG configuration for
+            identity_assertion: Beta. Optional SEP-990 ID-JAG configuration for
                 identity-bound token exchange. Disabled by default.
         """
         required_scopes_final = (

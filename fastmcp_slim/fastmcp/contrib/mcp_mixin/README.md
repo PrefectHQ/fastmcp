@@ -1,5 +1,3 @@
-from mcp.types import ToolAnnotations
-
 # MCP Mixin
 
 This module provides the `MCPMixin` base class and associated decorators (`@mcp_tool`, `@mcp_resource`, `@mcp_prompt`).
@@ -8,17 +6,16 @@ It allows developers to easily define classes whose methods can be registered as
 
 Includes support for
 Tools:
-* [enable/disable](https://gofastmcp.com/servers/tools#disabling-tools)
-* [annotations](https://gofastmcp.com/servers/tools#annotations-2)
-* [excluded arguments](https://gofastmcp.com/servers/tools#excluding-arguments)
+* [enable/disable](https://gofastmcp.com/servers/tools#component-visibility)
+* [annotations](https://gofastmcp.com/servers/tools#mcp-annotations)
 * [meta](https://gofastmcp.com/servers/tools#param-meta)
 
 Prompts:
-* [enable/disable](https://gofastmcp.com/servers/prompts#disabling-prompts)
+* [enable/disable](https://gofastmcp.com/servers/prompts#component-visibility)
 * [meta](https://gofastmcp.com/servers/prompts#param-meta)
 
 Resources:
-* [enable/disable](https://gofastmcp.com/servers/resources#disabling-resources)
+* [enable/disable](https://gofastmcp.com/servers/resources#component-visibility)
 * [meta](https://gofastmcp.com/servers/resources#param-meta)
   
 ## Usage
@@ -41,17 +38,6 @@ class MyComponent(MCPMixin):
         # This function can't be called by client because it's disabled
         return "You'll never get here!"
 
-    # example of excluded parameter tool
-    @mcp_tool(
-        name="my_tool", description="Does something cool.",
-        enabled=False, exclude_args=['delete_everything'],
-    )
-    def excluded_param_tool_method(self, delete_everything=False):
-        # MCP tool calls can't pass the "delete_everything" argument
-        if delete_everything:
-            return "Nothing to delete, I bet you're not a tool :)"
-        return "You might be a tool if..."
-
     # example tool w/annotations
     @mcp_tool(
         name="my_tool", description="Does something cool.",
@@ -69,7 +55,6 @@ class MyComponent(MCPMixin):
     @mcp_tool(
         name="my_tool", description="Does something cool.",
         enabled=True,
-        exclude_args=['delete_all'],
         annotations=ToolAnnotations(
             title="Attn LLM, use this tool first!",
             readOnlyHint=False,
@@ -103,7 +88,7 @@ class MyComponent(MCPMixin):
     # example resource w/meta and title
     @mcp_resource(
         uri="component://config",
-        title="Data resource Title,
+        title="Data resource Title",
         meta={"internal": True, "cache_ttl": 3600, "priority": "high"}
     )
     def config_resource_method(self):
@@ -144,4 +129,4 @@ component.register_all(mcp_server, prefix="my_comp")
 # Or 'my_tool' and 'component://data' are registered (if no prefix used)
 ```
 
-The `prefix` argument in registration methods is optional. If omitted, methods are registered with their original decorated names/URIs. Individual separators (`tools_separator`, `resources_separator`, `prompts_separator`) can also be provided to `register_all` to change the separator for specific types.
+The `prefix` argument in registration methods is optional. If omitted, methods are registered with their original decorated names/URIs. Individual separators (`tool_separator`, `resource_separator`, `prompt_separator`) can also be provided to `register_all` to change the separator for specific types.

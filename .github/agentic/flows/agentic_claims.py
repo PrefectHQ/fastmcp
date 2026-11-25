@@ -76,9 +76,13 @@ def owned_child(run: FlowRun, owner: UUID, batch_id: str, runtime: dict) -> bool
         runtime.get("triage_finalize_id"),
     } - {None}
     role_flows = {plan["flow_id"] for plan in runtime["plans"].values()}
+    # Native plan runs carry no ref in their parameters; they're named for their
+    # batch item (agentic_native_triage.run_native_stage), and a batch has one owner
+    # at a time.
+    native_matches = ref_matches or run.name.startswith(f"{batch_id}-issue-")
     return (
         str(run.flow_id) == native.get("flow_id")
-        and ref_matches
+        and native_matches
         or str(run.deployment_id) in worker_ids
         and source_matches
         and ref_matches

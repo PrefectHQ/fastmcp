@@ -43,9 +43,11 @@ Approval is an advisory gate, not an enforcement mechanism. The conversation isn
 
 ## Configuration
 
-The constructor sets defaults; the LLM can override all of these per-call via tool arguments.
+The constructor sets defaults; the LLM can override every option except `name` per call via tool arguments.
 
 ```python
+from fastmcp.apps.approval import Approval
+
 Approval(
     name="Approval",              # App name
     title="Approval Required",    # Card heading
@@ -56,17 +58,17 @@ Approval(
 )
 ```
 
-The LLM can customize each invocation:
+The LLM can customize each invocation through the arguments it passes to `request_approval`:
 
-```python
-request_approval(
-    summary="Delete 47 files from /tmp",
-    details="This cannot be undone.",
-    title="Destructive Action",
-    approve_text="Delete",
-    approve_variant="destructive",
-    reject_text="Keep files",
-)
+```json
+{
+  "summary": "Delete 47 files from /tmp",
+  "details": "This cannot be undone.",
+  "title": "Destructive Action",
+  "approve_text": "Delete",
+  "approve_variant": "destructive",
+  "reject_text": "Keep files"
+}
 ```
 
 ## How it works

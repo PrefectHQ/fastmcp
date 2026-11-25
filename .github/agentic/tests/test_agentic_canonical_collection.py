@@ -251,10 +251,8 @@ def test_source_or_canonical_changes_during_enrichment_fail_freshness(
     value = add(5588, body="Original contribution")
     if number == 9001:
         value = routes["repos/PrefectHQ/fastmcp/pulls/9001"]
-    routes[f"repos/PrefectHQ/fastmcp/pulls/{number}"] = (
-        lambda count: value
-        if count == 1
-        else {**value, "updated_at": "2026-10-28T00:00:00Z"}
+    routes[f"repos/PrefectHQ/fastmcp/pulls/{number}"] = lambda count: (
+        value if count == 1 else {**value, "updated_at": "2026-10-28T00:00:00Z"}
     )
     result = run()
     assert result.returncode != 0 and "Contribution changed" in result.stderr

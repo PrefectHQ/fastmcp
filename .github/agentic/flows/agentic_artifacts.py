@@ -8,6 +8,8 @@ from prefect.client.orchestration import get_client
 from prefect.client.schemas.actions import ArtifactCreate
 from prefect.client.schemas.filters import ArtifactFilter, FlowRunFilter
 
+from flows.agentic_stack import same_json
+
 
 def plain(value: object) -> str:
     if value is None:
@@ -61,7 +63,7 @@ def retain_artifact(
         if previous:
             if (
                 len(previous) != 1
-                or previous[0].data != data
+                or not same_json(previous[0].data, data)
                 or previous[0].type != artifact_type
             ):
                 raise ValueError("Conflicting retained artifact")

@@ -226,7 +226,7 @@ async def _answer_input_requests(
             answer = await (
                 asyncio.wait_for(call, budget) if budget is not None else call
             )
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             # Normalize to the builtin: on Python 3.10 `asyncio.wait_for` raises
             # `asyncio.TimeoutError`, a distinct type from the builtin the rest of
             # the drive raises (they were unified in 3.11).
@@ -405,11 +405,13 @@ class ToolTask:
         create_result: ClientCreateTaskResult,
         *,
         raise_on_error: bool = True,
+        pinned_version: str | None = None,
     ) -> None:
         self._client = client
         self._tool_name = tool_name
         self._create_result = create_result
         self._raise_on_error = raise_on_error
+        self._pinned_version = pinned_version
         self._cached_result: FastMCPCallToolResult | None = None
 
     @property
@@ -504,7 +506,10 @@ class ToolTask:
             )
 
         parsed = await self._client._parse_call_tool_result(
-            self._tool_name, mcp_result, raise_on_error=self._raise_on_error
+            self._tool_name,
+            mcp_result,
+            raise_on_error=self._raise_on_error,
+            pinned_version=self._pinned_version,
         )
         self._cached_result = parsed
         return parsed
@@ -559,7 +564,13 @@ async def call_tool_task(
             )
         )
     if isinstance(raw, ClientCreateTaskResult):
-        return ToolTask(client, name, raw, raise_on_error=raise_on_error)
+        return ToolTask(
+            client,
+            name,
+            raw,
+            raise_on_error=raise_on_error,
+            pinned_version=version,
+        )
     raise ToolError(
         f"Tool {name!r} did not run as a task: the server returned a "
         f"{type(raw).__name__} instead of a task. Ensure the tool is declared "

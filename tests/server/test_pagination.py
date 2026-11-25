@@ -660,3 +660,15 @@ class TestPaginationCycleDetection:
             tools = await client.list_tools()
             assert len(tools) == 25
             assert len({t.name for t in tools}) == 25
+
+
+def test_paginate_request_rejects_a_bad_cursor_as_invalid_params():
+    from mcp.shared.exceptions import MCPError
+    from mcp_types import INVALID_PARAMS
+
+    from fastmcp.utilities.pagination import paginate_request
+
+    assert paginate_request([1, 2, 3], None, None) == ([1, 2, 3], None)
+    with pytest.raises(MCPError) as caught:
+        paginate_request([1, 2, 3], "not-a-cursor", 2)
+    assert caught.value.error.code == INVALID_PARAMS

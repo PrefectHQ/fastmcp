@@ -56,14 +56,14 @@ and hosting choices to determine configuration.
 When clients need a repeatable workflow across the server's capabilities,
 consider shipping a skill alongside those capabilities. Put task selection,
 operation sequencing, and recovery guidance in the skill; keep tool descriptions
-focused on their individual contracts. Read the version-matched Skills Provider
-and Experimental Skills Extension docs from the index before implementing it.
-`SkillsDirectoryProvider` exposes skill files as resources; the experimental
-extension adds `skills/list` and `skills/get` discovery. Check the installed
-release and target host's support before selecting either interface. Discovery
-does not activate a skill: verify that the host reads and uses it in the intended
-workflow. The experimental extension currently requires directly registered
-providers and does not support mounted or transformed skill sources.
+focused on their individual contracts. Read the version-matched Skills docs from
+the index before implementing it. `SkillsDirectoryProvider` and
+`SkillCatalogProvider` serve skill files as resources and also answer the
+experimental Skills extension's `skills/list` and `skills/get`. Check the
+installed release and target host's support before relying on discovery.
+Discovery does not activate a skill: verify that the host reads and uses it in
+the intended workflow. Providers added with transforms are not discoverable;
+mount a server instead.
 
 Verify the server through FastMCP's `Client`, which can connect directly to a
 server instance for in-process testing. Check a representative operation, its

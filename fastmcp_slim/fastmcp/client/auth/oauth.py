@@ -11,7 +11,8 @@ import httpx2
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
-from mcp.client.auth import OAuthClientProvider, TokenStorage
+from mcp.client.auth import OAuthClientProvider, OAuthFlowError, TokenStorage
+from mcp.client.auth.utils import issuers_match
 from mcp.shared._httpx_utils import McpHttpClientFactory
 from mcp.shared.auth import (
     AuthorizationCodeResult,
@@ -226,6 +227,7 @@ class OAuth(OAuthClientProvider):
         # --- OR clients provide full client information ---
         client_id: str | None = None,
         client_secret: str | None = None,
+        issuer: str | None = None,
     ):
         """
         Initialize OAuth client provider for an MCP server.
@@ -249,6 +251,12 @@ class OAuth(OAuthClientProvider):
             client_id: Pre-registered OAuth client ID. When provided, skips dynamic
                 client registration and uses these static credentials instead.
             client_secret: OAuth client secret (optional, used with client_id)
+            issuer: Issuer identifier of the authorization server that registered
+                `client_id`. When set, the pre-registered credentials are only
+                sent to that authorization server: if the MCP server advertises a
+                different one, the flow fails instead of sending the secret there
+                or falling back to dynamic client registration. Pass it whenever
+                you pass a `client_secret`.
         """
         # Store config for deferred binding if mcp_url not yet known
         self._scopes = scopes
@@ -261,6 +269,7 @@ class OAuth(OAuthClientProvider):
         self._client_metadata_url = client_metadata_url
         self._client_id = client_id
         self._client_secret = client_secret
+        self._issuer = issuer
         self._static_client_info = None
         self.httpx_client_factory = httpx_client_factory or httpx2.AsyncClient
         self._bound = False
@@ -325,6 +334,7 @@ class OAuth(OAuthClientProvider):
             self._static_client_info = OAuthClientInformationFull(
                 client_id=self._client_id,
                 client_secret=self._client_secret,
+                issuer=self._issuer,
                 **metadata,
             )
 
@@ -366,12 +376,49 @@ class OAuth(OAuthClientProvider):
             self.context.client_info = self._static_client_info
             await self.token_storage_adapter.set_client_info(self._static_client_info)
 
+        # Authorization server metadata isn't persisted, so refreshing a
+        # reloaded token would fall back to the MCP server's own /token
+        # endpoint and send the issuer-bound secret there unchecked. Drop the
+        # refresh token so the next 401 rediscovers and checks the issuer.
+        tokens = self.context.current_tokens
+        if (
+            self._issuer is not None
+            and self._static_client_info is not None
+            and self.context.oauth_metadata is None
+            and tokens is not None
+            and tokens.refresh_token is not None
+        ):
+            self.context.current_tokens = tokens.model_copy(
+                update={"refresh_token": None}
+            )
+
         if self.context.current_tokens and self.context.current_tokens.expires_in:
             stored_expiry = await self.token_storage_adapter.get_token_expiry()
             if stored_expiry is not None:
                 self.context.token_expiry_time = stored_expiry
             else:
                 self.context.update_token_expiry(self.context.current_tokens)
+
+    def _expected_issuer(self) -> str:
+        """Fail closed when the server points pre-registered credentials elsewhere.
+
+        The SDK would otherwise discard issuer-bound static credentials on a
+        mismatch and register a new client at the advertised authorization
+        server, completing the flow there.
+        """
+        expected_issuer = super()._expected_issuer()
+        if (
+            self._static_client_info is not None
+            and self._issuer is not None
+            and not issuers_match(self._issuer, expected_issuer)
+        ):
+            raise OAuthFlowError(
+                f"The MCP server advertises authorization server {expected_issuer!r}, "
+                f"but client_id {self._client_id!r} is registered with issuer "
+                f"{self._issuer!r}. Refusing to send pre-registered credentials to a "
+                "different authorization server."
+            )
+        return expected_issuer
 
     async def _perform_authorization(self) -> httpx2.Request:
         """Reject expired registrations before attempting authorization."""

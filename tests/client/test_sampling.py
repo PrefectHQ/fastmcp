@@ -238,3 +238,16 @@ class TestSamplingDefaultCapabilities:
         caps = client._session_kwargs["sampling_capabilities"]
         assert isinstance(caps, mcp_types.SamplingCapability)
         assert caps.tools is not None
+
+
+async def test_set_sampling_callback_updates_a_live_session(fastmcp_server: FastMCP):
+    """`set_sampling_callback` while connected takes effect without reconnecting."""
+    async with Client(
+        fastmcp_server, mode="legacy", sampling_handler=lambda m, p, c: "first"
+    ) as client:
+        before = await client.call_tool("simple_sample", {"message": "hi"})
+        client.set_sampling_callback(lambda m, p, c: "second")
+        after = await client.call_tool("simple_sample", {"message": "hi"})
+
+    assert before.data == "first"
+    assert after.data == "second"

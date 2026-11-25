@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
 ## Production Configuration
 
-For production deployments, load sensitive configuration from environment variables:
+For production deployments, load configuration from environment variables:
 
 ```python server.py
 import os
@@ -99,7 +99,7 @@ from fastmcp.server.auth.providers.workos import AuthKitProvider
 
 # Load configuration from environment variables
 auth = AuthKitProvider(
-    authkit_domain=os.environ.get("AUTHKIT_DOMAIN"),
+    authkit_domain=os.environ["AUTHKIT_DOMAIN"],
     base_url=os.environ.get("BASE_URL", "https://your-server.com"),
 )
 

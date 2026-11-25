@@ -20,6 +20,7 @@ from starlette.testclient import TestClient
 from fastmcp import FastMCP
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.handlers.authorize import create_unregistered_client_html
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.http import create_streamable_http_app
@@ -144,6 +145,10 @@ class TestEnhancedAuthorizationHandler:
             assert "Link" in response.headers
             assert "/register" in response.headers["Link"]
 
+            # The page should surface the same endpoints the JSON branch returns
+            assert "https://myserver.com/register" in html
+            assert "https://myserver.com/.well-known/oauth-authorization-server" in html
+
     def test_unregistered_client_returns_json_for_api(self, oauth_proxy):
         """Test that unregistered client returns enhanced JSON for API clients."""
         app = Starlette(routes=oauth_proxy.get_routes())
@@ -179,6 +184,43 @@ class TestEnhancedAuthorizationHandler:
             # Should have Link header
             assert "Link" in response.headers
             assert "/register" in response.headers["Link"]
+
+    def test_malformed_post_form_returns_error_without_rereading_stream(
+        self, oauth_proxy
+    ):
+        app = Starlette(routes=oauth_proxy.get_routes())
+        body = b"--expected-boundary\r\nnot a valid multipart field"
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/authorize",
+                content=body,
+                headers={
+                    "Content-Type": "multipart/form-data; boundary=expected-boundary"
+                },
+            )
+
+        assert response.status_code == 400
+
+    def test_unregistered_post_client_still_returns_enhanced_error(self, oauth_proxy):
+        app = Starlette(routes=oauth_proxy.get_routes())
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/authorize",
+                data={
+                    "client_id": "unregistered-post-client",
+                    "redirect_uri": "http://localhost:12345/callback",
+                    "response_type": "code",
+                    "code_challenge": "test-challenge",
+                    "state": "test-state",
+                },
+                headers={"Accept": "text/html"},
+            )
+
+        assert response.status_code == 400
+        assert "text/html" in response.headers["content-type"]
+        assert "unregistered-post-client" in response.text
 
     def test_successful_authorization_not_enhanced(self, oauth_proxy):
         """Test that successful authorizations are not modified by enhancement."""
@@ -626,6 +668,29 @@ class TestEnhancedAuthorizationHandler:
 
             # Should include custom server icon
             assert "https://example.com/icon.png" in html
+
+    def test_unregistered_client_html_renders_both_endpoints(self):
+        """The HTML page must render the endpoints the handler passes to it."""
+        page = create_unregistered_client_html(
+            client_id="client-123",
+            registration_endpoint="https://myserver.com/register",
+            discovery_endpoint="https://myserver.com/.well-known/oauth-authorization-server",
+        )
+
+        assert "https://myserver.com/register" in page
+        assert "https://myserver.com/.well-known/oauth-authorization-server" in page
+
+    def test_unregistered_client_html_escapes_endpoints(self):
+        """Endpoint URLs are rendered as text, so they must stay escaped."""
+        endpoint = 'https://myserver.com/register"><script>alert(1)</script>'
+        page = create_unregistered_client_html(
+            client_id="client-123",
+            registration_endpoint=endpoint,
+            discovery_endpoint="https://myserver.com/.well-known/oauth-authorization-server",
+        )
+
+        assert "<script>" not in page
+        assert "&lt;script&gt;" in page
 
 
 class TestEnhancedRequireAuthMiddleware:

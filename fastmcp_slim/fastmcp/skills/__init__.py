@@ -8,14 +8,16 @@ from fastmcp.skills.models import (
     SkillFrontmatter,
     SkillResource,
 )
-from fastmcp.skills.skill import Skill
+from fastmcp.skills.skill import Skill, SkillFile, SkillManifest
 
 __all__ = [
     "GetSkillResult",
     "ListSkillsResult",
     "MCPSkill",
     "Skill",
+    "SkillFile",
     "SkillFrontmatter",
+    "SkillManifest",
     "SkillResource",
     "SkillsClientExtension",
 ]

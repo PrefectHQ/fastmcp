@@ -13,7 +13,11 @@ logger = get_logger(__name__)
 
 
 class KeycloakAuthProvider(RemoteAuthProvider):
-    """Keycloak authentication provider using Dynamic Client Registration (DCR).
+    """Keycloak authentication provider.
+
+    Keycloak handles client registration: MCP clients register through Dynamic
+    Client Registration (DCR), or through Client ID Metadata Documents (CIMD) when
+    Keycloak's experimental `cimd` feature is enabled.
 
     Requires Keycloak 26.6.0 or later, which includes the fix for DCR compatibility
     with MCP clients (https://github.com/keycloak/keycloak/pull/45309).
@@ -71,4 +75,9 @@ class KeycloakAuthProvider(RemoteAuthProvider):
             token_verifier=token_verifier,
             authorization_servers=[AnyHttpUrl(self.realm_url)],
             base_url=AnyHttpUrl(str(base_url).rstrip("/")),
+            # Only an explicit list applies to a custom verifier; the implicit
+            # ["openid"] default belongs to the default verifier above.
+            required_scopes=(
+                parse_scopes(required_scopes) if required_scopes is not None else None
+            ),
         )

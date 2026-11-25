@@ -8,6 +8,7 @@ execution TTL (900000 ms) when none is configured.
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 
 from fastmcp import FastMCP
 from fastmcp_tasks import TasksExtension
@@ -69,6 +70,28 @@ async def test_default_ttl_when_unspecified():
         assert created.ttl_ms == DEFAULT_TTL_MS
         got = await get_task(mcp, created.task_id)
         assert got.ttl_ms == DEFAULT_TTL_MS
+
+
+async def test_configured_execution_ttl_reported():
+    """A configured execution TTL reaches Docket and is reported as ttlMs."""
+    mcp = FastMCP("ttl-config-test")
+    mcp.add_extension(TasksExtension(execution_ttl=timedelta(hours=2)))
+
+    @mcp.tool(task=True)
+    async def quick_task(value: int) -> int:
+        return value * 2
+
+    async with running_task_server(mcp):
+        created = await submit_task(mcp, "quick_task", {"value": 1})
+        assert created.ttl_ms == 2 * 60 * 60 * 1000
+        final = await wait_for_task(mcp, created.task_id)
+        assert final.ttl_ms == 2 * 60 * 60 * 1000
+
+
+def test_execution_ttl_reads_from_env(monkeypatch):
+    """FASTMCP_DOCKET_EXECUTION_TTL configures the execution TTL."""
+    monkeypatch.setenv("FASTMCP_DOCKET_EXECUTION_TTL", "PT2H")
+    assert TasksExtension().docket_settings.execution_ttl == timedelta(hours=2)
 
 
 async def test_poll_refreshes_routing_key_ttl():

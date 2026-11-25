@@ -104,6 +104,8 @@ omit `client_secret` and provide a `jwt_signing_key` so FastMCP can sign its
 own proxy tokens:
 
 ```python
+from fastmcp.server.auth.providers.huggingface import HuggingFaceProvider
+
 auth_provider = HuggingFaceProvider(
     client_id="your-public-huggingface-client-id",
     base_url="http://localhost:8000",
@@ -122,6 +124,8 @@ You can also use a Client ID Metadata Document URL as the `client_id` when your
 client metadata is hosted at a stable HTTPS URL:
 
 ```python
+from fastmcp.server.auth.providers.huggingface import HuggingFaceProvider
+
 auth_provider = HuggingFaceProvider(
     client_id="https://your-client.example/.well-known/oauth-cimd",
     base_url="http://localhost:8000",
@@ -237,6 +241,8 @@ need Hub capabilities:
 | `write-discussions` | Open discussions and pull requests, and interact with discussions |
 
 ```python
+from fastmcp.server.auth.providers.huggingface import HuggingFaceProvider
+
 auth_provider = HuggingFaceProvider(
     client_id="your-huggingface-client-id",
     client_secret="your-huggingface-client-secret",
@@ -251,6 +257,8 @@ authorization parameter. The value is the organization ID from the
 `organizations.sub` field in the Hugging Face userinfo response:
 
 ```python
+from fastmcp.server.auth.providers.huggingface import HuggingFaceProvider
+
 auth_provider = HuggingFaceProvider(
     client_id="your-huggingface-client-id",
     client_secret="your-huggingface-client-secret",

@@ -25,6 +25,12 @@ OPENAPI_SPECIFIC_FIELDS = {
     "deprecated",  # Can be kept but not part of JSON Schema core
 }
 
+# OpenAPI 3.0 boolean exclusive bounds, mapped to the bound they modify
+_EXCLUSIVE_BOUNDS = {
+    "exclusiveMinimum": "minimum",
+    "exclusiveMaximum": "maximum",
+}
+
 # Fields that should be recursively processed
 RECURSIVE_FIELDS = {
     "properties": dict,
@@ -80,7 +86,7 @@ def convert_openapi_schema_to_json_schema(
 
     # Early exit optimization - check if conversion is needed
     needs_conversion = (
-        any(field in schema for field in OPENAPI_SPECIFIC_FIELDS)
+        _has_openapi_specific_fields(schema)
         or (remove_read_only and _has_read_only_properties(schema))
         or (remove_write_only and _has_write_only_properties(schema))
         or (convert_one_of_to_any_of and "oneOf" in schema)
@@ -108,9 +114,10 @@ def convert_openapi_schema_to_json_schema(
             result, remove_read_only, remove_write_only, definitions
         )
 
-    # Step 1: Handle nullable field conversion (OpenAPI 3.0 only)
+    # Step 1: Handle nullable and boolean exclusive bounds (OpenAPI 3.0 only)
     if openapi_version and openapi_version.startswith("3.0"):
         result = _convert_nullable_field(result)
+        result = _convert_exclusive_bounds(result)
 
     # Step 2: Convert oneOf to anyOf if requested
     if convert_one_of_to_any_of and "oneOf" in result:
@@ -166,6 +173,30 @@ def convert_openapi_schema_to_json_schema(
                     for item in result[field_name]
                 ]
 
+    return result
+
+
+def _has_openapi_specific_fields(schema: dict[str, Any]) -> bool:
+    """Whether the schema itself carries a keyword that needs converting."""
+    return any(field in schema for field in OPENAPI_SPECIFIC_FIELDS) or any(
+        isinstance(schema.get(keyword), bool) for keyword in _EXCLUSIVE_BOUNDS
+    )
+
+
+def _convert_exclusive_bounds(schema: dict[str, Any]) -> dict[str, Any]:
+    """Convert OpenAPI 3.0 boolean exclusive bounds to JSON Schema numeric bounds.
+
+    ``{"minimum": 5, "exclusiveMinimum": true}`` becomes
+    ``{"exclusiveMinimum": 5}``; a ``false`` flag is simply dropped.
+    """
+    result = schema.copy()
+    for keyword, bound in _EXCLUSIVE_BOUNDS.items():
+        flag = result.get(keyword)
+        if not isinstance(flag, bool):
+            continue
+        del result[keyword]
+        if flag and bound in result:
+            result[keyword] = result.pop(bound)
     return result
 
 
@@ -241,10 +272,7 @@ def _needs_recursive_processing(
                     for sub_schema in schema[field_name].values():
                         if isinstance(sub_schema, dict):
                             nested_needs_conversion = (
-                                any(
-                                    field in sub_schema
-                                    for field in OPENAPI_SPECIFIC_FIELDS
-                                )
+                                _has_openapi_specific_fields(sub_schema)
                                 or (remove_read_only and sub_schema.get("readOnly"))
                                 or (remove_write_only and sub_schema.get("writeOnly"))
                                 or (convert_one_of_to_any_of and "oneOf" in sub_schema)
@@ -261,10 +289,7 @@ def _needs_recursive_processing(
                 else:
                     # Check if nested schema needs conversion
                     nested_needs_conversion = (
-                        any(
-                            field in schema[field_name]
-                            for field in OPENAPI_SPECIFIC_FIELDS
-                        )
+                        _has_openapi_specific_fields(schema[field_name])
                         or (
                             remove_read_only
                             and _has_read_only_properties(schema[field_name])
@@ -289,7 +314,7 @@ def _needs_recursive_processing(
                 for item in schema[field_name]:
                     if isinstance(item, dict):
                         nested_needs_conversion = (
-                            any(field in item for field in OPENAPI_SPECIFIC_FIELDS)
+                            _has_openapi_specific_fields(item)
                             or (remove_read_only and _has_read_only_properties(item))
                             or (remove_write_only and _has_write_only_properties(item))
                             or (convert_one_of_to_any_of and "oneOf" in item)
@@ -304,6 +329,25 @@ def _needs_recursive_processing(
                         if nested_needs_conversion:
                             return True
     return False
+
+
+def resolve_definition_pointer(definitions: dict[str, Any] | None, pointer: str) -> Any:
+    """Look up ``pointer``, the part of a ``#/$defs/...`` reference after
+    ``#/$defs/``, in ``definitions``.
+
+    The pointer can continue into a definition, as in
+    ``Pet/properties/status``. Returns None when any segment is missing.
+    """
+    node: Any = definitions or {}
+    for segment in pointer.split("/"):
+        key = segment.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict):
+            node = node.get(key)
+        elif isinstance(node, list) and key.isdigit() and int(key) < len(node):
+            node = node[int(key)]
+        else:
+            return None
+    return node
 
 
 def _scope_schemas(
@@ -324,7 +368,7 @@ def _scope_schemas(
     ref = schema.get("$ref")
     if isinstance(ref, str) and ref.startswith("#/$defs/") and ref not in seen_refs:
         seen_refs.add(ref)
-        target = (definitions or {}).get(ref[len("#/$defs/") :])
+        target = resolve_definition_pointer(definitions, ref[len("#/$defs/") :])
         if isinstance(target, dict):
             yield from _scope_schemas(target, definitions, seen_refs)
     all_of = schema.get("allOf")

@@ -1,3 +1,5 @@
-{% set state = flow_run.state.name %}{{ {'Failed': '❌', 'Crashed': '💥', 'TimedOut': '⏱️', 'Degraded': '⚠️'}.get(state, '⚠️') }} triage {{ {'TimedOut': 'timed out'}.get(state, state|lower) }}
+{% set state = flow_run.state.name %}{% if state == 'Degraded' %}⚠️ triage gave up on an issue after 3 tries
+{{ flow_run.state.message or 'See the retained artifacts for which issue and why.' }}
+{% else %}{{ {'Failed': '❌', 'Crashed': '💥', 'TimedOut': '⏱️'}.get(state, '❌') }} triage {{ {'TimedOut': 'timed out', 'Crashed': 'crashed'}.get(state, 'failed') }} before finishing
 {{ flow_run.state.message or 'See the retained artifacts for the failure details.' }}
-<{{ flow_run|ui_url }}|run and artifacts>
+{% endif %}<{{ flow_run|ui_url }}|run and artifacts>

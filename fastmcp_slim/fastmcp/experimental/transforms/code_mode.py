@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import json
+import sys
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
@@ -375,7 +376,8 @@ class Search:
         if search_fn is None:
             from fastmcp.server.transforms.search.bm25 import BM25SearchTransform
 
-            _bm25 = BM25SearchTransform(max_results=default_limit or 50)
+            # Search applies the per-call limit after ranking all matches.
+            _bm25 = BM25SearchTransform(max_results=sys.maxsize)
             search_fn = _bm25._search
         self._search_fn = search_fn
         self._name = name
@@ -421,7 +423,9 @@ class Search:
                 ]
             results = await search_fn(tools, query)
             if limit is not None:
-                results = results[:limit]
+                # A limit is a maximum count, not a slice offset: clamp negatives
+                # so ``limit=-1`` does not mean "all but the last match".
+                results = results[: max(limit, 0)]
             rendered = _render_tools(results, detail)
             if len(results) < catalog_size and detail != "full":
                 n = len(results)
@@ -608,6 +612,35 @@ def _default_discovery_tools() -> list[DiscoveryToolFactory]:
     return [Search(), GetSchemas()]
 
 
+_DEFAULT_EXECUTE_DESCRIPTION = (
+    "Chain `await call_tool(...)` calls in one Python block; prefer returning the final answer from a single block.\n"
+    "Use `return` to produce output.\n"
+    "Only `call_tool(tool_name: str, params: dict) -> Any` is available in scope."
+)
+
+_EXECUTE_CODE_DESCRIPTION = (
+    "Python async code to execute tool calls via call_tool(name, arguments)"
+)
+
+
+def _build_discovery_tools(
+    factories: Sequence[DiscoveryToolFactory],
+    get_catalog: GetToolCatalog,
+    execute_tool_name: str,
+) -> list[Tool]:
+    """Build discovery tools and reject names that would shadow each other."""
+    tools = [factory(get_catalog) for factory in factories]
+    names = {t.name for t in tools}
+    if execute_tool_name in names:
+        raise ValueError(
+            f"Discovery tool name '{execute_tool_name}' "
+            f"collides with execute_tool_name."
+        )
+    if len(names) != len(tools):
+        raise ValueError("Discovery tools must have unique names.")
+    return tools
+
+
 class CodeMode(CatalogTransform):
     """Transform that collapses all tools into discovery + execute meta-tools.
 
@@ -629,11 +662,13 @@ class CodeMode(CatalogTransform):
         execute_tool_name: str = "execute",
         execute_description: str | None = None,
         max_tool_calls: int | None = 50,
+        wall_clock_timeout_secs: float | None = None,
     ) -> None:
         super().__init__()
         self.execute_tool_name = execute_tool_name
         self.execute_description = execute_description
         self.max_tool_calls = max_tool_calls
+        self.wall_clock_timeout_secs = wall_clock_timeout_secs
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
 
         self._discovery_factories = (
@@ -646,18 +681,11 @@ class CodeMode(CatalogTransform):
 
     def _build_discovery_tools(self) -> list[Tool]:
         if self._built_discovery_tools is None:
-            tools = [
-                factory(self.get_tool_catalog) for factory in self._discovery_factories
-            ]
-            names = {t.name for t in tools}
-            if self.execute_tool_name in names:
-                raise ValueError(
-                    f"Discovery tool name '{self.execute_tool_name}' "
-                    f"collides with execute_tool_name."
-                )
-            if len(names) != len(tools):
-                raise ValueError("Discovery tools must have unique names.")
-            self._built_discovery_tools = tools
+            self._built_discovery_tools = _build_discovery_tools(
+                self._discovery_factories,
+                self.get_tool_catalog,
+                self.execute_tool_name,
+            )
         return self._built_discovery_tools
 
     async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
@@ -680,12 +708,7 @@ class CodeMode(CatalogTransform):
     def _build_execute_description(self) -> str:
         if self.execute_description is not None:
             return self.execute_description
-
-        return (
-            "Chain `await call_tool(...)` calls in one Python block; prefer returning the final answer from a single block.\n"
-            "Use `return` to produce output.\n"
-            "Only `call_tool(tool_name: str, params: dict) -> Any` is available in scope."
-        )
+        return _DEFAULT_EXECUTE_DESCRIPTION
 
     @staticmethod
     def _find_tool(name: str, tools: Sequence[Tool]) -> Tool | None:
@@ -705,14 +728,7 @@ class CodeMode(CatalogTransform):
         max_tool_calls = self.max_tool_calls
 
         async def execute(
-            code: Annotated[
-                str,
-                Field(
-                    description=(
-                        "Python async code to execute tool calls via call_tool(name, arguments)"
-                    )
-                ),
-            ],
+            code: Annotated[str, Field(description=_EXECUTE_CODE_DESCRIPTION)],
             ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> Any:
             """Execute tool calls using Python code."""
@@ -744,10 +760,21 @@ class CodeMode(CatalogTransform):
                     )
                 return _unwrap_tool_result(result)
 
-            return await transform.sandbox_provider.run(
+            # Sandbox duration limits exclude time spent awaiting host
+            # callbacks, so bound the whole execution on the wall clock.
+            timeout = transform.wall_clock_timeout_secs
+            run = transform.sandbox_provider.run(
                 code,
                 external_functions={"call_tool": call_tool},
             )
+            if timeout is None:
+                return await run
+            try:
+                return await asyncio.wait_for(run, timeout)
+            except TimeoutError as exc:
+                raise ToolError(
+                    f"Execution exceeded the wall-clock limit of {timeout} seconds."
+                ) from exc
 
         return Tool.from_function(
             fn=execute,

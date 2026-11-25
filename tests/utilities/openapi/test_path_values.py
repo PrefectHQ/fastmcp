@@ -10,7 +10,7 @@ import pytest
 from jsonschema_path import SchemaPath
 
 from fastmcp import Client, FastMCP
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ToolError, ValidationError
 from fastmcp.utilities.openapi.director import RequestDirector
 
 
@@ -186,11 +186,15 @@ def test_path_template_accepts_falsy_values(value: str | int, segment: str):
 
 
 @pytest.mark.parametrize(
-    "arguments",
-    [{}, {"user_id": None}, {"user_id__path": None, "user_id__query": "x"}],
+    "arguments,argument_name",
+    [
+        ({}, "user_id"),
+        ({"user_id": None}, "user_id"),
+        ({"user_id__path": None, "user_id__query": "x"}, "user_id__path"),
+    ],
 )
-async def test_missing_path_parameter_is_not_sent_as_placeholder(
-    arguments: dict[str, str | None],
+async def test_missing_path_parameter_is_a_validation_error(
+    arguments: dict[str, str | None], argument_name: str
 ):
     spec = {
         "openapi": "3.1.0",
@@ -233,10 +237,14 @@ async def test_missing_path_parameter_is_not_sent_as_placeholder(
         base_url="https://api.example.com", transport=httpx2.MockTransport(capture)
     ) as http:
         server = FastMCP.from_openapi(openapi_spec=spec, client=http)
+        with pytest.raises(ValidationError) as exc_info:
+            await server.call_tool("delete_user", arguments)
         async with Client(server) as client:
             with pytest.raises(
-                ToolError, match=r"Missing required path parameters: \{'user_id'\}"
+                ToolError, match=f"Missing required arguments: {argument_name}$"
             ):
                 await client.call_tool("delete_user", arguments)
 
+    assert str(exc_info.value) == f"Missing required arguments: {argument_name}"
+    assert exc_info.value.__cause__ is None
     assert requests == []

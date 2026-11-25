@@ -8,6 +8,7 @@ from prefect.testing.utilities import prefect_test_harness
 
 from flows.agentic_existing_review import (
     start_verification,
+    summary,
     unadmitted_selection,
     verification_result,
     verification_specs,
@@ -211,3 +212,38 @@ def test_failed_verification_retry_is_idempotent_and_success_is_reused():
         assert start_verification(runtime, spec, "native-parent").id == retried.id
         client.set_flow_run_state(retried.id, Completed(), force=True)
         assert start_verification(runtime, spec, "next-native-parent").id == retried.id
+
+
+def test_summary_preserves_collection_diagnosis_and_probe_results():
+    result = summary(
+        {
+            "run_id": "retained-run",
+            "spec": {
+                "pr_number": 6311,
+                "head_sha": "a" * 40,
+                "probes": {"tests/agentic_probes/test_behavior.py": "source"},
+            },
+            "status": "evidence_needed",
+            "reason": "Supply a baseline-compatible probe",
+            "usage": {},
+            "base": {
+                "status": "baseline_collection_incompatible",
+                "reason": "ImportError: new_helper",
+                "returncode": 2,
+                "command": ["pytest"],
+                "output_tail": "x" * 7000,
+                "cases": [
+                    {"id": "test_helper", "state": "error", "detail": "new_helper"}
+                ],
+            },
+            "probe_base": {"status": "test_failure", "cases": []},
+        }
+    )
+    assert result["reason"] == "Supply a baseline-compatible probe"
+    stage = result["tests"]["base"]
+    assert stage["reason"] == "ImportError: new_helper"
+    assert stage["returncode"] == 2
+    assert stage["failures"][0]["detail"] == "new_helper"
+    assert len(stage["output_tail"]) == 6000
+    assert stage["output_truncated"]
+    assert result["tests"]["probe_base"]["status"] == "test_failure"

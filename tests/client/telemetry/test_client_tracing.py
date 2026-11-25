@@ -9,7 +9,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import SpanKind, StatusCode
 
 from fastmcp import Client, FastMCP
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import MCPError, ToolError
 
 
 class TestClientToolTracing:
@@ -66,6 +66,7 @@ class TestClientToolTracing:
         assert client_span.attributes["mcp.method.name"] == "tools/call"
         # gen_ai semantic conventions
         assert client_span.attributes["gen_ai.tool.name"] == "add"
+        assert client_span.attributes["gen_ai.operation.name"] == "execute_tool"
         # RPC attributes must NOT be present
         assert "rpc.system" not in client_span.attributes
         assert "rpc.method" not in client_span.attributes
@@ -227,6 +228,7 @@ class TestClientPromptTracing:
         assert client_span.attributes["mcp.method.name"] == "prompts/get"
         # gen_ai semantic conventions
         assert client_span.attributes["gen_ai.prompt.name"] == "welcome"
+        assert "gen_ai.operation.name" not in client_span.attributes
         # RPC attributes must NOT be present
         assert "rpc.system" not in client_span.attributes
         assert "rpc.method" not in client_span.attributes
@@ -558,6 +560,28 @@ class TestClientErrorTracing:
 
         # Server span should have ERROR status
         assert server_span.status.status_code == StatusCode.ERROR
+
+    async def test_jsonrpc_error_reports_error_code(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """A JSON-RPC error sets `error.type` and `rpc.response.status_code` to
+        the error code, not the exception class name."""
+        server = FastMCP("test-server")
+
+        async with Client(server) as client:
+            with pytest.raises(MCPError) as caught:
+                await client.read_resource("missing://x")
+
+        code = str(caught.value.error.code)
+        client_span = next(
+            s
+            for s in trace_exporter.get_finished_spans()
+            if s.kind == SpanKind.CLIENT and s.name == "resources/read"
+        )
+        assert client_span.status.status_code == StatusCode.ERROR
+        assert client_span.attributes is not None
+        assert client_span.attributes["error.type"] == code
+        assert client_span.attributes["rpc.response.status_code"] == code
 
 
 class TestSessionIdOnSpans:

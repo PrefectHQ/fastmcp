@@ -1,6 +1,6 @@
 {
   "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-  "entrypoint": "src/server.py:app",
+  "source": { "path": "src/server.py", "entrypoint": "app" },
   "environment": {
     "python": "3.12",
     "dependencies": ["fastmcp", "httpx", "pandas"]

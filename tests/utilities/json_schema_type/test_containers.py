@@ -16,7 +16,7 @@ from fastmcp.utilities.json_schema_type import (
 
 
 def get_dataclass_field(type: type, field_name: str) -> Field:
-    return type.__dataclass_fields__[field_name]  # ty: ignore[unresolved-attribute]
+    return type.__dataclass_fields__[field_name]  # ty: ignore[missing-attribute]
 
 
 class TestArrayTypes:

@@ -5,7 +5,7 @@ description: Write or revise a page under docs/ for gofastmcp.com. Use when addi
 
 # FastMCP docs
 
-The docs are a Mintlify site built from `docs/`. A page exists only when `docs/docs.json` lists it, and a feature exists only when a page documents it. `docs/python-sdk/**` is generated from docstrings by a bot; edit the docstring, not the page.
+The docs are a Mintlify site built from `docs/` on `published-docs`, served at `https://gofastmcp.com/docs`. The separate `PrefectHQ/gofastmcp-website` repository deploys its `main` branch to Vercel, serves the root landing page, and proxies these docs under `/docs`. Author docs here on `main`; website changes belong in that repository. A page exists only when `docs/docs.json` lists it, and a feature exists only when a page documents it. `docs/python-sdk/**` is generated from docstrings by a bot; edit the docstring, not the page.
 
 ## Procedure
 
@@ -79,5 +79,5 @@ For a visual change, run `npx --yes mint@latest dev` in `docs/` and look at the 
 
 - `VersionBadge` marks when a feature arrived. Leave old badges alone; they are history, not staleness.
 - `docs/v2/` and `docs/v3/` are frozen snapshots of earlier majors. Maintenance releases add changelog entries there and nothing else.
-- The version picker label lives in `docs/docs.json` under `navigation.versions[0].version` and is bumped by hand.
+- The version picker label lives in `docs/docs.json` under `navigation.versions[0].version`. It names the major (`v4`), so releases within a major leave it alone; change it when a new major ships.
 - `mcp_types` is the real name of the protocol types package in 4.x.

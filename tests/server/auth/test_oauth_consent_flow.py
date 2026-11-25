@@ -18,7 +18,7 @@ import secrets
 import time
 from urllib.parse import parse_qs, urlparse
 
-import httpx
+import httpx2
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationParams
@@ -173,7 +173,7 @@ def _extract_csrf(html: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _consent_state_cookie_names(client: httpx.AsyncClient | TestClient) -> list[str]:
+def _consent_state_cookie_names(client: httpx2.AsyncClient | TestClient) -> list[str]:
     """Names of the per-token consent-state cookies currently held."""
     prefix = f"__Host-{_CONSENT_STATE_COOKIE_BASE}_"
     return [c.name for c in client.cookies.jar if c.name.startswith(prefix)]
@@ -213,7 +213,7 @@ def _gate_transaction_reads(proxy: OAuthProxy, gate: _RenderGate) -> None:
         await gate.wait()
         return result
 
-    proxy._transaction_store.get = gated_get  # ty: ignore[invalid-assignment]
+    proxy._transaction_store.get = gated_get
 
 
 class TestServerSideStorage:
@@ -685,8 +685,8 @@ class TestConcurrentConsentRenders:
         _gate_transaction_reads(oauth_proxy_with_storage, gate)
 
         app = Starlette(routes=oauth_proxy_with_storage.get_routes())
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="https://myserver.com",
         ) as client:
             first, second = await asyncio.gather(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
 import httpx2
@@ -18,13 +19,18 @@ from fastmcp.resources import (
     ResourceResult,
     ResourceTemplate,
 )
+from fastmcp.resources.template import template_param_key
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import _strict_input_validation
 from fastmcp.utilities.exceptions import is_request_error, is_timeout_error
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
-from fastmcp.utilities.openapi.director import RequestDirector, _prepare_parameter_map
+from fastmcp.utilities.openapi.director import (
+    RequestDirector,
+    _missing_path_arguments,
+    _prepare_parameter_map,
+)
 from fastmcp.utilities.tasks import TaskConfig
 
 if TYPE_CHECKING:
@@ -47,6 +53,34 @@ _SAFE_HEADERS = frozenset(
 
 def _redact_headers(headers: httpx2.Headers) -> dict[str, str]:
     return {k: v if k.lower() in _SAFE_HEADERS else "***" for k, v in headers.items()}
+
+
+ForwardClientHeaders = bool | Collection[str]
+"""Which incoming MCP request headers an OpenAPI component forwards.
+
+`True` forwards every header `get_http_headers()` keeps, `False` forwards
+none, and a collection forwards only the named headers (case-insensitive).
+"""
+
+
+def _forward_client_headers(
+    request: httpx2.Request, forward: ForwardClientHeaders
+) -> None:
+    """Fill headers the outgoing request does not set from the MCP request.
+
+    MCP transport headers (`mcp-protocol-version`, `mcp-method`, `mcp-name`,
+    ...) describe the MCP hop, not the API call, so they are never forwarded.
+    """
+    if forward is False:
+        return
+    allowed = None if forward is True else {name.lower() for name in forward}
+    for key, value in get_http_headers().items():
+        if key.startswith("mcp-"):
+            continue
+        if allowed is not None and key not in allowed:
+            continue
+        if key not in request.headers:
+            request.headers[key] = value
 
 
 __all__ = [
@@ -214,6 +248,7 @@ class OpenAPITool(Tool):
         output_schema: dict[str, Any] | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
+        forward_client_headers: ForwardClientHeaders = True,
     ):
         super().__init__(
             name=name,
@@ -226,16 +261,17 @@ class OpenAPITool(Tool):
         self._client = client
         self._route = route
         self._director = director
+        self._forward_client_headers = forward_client_headers
 
     def __repr__(self) -> str:
         return f"OpenAPITool(name={self.name!r}, method={self._route.method}, path={self._route.path})"
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the HTTP request using RequestDirector."""
+        _, parameter_map = _prepare_parameter_map(self._route)
         # The director drops arguments outside its parameter map; strict
         # servers reject them instead, using the same key set.
         if _strict_input_validation():
-            _, parameter_map = _prepare_parameter_map(self._route)
             accepted = {*self.parameters.get("properties", {}), *parameter_map}
             if unknown := sorted(arguments.keys() - accepted):
                 raise ValidationError(
@@ -243,6 +279,14 @@ class OpenAPITool(Tool):
                     f"Accepted: {', '.join(sorted(accepted)) or 'none'}",
                     log_level=logging.WARNING,
                 )
+        # Without a path value there is no URL to send. That is the caller's
+        # mistake, so report it the way a function tool reports a missing
+        # required argument.
+        if missing := _missing_path_arguments(self._route, parameter_map, arguments):
+            raise ValidationError(
+                f"Missing required arguments: {', '.join(missing)}",
+                log_level=logging.WARNING,
+            )
         # Build the request — errors here are programming/schema issues,
         # not HTTP failures, so we catch them separately.
         try:
@@ -262,11 +306,7 @@ class OpenAPITool(Tool):
                 content=directed_request.read(),
             )
 
-            mcp_headers = get_http_headers()
-            if mcp_headers:
-                for key, value in mcp_headers.items():
-                    if key not in request.headers:
-                        request.headers[key] = value
+            _forward_client_headers(request, self._forward_client_headers)
         except Exception as e:
             raise ValueError(
                 f"Error building request for {self._route.method.upper()} "
@@ -329,6 +369,7 @@ class OpenAPIResource(Resource):
         mime_type: str = "application/json",
         tags: set[str] | None = None,
         arguments: dict[str, Any] | None = None,
+        forward_client_headers: ForwardClientHeaders = True,
     ):
         super().__init__(
             uri=AnyUrl(uri),
@@ -340,6 +381,7 @@ class OpenAPIResource(Resource):
         self._client = client
         self._route = route
         self._director = director
+        self._forward_client_headers = forward_client_headers
         self._arguments = dict(arguments or {})
 
     def __repr__(self) -> str:
@@ -360,11 +402,7 @@ class OpenAPIResource(Resource):
             # for plain byte bodies.
             content=directed_request.read(),
         )
-        mcp_headers = get_http_headers()
-        if mcp_headers:
-            for key, value in mcp_headers.items():
-                if key not in request.headers:
-                    request.headers[key] = value
+        _forward_client_headers(request, self._forward_client_headers)
 
         # Transport errors from httpx2 are left intact for the server's
         # actionable error mapping.
@@ -419,6 +457,7 @@ class OpenAPIResourceTemplate(ResourceTemplate):
         parameters: dict[str, Any],
         tags: set[str] | None = None,
         mime_type: str = _DEFAULT_MIME_TYPE,
+        forward_client_headers: ForwardClientHeaders = True,
     ):
         super().__init__(
             uri_template=uri_template,
@@ -431,6 +470,7 @@ class OpenAPIResourceTemplate(ResourceTemplate):
         self._client = client
         self._route = route
         self._director = director
+        self._forward_client_headers = forward_client_headers
 
     def __repr__(self) -> str:
         return f"OpenAPIResourceTemplate(name={self.name!r}, uri_template={self.uri_template!r}, path={self._route.path})"
@@ -451,7 +491,10 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             if parameter.name in params:
                 arguments[argument_name] = params[parameter.name]
                 continue
-            normalized_name = parameter.name.replace("-", "_")
+            # The matcher keys params by the sanitized group name; try that
+            # for parameter names the URI grammar allows but Python does not
+            # (e.g. `{$top}` matches as `_top`).
+            normalized_name = template_param_key(parameter.name)
             if normalized_name in params:
                 arguments[argument_name] = params[normalized_name]
 
@@ -465,4 +508,5 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             mime_type=self.mime_type,
             tags=set(self._route.tags or []),
             arguments=arguments,
+            forward_client_headers=self._forward_client_headers,
         )

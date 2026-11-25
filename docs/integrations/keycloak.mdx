@@ -9,7 +9,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="3.2.4" />
 
-This guide shows you how to secure your FastMCP server using **Keycloak OAuth**. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern with Dynamic Client Registration (DCR), where Keycloak handles user login and your FastMCP server validates the tokens.
+This guide shows you how to secure your FastMCP server using **Keycloak OAuth**. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern: Keycloak handles client registration and user login, and your FastMCP server validates the tokens. MCP clients register with Keycloak through Dynamic Client Registration (DCR), or through Client ID Metadata Documents (CIMD) when Keycloak has CIMD enabled.
 
 <Note>
 **Keycloak 26.6.0 or later is required.** Earlier versions had a DCR incompatibility with MCP clients ([PR #45309](https://github.com/keycloak/keycloak/pull/45309)) that is fixed in 26.6.0.
@@ -23,6 +23,10 @@ Before you begin, you will need:
 1. A running **[Keycloak](https://keycloak.org/)** instance (e.g., `http://localhost:8080`)
 2. A Keycloak realm with **Dynamic Client Registration** enabled and a trusted host policy that allows your server URL (e.g., `http://localhost:8000/*`)
 3. Your FastMCP server's public URL (e.g., `http://localhost:8000`)
+
+### Client ID Metadata Documents
+
+Recent Keycloak releases can also accept [CIMD](/clients/auth/cimd) clients, which use the URL of a metadata document as their `client_id` instead of registering. The feature is experimental in Keycloak and must be turned on when Keycloak starts (`--features=cimd`). `KeycloakAuthProvider` needs no extra configuration for it: FastMCP serves Keycloak's authorization server metadata as Keycloak publishes it, so clients that support CIMD, such as Claude Code, use it when Keycloak advertises it, and other clients keep using DCR.
 
 ### FastMCP Configuration
 
@@ -58,6 +62,8 @@ async def get_access_token_claims() -> dict:
 <Warning>
 **Production security**: Always configure the `audience` parameter in production. Without it, your server accepts tokens issued for any audience. Configure Keycloak audience mappers and set `audience` to your server's base URL to ensure tokens are specifically intended for your server.
 </Warning>
+
+`required_scopes` defaults to `["openid"]`, which ensures the `sub` claim is present in access tokens. Pass your own list to require additional scopes.
 
 ## Local Development
 
@@ -105,7 +111,17 @@ On first run, your browser will open to Keycloak's authorization page. After log
 Access user information from Keycloak JWT tokens:
 
 ```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.keycloak import KeycloakAuthProvider
 from fastmcp.server.dependencies import get_access_token
+
+auth = KeycloakAuthProvider(
+    realm_url="http://localhost:8080/realms/myrealm",
+    base_url="http://localhost:8000",
+)
+
+mcp = FastMCP("Keycloak Example Server", auth=auth)
+
 
 @mcp.tool
 async def admin_only_tool() -> str:
@@ -120,6 +136,8 @@ async def admin_only_tool() -> str:
 ## Advanced Configuration
 
 ### Custom Token Verifier
+
+Pass `token_verifier` to replace the default `JWTVerifier`. The provider's `required_scopes` and `audience` only configure the default verifier, so set them on your custom verifier instead.
 
 ```python
 from fastmcp.server.auth.providers.jwt import JWTVerifier

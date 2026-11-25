@@ -13,7 +13,7 @@ from fastmcp.utilities.json_schema_type import (
 
 
 def get_dataclass_field(type: type, field_name: str) -> Field:
-    return type.__dataclass_fields__[field_name]  # ty: ignore[unresolved-attribute]
+    return type.__dataclass_fields__[field_name]  # ty: ignore[missing-attribute]
 
 
 class TestFormatTypes:
@@ -54,6 +54,10 @@ class TestFormatTypes:
     @pytest.fixture
     def uuid_format(self):
         return json_schema_to_type({"type": "string", "format": "uuid"})
+
+    @pytest.fixture
+    def binary_format(self):
+        return json_schema_to_type({"type": "string", "format": "binary"})
 
     @pytest.fixture
     def unknown_format(self):
@@ -177,6 +181,19 @@ class TestFormatTypes:
         validator = TypeAdapter(uuid_format)
         with pytest.raises(ValidationError):
             validator.validate_python("not-a-uuid")
+
+    def test_binary_valid(self, binary_format):
+        validator = TypeAdapter(binary_format)
+        result = validator.validate_python("\x00\x01\u00e9t\u00e9")
+        assert result == b"\x00\x01\xc3\xa9t\xc3\xa9"
+
+    def test_binary_length_counts_the_wire_string(self):
+        validator = TypeAdapter(
+            json_schema_to_type({"type": "string", "format": "binary", "maxLength": 3})
+        )
+        assert validator.validate_python("\u00e9t\u00e9") == b"\xc3\xa9t\xc3\xa9"
+        with pytest.raises(ValidationError):
+            validator.validate_python("\u00e9t\u00e9s")
 
     def test_unmapped_format_falls_back_to_string(self, unknown_format):
         validator = TypeAdapter(unknown_format)

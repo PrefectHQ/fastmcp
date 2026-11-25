@@ -15,7 +15,7 @@ CIMD authentication is only relevant for HTTP-based transports and requires a se
 
 With standard OAuth, your client registers dynamically with every server it connects to, receiving a fresh `client_id` each time. This works, but the server has no way to verify *who* your client actually is — any client can claim any name during registration.
 
-CIMD (Client ID Metadata Documents) flips this around. You host a small JSON document at an HTTPS URL you control, and that URL becomes your `client_id`. When your client connects to a server, the server fetches your metadata document and can verify your identity through your domain ownership. Users see a verified domain badge in the consent screen instead of an unverified client name.
+CIMD (Client ID Metadata Documents) flips this around. You host a small JSON document at an HTTPS URL you control, and that URL becomes your `client_id`. When your client connects to a server, the server fetches your metadata document and can verify your identity through your domain ownership. On a FastMCP OAuth proxy, users see a verified domain badge in the consent screen instead of an unverified client name.
 
 ## Client Usage
 
@@ -34,7 +34,7 @@ async with Client(
     await client.list_tools()
 ```
 
-When the server supports CIMD, the client uses your metadata URL as its `client_id` instead of performing Dynamic Client Registration. The server fetches your document, validates it, and proceeds with the standard OAuth authorization flow.
+When the server's authorization metadata advertises CIMD support, the client uses your metadata URL as its `client_id` instead of performing Dynamic Client Registration. The server fetches your document, validates it, and proceeds with the standard OAuth authorization flow. When the server does not advertise CIMD support, the client falls back to Dynamic Client Registration.
 
 <Note>
 You don't need to pass `mcp_url` when using `OAuth` with `Client(auth=...)` — the transport provides the server URL automatically.
@@ -81,7 +81,7 @@ The `create` command accepts these flags:
 | `--scope` | Space-separated list of scopes the client may request |
 | `--client-uri` | URL of the client's home page |
 | `--logo-uri` | URL of the client's logo image |
-| `--no-pretty` | Output compact JSON |
+| `--pretty=false` | Output compact JSON |
 
 ### Redirect URIs
 
@@ -120,7 +120,7 @@ When your client connects to a CIMD-enabled server, the flow works like this:
 Your client sends its `client_metadata_url` as the `client_id` in the OAuth authorization request.
 </Step>
 <Step title="Server Recognizes CIMD URL">
-The server sees that the `client_id` is an HTTPS URL with a path — the signature of a CIMD client — and skips Dynamic Client Registration.
+The server sees that the `client_id` is an HTTPS URL with a path — the signature of a CIMD client — and resolves it from the document instead of looking up a registered client.
 </Step>
 <Step title="Server Fetches and Validates">
 The server fetches your JSON document from the URL, validates that `client_id` matches the URL, and extracts your client metadata (name, redirect URIs, scopes).

@@ -5,8 +5,12 @@ import re
 from collections import Counter
 from collections.abc import Callable
 from copy import deepcopy
+from datetime import UTC, datetime
 
+from flows.agentic_people import people
+from flows.agentic_review_publication import EvidenceChanged
 from flows.agentic_stack import digest
+from flows.agentic_vouch import load_standing
 
 Read = Callable[[str], dict]
 REPOSITORY = "repos/PrefectHQ/fastmcp"
@@ -139,7 +143,7 @@ def revisions(pr: dict, read: Read) -> dict:
     compared = [comparison(read, sha, head, 12000) for sha in references[:4]]
     latest = read(f"{REPOSITORY}/pulls/{pr['number']}")
     if latest["head"]["sha"] != head or latest["updated_at"] != pr["updated_at"]:
-        raise ValueError("Contribution changed while collecting revision evidence")
+        raise EvidenceChanged("Contribution changed while collecting revision evidence")
     return {
         "current_diff": current,
         "changes_since_review": compared,
@@ -148,7 +152,34 @@ def revisions(pr: dict, read: Read) -> dict:
     }
 
 
-def assessment_context(item: dict, read: Read) -> dict:
+MAX_CONTRIBUTIONS = 6
+
+
+def contributions(prs: list[dict], evidence: dict) -> list[dict]:
+    """Keep every linked PR, then fill the bound with the newest title-search matches.
+
+    Generic issue titles match dozens of unrelated PRs by keyword; those matches
+    should not stop triage of an issue that has few or no linked PRs.
+    """
+    linked = [pr for pr in prs if pr.get("discussion_collected") is not False]
+    if len(linked) > MAX_CONTRIBUTIONS:
+        raise ValueError(
+            f"{len(linked)} PRs link this issue; review handles at most {MAX_CONTRIBUTIONS}"
+        )
+    matches = sorted(
+        (pr for pr in prs if pr.get("discussion_collected") is False),
+        key=lambda pr: pr.get("updated_at") or "",
+        reverse=True,
+    )
+    room = MAX_CONTRIBUTIONS - len(linked)
+    if matches[room:]:
+        evidence["omitted_search_matches"] = sorted(
+            pr["number"] for pr in matches[room:]
+        )
+    return sorted(linked + matches[:room], key=lambda pr: pr["number"])
+
+
+def assessment_context(item: dict, read: Read, now: datetime | None = None) -> dict:
     raw = item["evidence"]
     if raw.get("complete") is not True:
         raise ValueError("Assessment requires complete retained intake")
@@ -157,9 +188,7 @@ def assessment_context(item: dict, read: Read) -> dict:
     evidence["comments"] = discussion(raw.get("comments", []))
     evidence["timeline"] = events(raw.get("timeline", []))
     evidence["prs"] = []
-    if len(raw.get("prs", [])) > 6:
-        raise ValueError("More than six contributions need a narrower review batch")
-    for pr in raw.get("prs", []):
+    for pr in contributions(raw.get("prs", []), evidence):
         result = fields(
             pr,
             "number title body state draft merged html_url labels base_ref base_sha head_sha head_repository canonical_references",
@@ -178,6 +207,7 @@ def assessment_context(item: dict, read: Read) -> dict:
         "route": item["route"],
         "group_rationale": item["group_rationale"],
         "retained_intake_sha256": digest(raw),
+        "people": people(evidence, read, now or datetime.now(UTC), load_standing()),
         "context_policy": "Full discussion text is preserved. Timelines contain event and source identities rather than repeated issue bodies; successful checks are counted. The complete original intake is retained separately. Revision evidence covers open and closed unmerged contributions; closure does not supersede current-head review. Missing or bounded patches are explicit. Verification work belongs to agents, not maintainer questions.",
     }
     if len(json.dumps(projected).encode()) > 160000:

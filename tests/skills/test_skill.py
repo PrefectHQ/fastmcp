@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import sys
 from pathlib import Path
@@ -69,6 +70,35 @@ def test_from_files_requires_valid_frontmatter():
         Skill.from_files({"notes.md": "x"})
     with pytest.raises(ValueError, match="frontmatter"):
         Skill.from_files({"SKILL.md": "# no frontmatter\n"})
+
+
+def test_from_files_accepts_structured_metadata_and_tool_lists(
+    caplog: pytest.LogCaptureFixture,
+):
+    with caplog.at_level(logging.INFO):
+        skill = Skill.from_files(
+            {
+                "SKILL.md": (
+                    "---\n"
+                    "name: nextjs\n"
+                    "description: Next.js guidance\n"
+                    "allowed-tools:\n"
+                    "  - Read\n"
+                    "  - Bash(next build)\n"
+                    "metadata:\n"
+                    "  priority: 5\n"
+                    "  pathPatterns:\n"
+                    "    - 'app/**'\n"
+                    "---\n"
+                    "# Next.js\n"
+                )
+            }
+        )
+
+    assert skill.frontmatter.metadata == {"priority": 5, "pathPatterns": ["app/**"]}
+    assert skill.frontmatter.allowed_tools == ["Read", "Bash(next build)"]
+    assert "'nextjs' has non-string metadata values" in caplog.text
+    assert "'nextjs' lists allowed-tools as a list" in caplog.text
 
 
 def test_from_directory_snapshots_exact_bytes(tmp_path: Path):
@@ -149,8 +179,11 @@ def test_frontmatter_changes_do_not_leak_into_the_skill():
     skill = Skill(name="review", description="Review", instructions="")
     skill.frontmatter.root["description"] = "changed"
     skill.to_mcp_skill().frontmatter.root["description"] = "changed"
+    skill.manifest.frontmatter.root["description"] = "changed"
+    skill.manifest.files.clear()
     assert skill.description == "Review"
     assert skill.to_mcp_skill().frontmatter.description == "Review"
+    assert skill.manifest.files.keys() == {"SKILL.md"}
 
 
 def test_to_mcp_skill_describes_every_file(tmp_path: Path):

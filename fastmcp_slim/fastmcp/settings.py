@@ -319,6 +319,23 @@ class Settings(BaseSettings):
         ),
     ] = False
 
+    enable_subscriptions_listen: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                If True (default), servers on the 2026-07-28 protocol serve
+                `subscriptions/listen` and advertise `listChanged` and
+                `resources.subscribe`, and `FastMCP.notify_*` publishes to open
+                listen streams. If False, `subscriptions/listen` is answered
+                with METHOD_NOT_FOUND, those capabilities are advertised as
+                false, and `notify_*` does nothing. Read when a server is
+                created. Handshake-era connections are unaffected.
+                """
+            ),
+        ),
+    ] = True
+
     show_server_banner: Annotated[
         bool,
         Field(

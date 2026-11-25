@@ -69,7 +69,7 @@ class TestToolReturnTypes:
         result = await mcp.call_tool("bytes_tool", {})
         # bytes can't be represented as structured JSON, so no structured_content
         assert result.structured_content is None
-        assert result.content[0].text == "Hello, world!"  # ty:ignore[unresolved-attribute]
+        assert result.content[0].text == "Hello, world!"  # ty:ignore[missing-union-attribute]
 
     async def test_uuid(self):
         mcp = FastMCP()

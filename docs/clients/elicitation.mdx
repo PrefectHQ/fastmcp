@@ -20,6 +20,8 @@ Elicitation allows MCP servers to request structured input from users during ope
 ## Handler Template
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult, ElicitRequestParams, RequestContext
 
@@ -53,11 +55,11 @@ async def elicitation_handler(
     if response_type is None:
         return ElicitResult(action="accept")
 
-    # Create response using the provided dataclass type
+    # A scalar request, such as ctx.elicit(..., response_type=str), has one `value` field
     return response_type(value=user_input)
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     mode="legacy",
     elicitation_handler=elicitation_handler,
 )
@@ -65,7 +67,7 @@ client = Client(
 
 ## How It Works
 
-When a server needs user input, it sends an elicitation request with a message prompt. Form elicitation requests include a JSON schema describing the expected response structure, and FastMCP automatically converts that schema into a Python dataclass type. URL elicitation requests and empty-object schemas use `response_type=None`.
+When a server needs user input, it sends an elicitation request with a message prompt. Form elicitation requests include a JSON schema describing the expected response structure, and FastMCP automatically converts that schema into a Python dataclass type. A server that asks for a single scalar, such as a string or number, gets a dataclass with one `value` field, which is what the examples on this page construct. URL elicitation requests and empty-object schemas use `response_type=None`.
 
 The handler receives four parameters:
 
@@ -89,7 +91,7 @@ The handler receives four parameters:
 
 ## Response Actions
 
-You can return data directly, which implicitly accepts the elicitation:
+You can return data directly, either an instance of `response_type` or a plain `dict`, which implicitly accepts the elicitation:
 
 ```python
 async def elicitation_handler(message, response_type, params, context):
@@ -127,6 +129,8 @@ async def elicitation_handler(message, response_type, params, context):
 A file management tool might ask which directory to create:
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
 
@@ -142,7 +146,7 @@ async def elicitation_handler(message, response_type, params, context):
     return response_type(value=user_response)
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     mode="legacy",
     elicitation_handler=elicitation_handler
 )
@@ -157,6 +161,8 @@ On protocol version `2026-07-28` and later, a server can ask for input before it
 The `input_required_max_rounds` parameter caps how many rounds the client will answer before giving up, guarding against a server that never terminates. It defaults to `10`.
 
 ```python
+from fastmcp import Client
+
 client = Client(
     "https://example.com/mcp",
     mode="auto",

@@ -23,7 +23,6 @@ from typing import TypedDict
 
 import httpx2
 from pydantic import AnyHttpUrl, SecretStr
-from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth import AccessToken, RemoteAuthProvider
@@ -154,23 +153,13 @@ class PropelAuthProvider(RemoteAuthProvider):
         routes = super().get_routes(mcp_path)
 
         async def oauth_authorization_server_metadata(request):
-            """Forward PropelAuth OAuth authorization server metadata"""
-            try:
-                async with httpx2.AsyncClient() as client:
-                    response = await client.get(
-                        f"{self._normalized_auth_url}/.well-known/oauth-authorization-server/oauth/2.1"
-                    )
-                    response.raise_for_status()
-                    metadata = response.json()
-                    return JSONResponse(metadata)
-            except Exception as e:
-                return JSONResponse(
-                    {
-                        "error": "server_error",
-                        "error_description": f"Failed to fetch PropelAuth metadata: {e}",
-                    },
-                    status_code=500,
-                )
+            """Forward PropelAuth OAuth authorization server metadata (cached)."""
+            return await self._forward_authorization_server_metadata(
+                [
+                    f"{self._normalized_auth_url}/.well-known/oauth-authorization-server/oauth/2.1"
+                ],
+                "PropelAuth",
+            )
 
         routes.append(
             Route(

@@ -93,6 +93,7 @@ def load_and_merge_config(
                         # its own name and directory.
                         config_path = Path(os.path.abspath(config_path))
                         resolved_spec = str(config_path)
+                        config.anchor_paths(config_path.parent)
                         if config.deployment:
                             config.deployment.apply_runtime_settings(config_path)
 
@@ -130,7 +131,7 @@ def load_and_merge_config(
         config_dict["deployment"]["transport"] = transport_override
     if host_override := cli_overrides.get("host"):
         config_dict["deployment"]["host"] = host_override
-    if port_override := cli_overrides.get("port"):
+    if (port_override := cli_overrides.get("port")) is not None:
         config_dict["deployment"]["port"] = port_override
     if path_override := cli_overrides.get("path"):
         config_dict["deployment"]["path"] = path_override

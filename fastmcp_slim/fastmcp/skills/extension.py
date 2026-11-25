@@ -13,7 +13,6 @@ from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.server.context import Context
 from fastmcp.server.extensions import MethodBinding, ServerExtension
-from fastmcp.server.mixins.mcp_operations import _apply_pagination
 from fastmcp.server.providers.base import Provider
 from fastmcp.skills._composition import _mounted_source
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
@@ -27,6 +26,7 @@ from fastmcp.skills.models import (
 )
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.pagination import paginate_request
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
@@ -71,11 +71,6 @@ class SkillsExtension(ServerExtension):
     def _validate_configuration(
         self, server: FastMCP, providers: Sequence[Provider]
     ) -> None:
-        if server.transforms:
-            raise ValueError(
-                "SkillsExtension does not yet support server-level transforms"
-            )
-
         for provider in providers:
             if not any(registered is provider for registered in server.providers):
                 raise ValueError(
@@ -92,8 +87,6 @@ class SkillsExtension(ServerExtension):
                     "use SkillCatalogProvider to publish Skill objects"
                 )
 
-            provider._validate_skill_source()
-
     @property
     def _sources(self) -> tuple[_SkillSource, ...]:
         if self._providers is not None:
@@ -108,8 +101,6 @@ class SkillsExtension(ServerExtension):
                 for provider in self._providers
                 if isinstance(provider, _SkillSource)
             )
-        if server.transforms:
-            return ()
         # Deferred so that registering Skills doesn't load the client stack.
         from fastmcp.skills._proxy import _proxied_source
 
@@ -119,10 +110,6 @@ class SkillsExtension(ServerExtension):
             if source is not None:
                 sources.append(source)
             elif isinstance(provider, _SkillSource) and not provider.transforms:
-                try:
-                    provider._validate_skill_source()
-                except ValueError:
-                    continue
                 sources.append(provider)
         return tuple(sources)
 
@@ -215,7 +202,7 @@ class SkillsExtension(ServerExtension):
         params: ListSkillsParams,
     ) -> ListSkillsResult:
         entries = await self._list_entries(context)
-        page, next_cursor = _apply_pagination(
+        page, next_cursor = paginate_request(
             entries, params.cursor, self.server._list_page_size
         )
         return ListSkillsResult(skills=page, next_cursor=next_cursor)

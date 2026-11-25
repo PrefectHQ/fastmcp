@@ -1,9 +1,9 @@
 """Example: Client using CodeMode to discover and chain tools.
 
-CodeMode exposes just two tools: `search` (keyword query) and `execute`
-(run Python code with `call_tool` available). This client demonstrates
-both: searching for tools, then chaining multiple calls in a single
-execute block — one round-trip instead of many.
+CodeMode exposes just three tools: `search` (keyword query), `get_schema`
+(parameter details), and `execute` (run Python code with `call_tool`
+available). This client demonstrates searching for tools, then chaining
+multiple calls in a single execute block — one round-trip instead of many.
 
 Run with:
     uv run python examples/code_mode/client.py
@@ -74,10 +74,11 @@ async def main():
         console.rule("[bold]CodeMode[/bold]")
         console.print()
 
-        # Step 1: list_tools only returns two synthetic meta-tools
+        # Step 1: list_tools only returns three synthetic meta-tools
         console.print(
             "The server has 8 tools. CodeMode replaces them with "
-            "two synthetic tools — [bold]search[/bold] and [bold]execute[/bold]:"
+            "three synthetic tools — [bold]search[/bold], [bold]get_schema[/bold] "
+            "and [bold]execute[/bold]:"
         )
         console.print()
         tools = await client.list_tools()
