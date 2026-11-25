@@ -65,6 +65,19 @@ class TestCoerceValue:
         with pytest.raises(ValueError, match="Expected number"):
             coerce_value("xyz", {"type": "number"})
 
+    @pytest.mark.parametrize(
+        "raw", ["nan", "NaN", "inf", "-inf", "Infinity", "-Infinity"]
+    )
+    def test_number_non_finite_rejected(self, raw: str):
+        with pytest.raises(ValueError, match="Expected finite number"):
+            coerce_value(raw, {"type": "number"})
+
+    @pytest.mark.parametrize("raw", ["[1.0, NaN]", '{"x": Infinity}'])
+    def test_json_non_finite_rejected(self, raw: str):
+        schema_type = "array" if raw.startswith("[") else "object"
+        with pytest.raises(ValueError, match="Non-finite number"):
+            coerce_value(raw, {"type": schema_type})
+
     def test_boolean_true_variants(self):
         for val in ("true", "True", "TRUE", "1", "yes"):
             assert coerce_value(val, {"type": "boolean"}) is True
@@ -299,6 +312,23 @@ class TestParseToolArguments:
     def test_coercion_error_exits(self):
         with pytest.raises(SystemExit):
             parse_tool_arguments(("limit=abc",), None, self.SCHEMA)
+
+    @pytest.mark.parametrize(
+        "raw_json",
+        ['{"x": NaN}', '{"x": Infinity}', '{"x": -Infinity}', '{"nested": [1, NaN]}'],
+    )
+    def test_input_json_non_finite_exits(self, raw_json: str):
+        with pytest.raises(SystemExit):
+            parse_tool_arguments((), raw_json, {"type": "object"})
+
+    @pytest.mark.parametrize("raw_val", ["nan", "inf", "-inf"])
+    def test_number_arg_non_finite_exits(self, raw_val: str):
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {"x": {"type": "number"}},
+        }
+        with pytest.raises(SystemExit):
+            parse_tool_arguments((f"x={raw_val}",), None, schema)
 
 
 # ---------------------------------------------------------------------------

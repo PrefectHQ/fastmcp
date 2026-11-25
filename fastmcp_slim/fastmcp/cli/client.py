@@ -3,11 +3,12 @@
 import difflib
 import hashlib
 import json
+import math
 import shlex
 import sys
 import warnings
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NoReturn
 from urllib.parse import urlsplit, urlunsplit
 
 import cyclopts
@@ -403,6 +404,13 @@ def _schema_may_be_string(schema: dict[str, Any]) -> bool:
     return schema_type == "string"
 
 
+def _reject_json_nonfinite(token: str) -> NoReturn:
+    """Reject non-standard JSON numeric constants (NaN, Infinity, -Infinity)."""
+    raise ValueError(
+        f"Non-finite number {token!r} is not valid JSON (JSON cannot represent NaN or Infinity)"
+    )
+
+
 def coerce_value(raw: str, schema: dict[str, Any]) -> Any:
     """Coerce a string CLI value according to a JSON-Schema type hint."""
 
@@ -424,7 +432,7 @@ def coerce_value(raw: str, schema: dict[str, Any]) -> Any:
     if _union_branches(unwrapped) is not None and "type" not in unwrapped:
         if not _schema_may_be_string(unwrapped) and raw[:1] in ("[", "{"):
             try:
-                return json.loads(raw)
+                return json.loads(raw, parse_constant=_reject_json_nonfinite)
             except json.JSONDecodeError:
                 pass
         return raw
@@ -439,9 +447,14 @@ def coerce_value(raw: str, schema: dict[str, Any]) -> Any:
 
     if schema_type == "number":
         try:
-            return float(raw)
+            value = float(raw)
         except ValueError:
             raise ValueError(f"Expected number, got {raw!r}") from None
+        if not math.isfinite(value):
+            raise ValueError(
+                f"Expected finite number, got {raw!r} (JSON cannot represent NaN or Infinity)"
+            )
+        return value
 
     if schema_type == "boolean":
         if raw.lower() in ("true", "1", "yes"):
@@ -452,7 +465,7 @@ def coerce_value(raw: str, schema: dict[str, Any]) -> Any:
 
     if schema_type in ("array", "object"):
         try:
-            return json.loads(raw)
+            return json.loads(raw, parse_constant=_reject_json_nonfinite)
         except json.JSONDecodeError:
             raise ValueError(f"Expected JSON {schema_type}, got {raw!r}") from None
 
@@ -481,8 +494,8 @@ def parse_tool_arguments(
 
     if input_json is not None:
         try:
-            parsed = json.loads(input_json)
-        except json.JSONDecodeError as exc:
+            parsed = json.loads(input_json, parse_constant=_reject_json_nonfinite)
+        except ValueError as exc:
             console.print(f"[bold red]Error:[/bold red] Invalid --input-json: {exc}")
             sys.exit(1)
         if not isinstance(parsed, dict):
