@@ -8,7 +8,7 @@ tag: NEW
 
 <Update label="v4.2.6" description="2026-11-25">
 
-**[v4.2.6: Model Behavior](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.6)**
+**[v4.2.6: Turn of Events](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.6)**
 
 This release adds an experimental `CodeModeClient`, which wraps a `Client` or `ClientGroup` and runs CodeMode on the client side, so an agent gets the search, schema and execute meta-tools over servers that don't run CodeMode themselves, and one `execute` block can chain tools across servers. Server spans now carry `network.transport` and, over HTTP, `network.protocol.name` and `network.protocol.version`. Fixes cover client callbacks and results, OpenAPI schemas and path parameters, resource links returned by a mounted server's tools (now namespaced like the rest of the mount), and response limiting, which now keeps truncated results within `max_size` as serialized.
 
