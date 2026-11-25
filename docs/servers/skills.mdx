@@ -331,13 +331,13 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-With a server that exposes skills only as resources, such as FastMCP 4.1, use `client.list_skill_resources()` to find the entry files. To discover skills across several servers, use `ClientGroup.list_skills()`. [Client groups](/clients/client-groups)
+To discover skills across several servers, use `ClientGroup.list_skills()`. [Client groups](/clients/client-groups)
 
 ### Reading skill files
 
 To read the routing table alone, call `await client.read_resource("skill://issue-triage/routing.md")`. To retrieve the entire skill, call `await client.read_skill("skill://issue-triage/SKILL.md")`. The latter returns the same Python `Skill` type you use to define a skill, so you can inspect its files, write it to disk, or publish it on another server.
 
-For a whole-skill download, FastMCP obtains the manifest via `skills/get` when available. It falls back to the provider's sibling `_manifest` resource when the extension is unavailable or doesn't know the URI. The client checks the declared size and file count before downloading, verifies each file against its byte size and SHA-256 digest, and checks the downloaded frontmatter against the extension entry when present. A file that has changed since the manifest was retrieved fails verification. The manifest also supplies the file listing for clients browsing a skill. FastMCP 4.2 supports file reads without the optional `directoryRead` capability.
+With the Skills extension enabled, `read_skill()` gets the manifest via `skills/get`. The client checks the declared size and file count before downloading, verifies each file against its byte size and SHA-256 digest, and compares the downloaded frontmatter with the extension entry. A file that has changed since the manifest was retrieved fails verification. The manifest also supplies the file listing for clients browsing a skill. FastMCP 4.2 supports file reads without the optional `directoryRead` capability.
 
 ### Install skills into a local agent
 
@@ -363,8 +363,6 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-For a server that exposes skills as resources, use `list_skill_resources()` and pass each `str(resource.uri)` to `read_skill()` if the server provides a `_manifest` resource.
-
 An installed copy captures the contents available to the caller at download time. To update it, download again and pass `overwrite=True` to `to_directory()`. This replaces the directory, including any local edits or additional files. By default an existing directory raises `FileExistsError`.
 
 ### Clients that only call tools
@@ -375,7 +373,7 @@ For a host that exposes only tools to the model, register `mcp.add_transform(Res
 
 <Accordion title="Migrating from the FastMCP 4.1 skills API">
 
-FastMCP 4.2 deprecates the providers in `fastmcp.server.providers.skills` and the helpers in `fastmcp.utilities.skills` for removal in 4.3. Their warnings name the replacement. For directory providers, the warning also identifies folders that need fixing before the new provider can load them.
+FastMCP 4.2 deprecates the providers in `fastmcp.server.providers.skills` and the helpers in `fastmcp.utilities.skills` for removal in 4.3. Their warnings name the replacement. For directory providers, the warning also identifies folders that need fixing before the new provider can load them. Migrate the server to a 4.2 skill provider and enable `SkillsClientExtension()` on the client to use the discovery methods below.
 
 | 4.1 | 4.2 |
 | --- | --- |
@@ -383,12 +381,12 @@ FastMCP 4.2 deprecates the providers in `fastmcp.server.providers.skills` and th
 | `ClaudeSkillsProvider()` and the other vendor presets | `SkillsDirectoryProvider(Path.home() / ".claude" / "skills")` with the preset's folder |
 | `SkillProvider(path)` | `SkillCatalogProvider([Skill.from_directory(path)])` |
 | `SkillsDirectoryProvider(root, experimental_skills=True)` | `SkillsDirectoryProvider(root)` from `fastmcp.skills.provider` (the old call already returns it) |
-| `list_skills(client)` | `client.list_skill_resources()` (any server) or `client.list_skills()` (Skills extension) |
-| `get_skill_manifest(client, name)` | `client.read_resource('skill://<name>/_manifest')` for manifest JSON on any resource server; `client.get_skill(uri)` for Skills-extension entries |
+| `list_skills(client)` | `client.list_skills()` |
+| `get_skill_manifest(client, name)` | `client.get_skill(uri)` for the skill's metadata and manifest |
 | `Skill(uri=..., frontmatter=..., resources=...)` from `fastmcp.skills` | `MCPSkill(...)`; `Skill` is now the authoring class |
 | `download_skill()` / `sync_skills()` | `client.read_skill(uri)` then `skill.to_directory(path)` ([installation example](#install-skills-into-a-local-agent)) |
 
-The 4.2 provider uses `SKILL.md` as its entry file and exposes all supporting files as resources. The old `main_file_name` and `supporting_files` settings have no equivalents. Clients that need manifest metadata alone can read the provider's `_manifest` JSON without downloading the files.
+The 4.2 provider uses `SKILL.md` as its entry file and exposes all supporting files as resources. The old `main_file_name` and `supporting_files` settings have no equivalents.
 
 If you used the old `Skill` type in a Pydantic field to validate protocol entries, change that annotation to `MCPSkill`. FastMCP 4.2 accepts the old spelling for compatibility. Providers take authored `Skill` values containing the actual file bytes.
 

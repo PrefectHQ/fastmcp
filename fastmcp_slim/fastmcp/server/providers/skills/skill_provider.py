@@ -177,32 +177,11 @@ class SkillProvider(Provider):
     Each skill folder must contain a main file (default: SKILL.md) and may
     contain additional supporting files.
 
-    Exposes:
-    - A Resource for the main file (skill://{name}/SKILL.md)
-    - A Resource for the synthetic manifest (skill://{name}/_manifest)
-    - Supporting files via ResourceTemplate or Resources (configurable)
-
     Args:
         skill_path: Path to the skill directory.
         main_file_name: Name of the main skill file. Defaults to "SKILL.md".
-        supporting_files: How supporting files (everything except main file and
-            manifest) are exposed to clients:
-            - "template": Accessed via ResourceTemplate, hidden from list_resources().
-              Clients discover files by reading the manifest first.
-            - "resources": Each file exposed as individual Resource in list_resources().
-              Full enumeration upfront.
-
-    Example:
-        ```python
-        from pathlib import Path
-        from fastmcp import FastMCP
-        from fastmcp.server.providers.skills import SkillProvider
-
-        mcp = FastMCP("My Skill")
-        mcp.add_provider(SkillProvider(
-            Path.home() / ".claude/skills/pdf-processing"
-        ))
-        ```
+        supporting_files: Expose supporting files through a resource template
+            ("template") or as individually listed resources ("resources").
     """
 
     def __init__(

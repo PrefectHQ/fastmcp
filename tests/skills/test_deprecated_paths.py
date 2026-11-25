@@ -289,7 +289,7 @@ def test_wire_skill_does_not_satisfy_an_authoring_subclass():
             adapter.validate_python(wire)
 
 
-async def test_manifest_warning_preserves_resource_only_access(tmp_path: Path):
+async def test_legacy_manifest_still_works_with_updated_warning(tmp_path: Path):
     from fastmcp.server.providers.skills import SkillProvider
     from fastmcp.utilities.skills import get_skill_manifest
 
@@ -299,9 +299,9 @@ async def test_manifest_warning_preserves_resource_only_access(tmp_path: Path):
     async with Client(FastMCP("Resources only", providers=[provider])) as client:
         with pytest.warns(FastMCPDeprecationWarning) as record:
             manifest = await get_skill_manifest(client, "review")
-        assert "client.read_resource('skill://<name>/_manifest')" in str(
-            record[0].message
-        )
+        warning = str(record[0].message)
+        assert "SkillsClientExtension()" in warning
+        assert "client.get_skill('skill://<name>/SKILL.md')" in warning
         (content,) = await client.read_resource("skill://review/_manifest")
         assert json.loads(getattr(content, "text"))["files"][0]["size"] == (
             manifest.files[0].size

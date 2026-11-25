@@ -211,9 +211,8 @@ class ClientSkillsMixin:
     async def list_skill_resources(self: Client) -> list[mcp_types.Resource]:
         """List the skills a server publishes as `skill://.../SKILL.md` resources.
 
-        Use this for servers that serve skills as resources but not through the
-        Skills extension, such as FastMCP 4.1 and earlier. Pass a returned
-        resource's `uri` to `read_skill()` to fetch the whole skill.
+        This method supports legacy servers such as FastMCP 4.1. Use
+        `list_skills()` with `SkillsClientExtension()` for Skills discovery.
 
         When skill paths overlap, advertised manifests distinguish supporting
         `SKILL.md` files from independent skills. Entries are kept if their
@@ -296,11 +295,11 @@ class ClientSkillsMixin:
     ) -> Skill:
         """Fetch every file of a skill, verify each one, and return a `Skill`.
 
-        The manifest comes from `skills/get` when the Skills extension was
-        negotiated, and otherwise from the `_manifest` resource that FastMCP
-        skill providers serve next to the files. Every file must match the
-        size and SHA-256 digest the manifest promised. When an extension entry
-        is available, the parsed frontmatter must also match that entry.
+        Enable `SkillsClientExtension()` to retrieve the manifest via
+        `skills/get`. Each file must match the size and SHA-256 digest in
+        the manifest. When an extension entry is available, the parsed
+        frontmatter must also match that entry. The client can also read
+        legacy FastMCP skill resources for backward compatibility.
 
         Args:
             uri: URI of the skill's `SKILL.md` resource.
