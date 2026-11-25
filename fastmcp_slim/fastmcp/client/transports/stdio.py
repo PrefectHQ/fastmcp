@@ -95,10 +95,12 @@ class StdioTransport(ClientTransport):
             finally:
                 self._active_sessions -= 1
         finally:
-            if not self.keep_alive:
-                await self.disconnect()
-            else:
+            if self.keep_alive:
                 logger.debug("Stdio transport has keep_alive=True, not disconnecting")
+            elif not self._active_sessions:
+                # Clients that overlap on one transport share its subprocess,
+                # so only the last one out stops it.
+                await self.disconnect()
 
     async def connect(
         self,

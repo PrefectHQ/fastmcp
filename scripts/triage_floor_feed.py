@@ -8,12 +8,14 @@ records over Jetstream, so they get each change pushed to them without calling
 GitHub themselves.
 
 Only public data goes out: titles, numbers, labels, logins and timestamps that
-GitHub already shows to anyone. Pushes and branch activity are not published.
+GitHub already shows to anyone. Pushes and branch activity are not published;
+CI runs on main are (`to_ci`), as are the triage flows' run states (`to_run`).
 """
 
 import argparse
 import json
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -46,6 +48,30 @@ def excerpt(body: str | None) -> str | None:
     return text if len(text) <= 160 else text[:159].rstrip() + "…"
 
 
+CLOSING_REF = re.compile(
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?:\s*:\s*|\s+)#(\d+)", re.IGNORECASE
+)
+
+
+def linked_issues(body: str | None) -> list[int]:
+    """Issue numbers a PR body closes with a GitHub closing keyword."""
+    return sorted({int(n) for n in CLOSING_REF.findall(body or "")})
+
+
+def size(pull: dict) -> dict:
+    """A pull request's diff size, from the fields GitHub sends on PR events."""
+    fields = {
+        "additions": "additions",
+        "deletions": "deletions",
+        "files": "changed_files",
+    }
+    return {
+        key: pull[name]
+        for key, name in fields.items()
+        if isinstance(pull.get(name), int)
+    }
+
+
 def to_event(name: str, payload: dict, now: datetime) -> dict | None:
     """One GitHub webhook event -> one floor event record, or None to skip it."""
     action = payload.get("action", "")
@@ -65,16 +91,36 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
     if name in {"issues", "pull_request", "pull_request_target"}:
         if action == "closed":
             kind = "merged" if thing.get("merged") else "closed"
+            base["reason"] = thing.get("state_reason")
         elif action in {"opened", "reopened"}:
-            kind = "opened"
+            kind = action
+            base["association"] = thing.get("author_association")
+            if base["pr"]:
+                base["links"] = linked_issues(thing.get("body")) or None
+                base.update(size(thing))
         elif action == "labeled":
             label = (payload.get("label") or {}).get("name", "")
             kind = "gated" if label == GATE_LABEL else "labeled"
             base["label"] = label
+        elif action == "unlabeled":
+            label = (payload.get("label") or {}).get("name", "")
+            kind = "ungated" if label == GATE_LABEL else "unlabeled"
+            base["label"] = label
         elif action == "ready_for_review":
             kind = "updated"
+        elif action == "converted_to_draft":
+            kind = "drafted"
         elif action == "synchronize":
             kind = "pushed"
+            base.update(size(thing))
+        elif action == "review_requested":
+            kind = "review_requested"
+            reviewer = payload.get("requested_reviewer") or {}
+            team = payload.get("requested_team") or {}
+            base["reviewer"] = reviewer.get("login") or team.get("slug")
+        elif action in {"assigned", "unassigned"}:
+            kind = action
+            base["assignee"] = (payload.get("assignee") or {}).get("login")
     elif name == "issue_comment" and action == "created":
         kind = "botcomment" if base["bot"] else "comment"
         base["excerpt"] = excerpt((payload.get("comment") or {}).get("body"))
@@ -87,6 +133,21 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
         base["author"] = (thing.get("user") or {}).get("login", "")
         if review.get("state"):
             base["state"] = review["state"].lower()
+    elif name == "workflow_run" and action == "completed":
+        run = payload.get("workflow_run") or {}
+        # fork PRs arrive with an empty pull_requests list, so only same-repo
+        # PRs get a checks event
+        pulls = run.get("pull_requests") or []
+        if run.get("event") in {"pull_request", "pull_request_target"} and pulls:
+            kind = "checks"
+            base.update(
+                number=pulls[0].get("number"),
+                title=(run.get("display_title") or "")[:300],
+                pr=True,
+                url=run.get("html_url", ""),
+                workflow=(run.get("name") or "")[:100],
+                conclusion=run.get("conclusion"),
+            )
     elif name == "release" and action == "published":
         release = payload.get("release") or {}
         kind = "release"
@@ -99,6 +160,157 @@ def to_event(name: str, payload: dict, now: datetime) -> dict | None:
         return None
     base["kind"] = kind
     return {k: v for k, v in base.items() if v is not None}
+
+
+# GitHub Actions workflows that run on pushes to main: the floor's CI. One
+# record per run, rewritten as the run moves from queued to done.
+CI_EVENTS = {"push"}
+
+
+def stamp(value: str | None, precise: bool = False) -> str | None:
+    """A GitHub or Prefect timestamp as the floor's UTC ISO form, or None.
+
+    precise keeps microseconds, for `at` fields that order state changes:
+    two changes within one second must still compare in order.
+    """
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    form = "%Y-%m-%dT%H:%M:%S.%fZ" if precise else "%Y-%m-%dT%H:%M:%S.000Z"
+    return moment.astimezone(UTC).strftime(form)
+
+
+def to_ci(payload: dict) -> tuple[str, dict] | None:
+    """A workflow_run webhook -> (rkey, floor.ci record), for runs on main only."""
+    run = payload.get("workflow_run") or {}
+    if run.get("head_branch") != "main" or run.get("event") not in CI_EVENTS:
+        return None
+    if not isinstance(run.get("id"), int) or run.get("status") is None:
+        return None
+    record = {
+        "$type": f"{NSID}.ci",
+        "workflow": (run.get("name") or "")[:100],
+        "status": run["status"],
+        "conclusion": run.get("conclusion"),
+        "sha": (run.get("head_sha") or "")[:7],
+        "title": (run.get("display_title") or "").split("\n")[0][:200],
+        "url": run.get("html_url", ""),
+        "startedAt": stamp(run.get("run_started_at")),
+        # when GitHub last changed the run; an older delivery never overwrites a newer one
+        "at": stamp(run.get("updated_at"), precise=True),
+    }
+    # zero-padded run ids sort the same as numbers, so listRecords gives newest first
+    return f"{run['id']:016d}", {k: v for k, v in record.items() if v is not None}
+
+
+# Prefect flows the floor may show: the triage stack's flows, all named
+# fastmcp-*. The automation picks which ones post here; the site picks which
+# station each one works in.
+FLOW_NAME = re.compile(r"fastmcp-[a-z0-9_-]{1,60}")
+# intake: config.issues / config.pull_requests; stack batch:
+# batch.groups[].items[].issue_number; contribution: spec.issue_number / pr_number
+NUMBER_KEYS = {
+    "issues",
+    "pull_requests",
+    "issue_number",
+    "pr_number",
+    "number",
+}
+
+
+def item_numbers(params: object, depth: int = 0) -> list[int]:
+    """Issue and PR numbers a flow run was started for, from its parameters."""
+    found: list[int] = []
+    if depth > 5:
+        return found
+    if isinstance(params, list):
+        for value in params[:20]:
+            found += item_numbers(value, depth + 1)
+    elif isinstance(params, dict):
+        for key, value in params.items():
+            if key in NUMBER_KEYS and not isinstance(value, dict):
+                values = value if isinstance(value, list) else [value]
+                found += [v for v in values if isinstance(v, int) and 0 < v < 10**6]
+            elif isinstance(value, dict | list):
+                found += item_numbers(value, depth + 1)
+    return list(dict.fromkeys(found))[:10]
+
+
+def to_run(body: dict) -> tuple[str, dict] | None:
+    """A Prefect automation's flow-run state change -> (rkey, floor.run record).
+
+    Only the flow's name, the state, times and issue/PR numbers go out: never
+    the run's name, parameters, logs or Prefect URLs.
+    """
+    flow = body.get("flow")
+    run_id = str(body.get("id") or "")
+    state = str(body.get("event") or "").rsplit(".", 1)[-1]
+    created = stamp(body.get("created"))
+    at = stamp(body.get("occurred"), precise=True)
+    if (
+        not isinstance(flow, str)
+        or not FLOW_NAME.fullmatch(flow)
+        or not created
+        or not at
+        or not state.isalpha()
+    ):
+        return None
+    if not re.fullmatch(r"[0-9a-f-]{36}", run_id):
+        return None
+    record = {
+        "$type": f"{NSID}.run",
+        "flow": flow,
+        "state": state.lower(),
+        "numbers": item_numbers(body.get("params")),
+        "createdAt": created,
+        "startedAt": stamp(body.get("start")),
+        "at": at,
+    }
+    # created time first, so listRecords gives the newest runs first
+    rkey = created[:19].replace("-", "").replace(":", "") + "-" + run_id[:8]
+    return rkey, {k: v for k, v in record.items() if v is not None}
+
+
+TRIAGE_STAGES = {"assess", "reproduce", "verify"}
+STAGE_VALUE = re.compile(r"[a-z][a-z0-9_]{0,39}")
+
+
+def to_stage(body: dict) -> tuple[str, dict] | None:
+    """A fastmcp.triage.stage Prefect event -> (rkey, floor.event of kind "stage").
+
+    The event fires once per item when finalize records its outcome. Only the
+    number and the enum fields go out; anything that is not a short lowercase
+    token is dropped, so no free text reaches the public record.
+    """
+    payload = body.get("payload")
+    event_id = str(body.get("id") or "")
+    at = stamp(body.get("occurred"))
+    if body.get("event") != "fastmcp.triage.stage" or not isinstance(payload, dict):
+        return None
+    number = payload.get("number")
+    if not isinstance(number, int) or not 0 < number < 10**6:
+        return None
+    if payload.get("stage") not in TRIAGE_STAGES or not at:
+        return None
+    if not re.fullmatch(r"[0-9a-f-]{36}", event_id):
+        return None
+    record = {
+        "$type": f"{NSID}.event",
+        "kind": "stage",
+        "number": number,
+        "stage": payload["stage"],
+        "createdAt": at,
+    }
+    for key in ("decision", "outcome", "destination"):
+        value = payload.get(key)
+        if isinstance(value, str) and STAGE_VALUE.fullmatch(value):
+            record[key] = value
+    return "st" + event_id.replace("-", ""), record
 
 
 def gh(path: str, *, paginate: bool = False, timeout: int = 60):
@@ -121,6 +333,7 @@ def slim(item: dict) -> dict:
         "draft": bool(item.get("draft")),
         "bot": is_bot(item.get("user")),
         "a": (item.get("user") or {}).get("login", ""),
+        "as": item.get("author_association", ""),
         "labels": labels[:8],
         "created": item["created_at"],
         "updated": item["updated_at"],

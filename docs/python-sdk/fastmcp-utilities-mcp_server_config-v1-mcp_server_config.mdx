@@ -15,7 +15,7 @@ command-line arguments.
 
 ## Functions
 
-### `generate_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L416" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `generate_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L446" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_schema(output_path: Path | str | None = None) -> dict[str, Any] | None
@@ -121,6 +121,9 @@ from_file(cls, file_path: Path) -> MCPServerConfig
 
 Load configuration from a JSON file.
 
+Relative `source.path` and `environment.requirements` values are
+anchored to the configuration file's directory (see `anchor_paths`).
+
 **Args:**
 - `file_path`: Path to the configuration file
 
@@ -133,7 +136,25 @@ Load configuration from a JSON file.
 - `pydantic.ValidationError`: If the configuration is invalid
 
 
-#### `from_cli_args` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L246" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `anchor_paths` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L250" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+anchor_paths(self, config_dir: Path) -> None
+```
+
+Make relative file paths absolute against the config file's directory.
+
+Anchors `source.path` and `environment.requirements`, so a config
+loaded from another working directory still finds its files. Paths are
+made absolute without following symlinks, so a symlinked `fastmcp.json`
+resolves paths beside the link. Other paths, such as `deployment.cwd`,
+keep their own resolution rules.
+
+**Args:**
+- `config_dir`: Directory containing the configuration file
+
+
+#### `from_cli_args` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L276" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_cli_args(cls, source: FileSystemSource, transport: Literal['stdio', 'http', 'sse', 'streamable-http'] | None = None, host: str | None = None, port: int | None = None, path: str | None = None, log_level: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] | None = None, python: str | None = None, dependencies: list[str] | None = None, requirements: str | None = None, project: str | None = None, editable: str | None = None, env: dict[str, str] | None = None, cwd: str | None = None, args: list[str] | None = None) -> MCPServerConfig
@@ -164,7 +185,7 @@ goes through a config object.
 - MCPServerConfig instance
 
 
-#### `find_config` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L323" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `find_config` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L353" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 find_config(cls, start_path: Path | None = None) -> Path | None
@@ -179,7 +200,7 @@ Find a fastmcp.json file in the specified directory.
 - Path to the configuration file, or None if not found
 
 
-#### `prepare` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L342" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prepare` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L372" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prepare(self, skip_source: bool = False, output_dir: Path | None = None) -> None
@@ -195,7 +216,7 @@ When output_dir is None, does ephemeral caching (for backwards compatibility).
 - `output_dir`: Directory to create the persistent uv project in (optional)
 
 
-#### `prepare_environment` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L363" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prepare_environment` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L393" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prepare_environment(self, output_dir: Path | None = None) -> None
@@ -210,7 +231,7 @@ Prepare the Python environment.
 Delegates to the environment's prepare() method
 
 
-#### `prepare_source` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L374" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prepare_source` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L404" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prepare_source(self) -> None
@@ -221,7 +242,7 @@ Prepare the source for loading.
 Delegates to the source's prepare() method.
 
 
-#### `run_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L381" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run_server` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L411" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run_server(self, **kwargs: Any) -> None

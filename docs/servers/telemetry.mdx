@@ -516,6 +516,8 @@ FastMCP implements the [OpenTelemetry MCP semantic conventions](https://opentele
 | `mcp.protocol.version` | The negotiated MCP protocol version for the request |
 | `mcp.session.id` | Session identifier for the MCP connection |
 | `jsonrpc.request.id` | JSON-RPC request ID (on server spans for inbound requests) |
+| `network.transport` | `tcp` over HTTP, `pipe` over stdio, absent for in-memory clients (on server spans) |
+| `network.protocol.name` / `network.protocol.version` | `http` and the HTTP version, over HTTP (on server spans) |
 | `mcp.resource.uri` | The resource URI (for resource operations) |
 | `gen_ai.tool.name` | Tool name (on `tools/call` spans) |
 | `gen_ai.operation.name` | `execute_tool` (on `tools/call` spans) |

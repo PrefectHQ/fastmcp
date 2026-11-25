@@ -19,6 +19,17 @@ MACHINE = "tests/pbt/test_components_machine.py"
 TRANSFORM = "fastmcp_slim/fastmcp/tools/tool_transform.py"
 DIRECTOR = "fastmcp_slim/fastmcp/utilities/openapi/director.py"
 OAUTH = "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py"
+SSRF = "fastmcp_slim/fastmcp/server/auth/ssrf.py"
+REDIRECT = "fastmcp_slim/fastmcp/server/auth/redirect_validation.py"
+CIMD = "fastmcp_slim/fastmcp/server/auth/cimd.py"
+GUARDS = "tests/pbt/test_auth_url_guards.py"
+ELICIT = "fastmcp_slim/fastmcp/server/elicitation.py"
+ELICIT_TEST = "tests/pbt/test_elicitation.py"
+PARAMS_TEST = "tests/pbt/test_openapi_params.py"
+AUTHZ = "fastmcp_slim/fastmcp/server/middleware/authorization.py"
+CACHING = "fastmcp_slim/fastmcp/server/middleware/caching.py"
+RATE = "fastmcp_slim/fastmcp/server/middleware/rate_limiting.py"
+MW = "tests/pbt/test_middleware.py"
 
 MUTANTS: dict[str, list[dict[str, str]]] = {
     "uri_template": [
@@ -69,8 +80,8 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
     ],
     "schema_fixes": [
         {
-            "name": "F1 undone: nested non-object default merged",
-            "fixes": "F1",
+            "name": "#6552 undone: nested non-object default merged",
+            "fixes": "#6552",
             "file": SCHEMA_TYPE,
             "old": "            if not isinstance(nested_default, Mapping):\n"
             "                nested_default = None\n",
@@ -78,16 +89,16 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F1 undone: root non-object default merged",
-            "fixes": "F1",
+            "name": "#6552 undone: root non-object default merged",
+            "fixes": "#6552",
             "file": SCHEMA_TYPE,
             "old": 'elif isinstance(schema.get("default"), Mapping):',
             "new": 'elif "default" in schema:',
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F3 undone: positions read from the closure",
-            "fixes": "F3",
+            "name": "#6553 undone: positions read from the closure",
+            "fixes": "#6553",
             "file": SCHEMA_TYPE,
             "old": "positions_type, tail_type = get_args(source)\n"
             "        resolved_prefix = get_args(positions_type)",
@@ -95,16 +106,16 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F5 undone: placeholders inherit validate_default",
-            "fixes": "F5",
+            "name": "#6572 undone: placeholders inherit validate_default",
+            "fixes": "#6572",
             "file": SCHEMA_TYPE,
             "old": "default=None,\n                    validate_default=False,",
             "new": "default=None,",
             "test": "tests/pbt/test_json_schema.py::test_adapter_accepts_valid_instances",
         },
         {
-            "name": "F2 undone: a broken merged default is never dropped",
-            "fixes": "F2",
+            "name": "#6582 undone: a broken merged default is never dropped",
+            "fixes": "#6582",
             "file": SCHEMA_TYPE,
             "old": "            if not broken:\n                raise\n",
             "new": "            raise\n",
@@ -120,7 +131,7 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": MACHINE,
         },
         {
-            "name": "F4 undone: unversioned never matches a requested version",
+            "name": "#6582 docs undone: unversioned never matches a requested version",
             "file": "fastmcp_slim/fastmcp/utilities/versions.py",
             "old": "        if version is None:\n            return match_none\n",
             "new": "        if version is None:\n            return False\n",
@@ -226,12 +237,12 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             "test": "tests/pbt/test_oauth_proxy_machine.py",
         },
         {
-            "name": "revoked access token's mapping kept (undoes F10)",
+            "name": "revoked access token's mapping kept (undoes #6620)",
             "file": OAUTH,
             "old": "            await self._jti_mapping_store.delete(key=token.fastmcp_jti)",
             "new": "            pass",
             "test": "tests/pbt/test_oauth_proxy_machine.py",
-            "fixes": "F10",
+            "fixes": "#6620",
         },
         {
             "name": "revoked refresh token leaves its grant's access tokens live",
@@ -249,6 +260,285 @@ MUTANTS: dict[str, list[dict[str, str]]] = {
             ),
             "new": "            pass\n",
             "test": "tests/pbt/test_oauth_proxy_machine.py",
+        },
+    ],
+    "auth_guards": [
+        {
+            "name": "IPv6 wrappers not unwrapped",
+            "file": SSRF,
+            "old": "    if isinstance(ip, ipaddress.IPv6Address):\n        if any(",
+            "new": "    if False:\n        if any(",
+            "test": f"{GUARDS}::test_ipv6_never_unblocks_a_blocked_ipv4",
+        },
+        {
+            "name": "port 0 rewritten to 443",
+            "file": SSRF,
+            "old": "    if port is None:\n        port = 443\n    elif port == 0:",
+            "new": "    if not port:\n        port = 443\n    elif False:",
+            "test": f"{GUARDS}::test_pinned_request_goes_where_validation_looked",
+        },
+        {
+            "name": "ISATAP not unwrapped",
+            "file": SSRF,
+            "old": "    if packed[8:12] in ISATAP_INTERFACE_IDS:",
+            "new": "    if False:",
+            "test": f"{GUARDS}::test_ipv6_never_unblocks_a_blocked_ipv4",
+        },
+        {
+            "name": "port read outside the guard (#5773 undone)",
+            "file": SSRF,
+            "old": (
+                "        port = parsed.port\n"
+                "    except (ValueError, AttributeError) as e:\n"
+                '        raise SSRFError(f"Invalid URL: {e}") from e\n'
+            ),
+            "new": (
+                "        pass\n"
+                "    except (ValueError, AttributeError) as e:\n"
+                '        raise SSRFError(f"Invalid URL: {e}") from e\n'
+                "    port = parsed.port\n"
+            ),
+            "test": f"{GUARDS}::test_validate_url_fails_only_with_ssrf_error",
+        },
+        {
+            "name": "userinfo allowed in redirect URIs",
+            "file": REDIRECT,
+            "old": "    if uri_parsed.username is not None or uri_parsed.password is not None:",
+            "new": "    if False:",
+            "test": f"{GUARDS}::test_a_match_lands_on_the_patterns_host",
+        },
+        {
+            "name": "backslash allowed in the raw authority",
+            "file": REDIRECT,
+            "old": '    if "\\\\" in raw_parsed.netloc:',
+            "new": "    if False:",
+            "test": f"{GUARDS}::test_a_match_lands_on_the_patterns_host",
+        },
+        {
+            "name": "subdomain wildcard matches any suffix",
+            "file": REDIRECT,
+            "old": "        return uri_host.endswith(suffix) and uri_host != pattern_host[2:]",
+            "new": "        return uri_host.endswith(pattern_host[2:])",
+            "test": f"{GUARDS}::test_a_match_lands_on_the_patterns_host",
+        },
+        {
+            "name": "exact pattern ignores the query (#6000 undone)",
+            "file": REDIRECT,
+            "old": '    if pattern_parsed.query or "*" not in pattern:',
+            "new": "    if pattern_parsed.query:",
+            "test": f"{GUARDS}::test_an_exact_pattern_matches_only_itself",
+        },
+        {
+            "name": "repeated iss kept",
+            "file": REDIRECT,
+            "old": '    return _drop_repeated_query_param(replace_query_param(url, "iss", iss), "iss")',
+            "new": '    return replace_query_param(url, "iss", iss)',
+            "test": f"{GUARDS}::test_client_redirect_carries_each_parameter_once",
+        },
+        {
+            "name": "document scope not intersected",
+            "file": CIMD,
+            "old": '        filtered = " ".join(s for s in scope.split(" ") if s and s in allowed)',
+            "new": '        filtered = " ".join(s for s in scope.split(" ") if s)',
+            "test": f"{GUARDS}::test_document_scopes_never_widen_the_servers",
+        },
+        {
+            "name": "negative freshness kept",
+            "file": CIMD,
+            "old": "        freshness_lifetime = max(0.0, expires_at - now)",
+            "new": "        freshness_lifetime = expires_at - now",
+            "test": f"{GUARDS}::test_cache_headers_never_break_a_fetch",
+        },
+    ],
+    "elicitation": [
+        {
+            "name": "optional fields keep their null type",
+            "file": ELICIT,
+            "old": '            schema = {**schema, "schema": inner["schema"]}',
+            "new": "            pass",
+            "test": f"{ELICIT_TEST}::test_every_requested_schema_is_a_spec_form",
+        },
+        {
+            "name": "titled multi-select uses oneOf",
+            "file": ELICIT,
+            "old": '    pattern_key = "anyOf" if multi_select else "oneOf"',
+            "new": '    pattern_key = "oneOf"',
+            "test": f"{ELICIT_TEST}::test_every_requested_schema_is_a_spec_form",
+        },
+        {
+            "name": "titled single-select not required",
+            "file": ELICIT,
+            "old": (
+                '            "properties": {"value": enum_schema},\n'
+                '            "required": ["value"],\n'
+            ),
+            "new": '            "properties": {"value": enum_schema},\n',
+            "test": f"{ELICIT_TEST}::test_every_requested_schema_is_a_spec_form",
+        },
+        {
+            "name": "scalar answers stay wrapped",
+            "file": ELICIT,
+            "old": "            return AcceptedElicitation[Any](data=validated_data.value)",
+            "new": "            return AcceptedElicitation[Any](data=validated_data)",
+            "test": f"{ELICIT_TEST}::test_the_server_gets_what_the_user_chose",
+        },
+    ],
+    "openapi_params": [
+        {
+            "name": "exploded path objects keep commas",
+            "file": DIRECTOR,
+            "old": '                parts.append(f"{ek}={ev}" if explode else f"{ek},{ev}")',
+            "new": '                parts.append(f"{ek},{ev}")',
+            "test": PARAMS_TEST,
+        },
+        {
+            "name": "joined cookie items keep their commas",
+            "file": DIRECTOR,
+            "old": '            .replace(",", "%2C")\n',
+            "new": "",
+            "test": PARAMS_TEST,
+        },
+        {
+            "name": "cookies default to explode=false",
+            "file": DIRECTOR,
+            "old": "                else True\n",
+            "new": "                else False\n",
+            "test": PARAMS_TEST,
+        },
+        {
+            "name": "deepObject uses dots",
+            "file": DIRECTOR,
+            "old": '                                property_name = f"{key}[{property_name}]"',
+            "new": '                                property_name = f"{key}.{property_name}"',
+            "test": PARAMS_TEST,
+        },
+        {
+            "name": "header objects ignore explode",
+            "file": DIRECTOR,
+            "old": "                    explode=bool(header_lookup[k].explode)",
+            "new": "                    explode=False",
+            "test": PARAMS_TEST,
+        },
+    ],
+    "middleware": [
+        {
+            "name": "tool listing not filtered",
+            "file": AUTHZ,
+            "old": (
+                "                if await run_auth_checks(self.auth, ctx):\n"
+                "                    authorized_tools.append(tool)"
+            ),
+            "new": "                if True:\n                    authorized_tools.append(tool)",
+            "test": f"{MW}::test_listing_and_calling_agree",
+        },
+        {
+            "name": "prompt listing not filtered",
+            "file": AUTHZ,
+            "old": (
+                "                if await run_auth_checks(self.auth, ctx):\n"
+                "                    authorized_prompts.append(prompt)"
+            ),
+            "new": "                if True:\n                    authorized_prompts.append(prompt)",
+            "test": f"{MW}::test_listing_and_calling_agree",
+        },
+        {
+            "name": "tool denial names only its own layer's scopes",
+            "file": AUTHZ,
+            "old": (
+                "                missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)\n"
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for tool '{tool_name}': \"\n"
+            ),
+            "new": (
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for tool '{tool_name}': \"\n"
+            ),
+            "test": f"{MW}::test_a_denial_names_every_scope_the_chain_still_needs",
+        },
+        {
+            "name": "resource denial names only its own layer's scopes",
+            "file": AUTHZ,
+            "old": (
+                "                missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)\n"
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for resource '{uri}': \"\n"
+            ),
+            "new": (
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for resource '{uri}': \"\n"
+            ),
+            "test": f"{MW}::test_a_denial_names_every_scope_the_chain_still_needs",
+        },
+        {
+            "name": "prompt denial names only its own layer's scopes",
+            "file": AUTHZ,
+            "old": (
+                "                missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)\n"
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for prompt '{prompt_name}': \"\n"
+            ),
+            "new": (
+                "                raise InsufficientScopeError(\n"
+                "                    missing,\n"
+                "                    message=(\n"
+                "                        f\"Authorization failed for prompt '{prompt_name}': \"\n"
+            ),
+            "test": f"{MW}::test_a_denial_names_every_scope_the_chain_still_needs",
+        },
+        {
+            "name": "cache ignores the requested version",
+            "file": CACHING,
+            "old": "    return f\"__version__:{_get_arguments_str({'version': version})}\"",
+            "new": "    return DEFAULT_VERSION_CACHE_KEY",
+            "test": f"{MW}::test_a_cached_server_answers_like_an_uncached_one",
+        },
+        {
+            "name": "cache shared across callers",
+            "file": CACHING,
+            "old": "    return _hash_cache_key(token.token)",
+            "new": "    return ANONYMOUS_AUTH_KEY",
+            "test": f"{MW}::test_a_cached_server_answers_like_an_uncached_one",
+        },
+        {
+            "name": "cache ignores tool arguments",
+            "file": CACHING,
+            "old": (
+                '        f"{auth_key}:{modern_protocol}:{_get_component_version_cache_key(msg)}:{msg.name}:"\n'
+                '        f"{_get_arguments_str(msg.arguments)}"'
+            ),
+            "new": '        f"{auth_key}:{modern_protocol}:{_get_component_version_cache_key(msg)}:{msg.name}:"',
+            "test": f"{MW}::test_a_cached_server_answers_like_an_uncached_one",
+        },
+        {
+            "name": "bucket refills past capacity",
+            "file": RATE,
+            "old": "            self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)",
+            "new": "            self.tokens = self.tokens + elapsed * self.refill_rate",
+            "test": f"{MW}::test_token_bucket_admits_no_more_than_burst_plus_rate",
+        },
+        {
+            "name": "idle buckets pruned before they refill",
+            "file": RATE,
+            "old": "            idle_timeout = self.burst_capacity / self.max_requests_per_second",
+            "new": "            idle_timeout = self.burst_capacity / self.max_requests_per_second / 4",
+            "test": f"{MW}::test_token_bucket_admits_no_more_than_burst_plus_rate",
+        },
+        {
+            "name": "sliding window admits one extra",
+            "file": RATE,
+            "old": "            if len(self.requests) < self.max_requests:",
+            "new": "            if len(self.requests) <= self.max_requests:",
+            "test": f"{MW}::test_sliding_window_admits_no_more_than_its_max",
         },
     ],
 }

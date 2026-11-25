@@ -553,21 +553,22 @@ record("PROBE", "#6510 UsageMiddleware", usage)
 
 EVENTS_SERVER = textwrap.dedent("""
     import sys
+    from pydantic import BaseModel
     from fastmcp import FastMCP
-    from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
+    from fastmcp_events import EventsExtension
     mcp = FastMCP("events-smoke")
     events = EventsExtension(poll_interval_ms=200)
     mcp.add_extension(events)
-    ALERTS = []
-    @events.event(name="alert.fired", description="An alert fired")
-    def alert_fired(poll: EventPoll) -> EventBatch:
-        if poll.cursor is None:
-            return EventBatch(cursor=str(len(ALERTS)))
-        new = ALERTS[int(poll.cursor):]
-        return EventBatch(events=[Event(data=a, event_id=a["id"]) for a in new], cursor=str(len(ALERTS)))
+    @events.event("alert.fired")
+    class AlertFired(BaseModel):
+        "An alert fired"
+        n: int
+    FIRED = []
     @mcp.tool
-    def fire() -> str:
-        ALERTS.append({"id": str(len(ALERTS))}); return "fired"
+    async def fire() -> str:
+        FIRED.append(1)
+        await events.emit(AlertFired(n=len(FIRED)), event_id=str(len(FIRED)))
+        return "fired"
     mcp.run(transport="http", port=int(sys.argv[1]), show_banner=False, log_level="warning")
 """)
 (WORK / "events_server.py").write_text(EVENTS_SERVER)
@@ -575,7 +576,7 @@ EVENTS_SERVER = textwrap.dedent("""
 
 async def _events(url):
     from fastmcp import Client
-    from fastmcp.experimental.events import (
+    from fastmcp_events import (
         EventsClientExtension,
         list_events,
         subscribe_events,
@@ -818,6 +819,19 @@ record(
         f"accepted, ttl={make_proxy(client_registration_ttl_seconds=60)._client_registration_ttl_seconds}"
     ),
 )
+
+
+# ---- PROBES added for 4.2.6 -------------------------------------------------
+def authlib_probe():
+    import importlib.util
+
+    from fastmcp.server.auth.oauth_proxy import OAuthProxy  # noqa: F401
+
+    found = importlib.util.find_spec("authlib") is not None
+    return f"authlib installed: {found}; OAuthProxy imports"
+
+
+record("PROBE", "#6794 authlib no longer a dependency", authlib_probe)
 
 print(f"fastmcp {FASTMCP_VERSION}")
 for kind, name, outcome in results:

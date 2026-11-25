@@ -987,10 +987,9 @@ class FastMCP(
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Get task-eligible components with server-level transforms applied.
 
-        Overrides AggregateProvider.get_tasks() to apply server-level transforms
-        after aggregation. AggregateProvider handles provider-level namespacing.
+        AggregateProvider.get_tasks() aggregates the providers' components and
+        applies this server's transforms; this override adds injected tools.
         """
-        # Get tasks from AggregateProvider (handles aggregation and namespacing)
         components = list(await super().get_tasks())
 
         # An injected tool owns its name, as in `list_tools()` and
@@ -1003,7 +1002,7 @@ class FastMCP(
             *[t for t in injected if t.task_config.supports_tasks()],
             *[
                 c
-                for c in await self._apply_task_transforms(components)
+                for c in components
                 if c.task_config.supports_tasks()
                 and not (isinstance(c, Tool) and c.name in claimed)
             ],
@@ -1711,7 +1710,8 @@ class FastMCP(
                     raise NotFoundError(f"Unknown tool: {name!r}")
                 span.set_attributes(tool.get_span_attributes())
                 try:
-                    return await tool._run(arguments or {})
+                    result = await tool._run(arguments or {})
+                    return tool._apply_result_transforms(result)
                 except ValidationError as e:
                     cause = e.__cause__
                     if isinstance(cause, PydanticValidationError):

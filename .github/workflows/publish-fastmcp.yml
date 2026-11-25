@@ -28,7 +28,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Build fastmcp
         run: uv build --package fastmcp
@@ -175,6 +175,64 @@ jobs:
           echo "fastmcp-tasks ${TASKS_VERSION} is not available on PyPI; refusing to publish fastmcp (the [tasks] extra would be uninstallable)." >&2
           exit 1
 
+      - name: Verify matching fastmcp-events is published
+        run: |
+          EVENTS_VERSION=$(python - <<'PY'
+          import email.parser
+          import re
+          import zipfile
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("fastmcp-*.whl"))
+          metadata_name = next(
+              name for name in zipfile.ZipFile(wheel).namelist()
+              if name.endswith(".dist-info/METADATA")
+          )
+          metadata = email.parser.Parser().parsestr(
+              zipfile.ZipFile(wheel).read(metadata_name).decode()
+          )
+          # fastmcp-events is pinned via the optional `events` extra, so its
+          # Requires-Dist entry carries an `extra == "events"` marker — unlike the
+          # base slim dependency, do not skip marked entries here.
+          #
+          # Print nothing when there is no such pin: release lines from before
+          # the fastmcp-events package have nothing here to verify.
+          for value in metadata.get_all("Requires-Dist", []):
+              requirement, _, _marker = value.partition(";")
+              match = re.fullmatch(r"fastmcp-events==([^;\s]+)", requirement.strip())
+              if match:
+                  print(match.group(1))
+                  break
+          PY
+          )
+
+          if [ -z "$EVENTS_VERSION" ]; then
+            echo "This build does not pin fastmcp-events; the [events] extra cannot be uninstallable, so there is nothing to verify."
+            exit 0
+          fi
+
+          for attempt in {1..12}; do
+            if python - "$EVENTS_VERSION" <<'PY'
+          import json
+          import sys
+          import urllib.request
+
+          version = sys.argv[1]
+          url = f"https://pypi.org/pypi/fastmcp-events/{version}/json"
+          with urllib.request.urlopen(url, timeout=30) as response:
+              json.load(response)
+          PY
+            then
+              exit 0
+            fi
+
+            echo "fastmcp-events ${EVENTS_VERSION} is not available on PyPI yet; retrying (${attempt}/12)."
+            sleep 10
+          done
+
+          echo "fastmcp-events ${EVENTS_VERSION} is not available on PyPI; refusing to publish fastmcp (the [events] extra would be uninstallable)." >&2
+          exit 1
+
       - name: Publish fastmcp to PyPI
         run: uv publish -v dist/fastmcp-*.tar.gz dist/fastmcp-*.whl
 
@@ -227,7 +285,7 @@ jobs:
 
       - name: Open published docs PR
         if: steps.release_line.outputs.update_published_docs == 'true'
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
+        uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8
         with:
           token: ${{ steps.marvin-token.outputs.token }}
           base: published-docs

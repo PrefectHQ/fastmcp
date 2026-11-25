@@ -82,7 +82,7 @@ def _reproduces(
     return False
 
 
-_F3_NODE = {
+_RECURSIVE_TAIL_NODE = {
     "type": "object",
     "properties": {
         "kids": {
@@ -92,26 +92,31 @@ _F3_NODE = {
         }
     },
 }
-# F1 crashes building the type (TypeError), F3 leaves it unbuildable
-# (PydanticUserError), F2 and F5 reject a valid instance (ValidationError).
+# Findings fixed on main in #6552 (a non-object default crashed building the type),
+# #6553 (a recursive positional array left it unbuildable), #6582 and #6572
+# (a valid instance was rejected).
 # A finding is skipped only while it still reproduces in this tree; once it is
 # fixed the harness checks it like everything else. A mutant that undoes a fix
 # sets PBT_ASSUME_FIXED so the probe does not mistake it for the open bug
 # (see known.py).
-F1_OPEN = still_open(
-    "F1",
+NON_OBJECT_DEFAULT_OPEN = still_open(
+    "#6552",
     lambda: _reproduces(
         {"type": "object", "properties": {"a": {"type": "object", "default": None}}},
         {"a": {}},
         TypeError,
     ),
 )
-F3_OPEN = still_open(
-    "F3",
-    lambda: _reproduces({**_F3_NODE, "$defs": {"N": _F3_NODE}}, {}, PydanticUserError),
+REF_IN_POSITIONAL_ARRAY_OPEN = still_open(
+    "#6553",
+    lambda: _reproduces(
+        {**_RECURSIVE_TAIL_NODE, "$defs": {"N": _RECURSIVE_TAIL_NODE}},
+        {},
+        PydanticUserError,
+    ),
 )
-F2_OPEN = still_open(
-    "F2",
+DEFAULT_MERGED_INTO_OBJECT_OPEN = still_open(
+    "#6582",
     lambda: _reproduces(
         {
             "type": "object",
@@ -128,8 +133,8 @@ F2_OPEN = still_open(
         ValidationError,
     ),
 )
-F5_OPEN = still_open(
-    "F5",
+PREFIX_ARRAY_UNDER_EXTRAS_OPEN = still_open(
+    "#6572",
     lambda: _reproduces(
         {
             "type": "object",
@@ -149,33 +154,52 @@ F5_OPEN = still_open(
 )
 
 
+HUGE_INTEGRAL_FLOAT_OPEN = still_open(
+    "#6695",
+    lambda: _reproduces({"type": "integer"}, 1e20, ValidationError),
+)
+
+
+def _holds_huge_integral_float(value: Any) -> bool:
+    """An integer-valued float past what pydantic parses as an int (#6695)."""
+    if isinstance(value, float):
+        return value.is_integer() and abs(value) >= 2**63
+    if isinstance(value, dict):
+        return any(_holds_huge_integral_float(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_holds_huge_integral_float(v) for v in value)
+    return False
+
+
 def adapter_known_divergence(schema: dict[str, Any]) -> str | None:
-    """Name an open finding recorded in FINDINGS.md, so the run stops on anything new."""
+    """Name a known finding that still reproduces, so the run stops on anything new."""
     nodes = list(_walk(schema))
-    if F1_OPEN and any(
+    if NON_OBJECT_DEFAULT_OPEN and any(
         node.get("type") == "object"
         and "default" in node
         and not isinstance(node["default"], dict)
         for node in nodes
     ):
-        return "F1-object-non-dict-default"
-    # F3 is a `$ref` cycle through a positional array, in a prefix position or
-    # in the `items` tail; #6553 fixes both.
-    if F3_OPEN and any(
+        return "#6552 object with a non-object default"
+    # #6553 fixed a `$ref` cycle through a positional array, in a prefix
+    # position or in the `items` tail.
+    if REF_IN_POSITIONAL_ARRAY_OPEN and any(
         "prefixItems" in node
         and "$ref" in str(node["prefixItems"]) + str(node.get("items"))
         for node in nodes
     ):
-        return "F3-ref-in-positional-array"
-    if F2_OPEN and any(
+        return "#6553 ref in a positional array"
+    if DEFAULT_MERGED_INTO_OBJECT_OPEN and any(
         isinstance(n.get("default"), dict)
         and n["default"]
         and n.get("type") == "object"
         for n in nodes
     ):
-        return "F2-object-default-merged-into-provided-object"
-    if F5_OPEN and any(_typed_extras_hold_prefix_array(n, schema) for n in nodes):
-        return "F5-prefix-array-under-typed-additional-properties"
+        return "#6582 object default merged into a provided object"
+    if PREFIX_ARRAY_UNDER_EXTRAS_OPEN and any(
+        _typed_extras_hold_prefix_array(n, schema) for n in nodes
+    ):
+        return "#6572 prefix array under typed additionalProperties"
     return None
 
 
@@ -184,7 +208,7 @@ def _typed_extras_hold_prefix_array(
 ) -> bool:
     """An object with schema-valued `additionalProperties` whose own properties
     reach an unpinned positional array, directly or through a local `$ref`:
-    the shape F5 needs."""
+    the shape #6572 fixed."""
     if not isinstance(node.get("additionalProperties"), dict):
         return False
     defs = schema.get("$defs", {})
@@ -293,6 +317,9 @@ def test_adapter_accepts_valid_instances(drawn):
         return
     assert sys.getrecursionlimit() == limit
     for instance in valid:
+        if HUGE_INTEGRAL_FLOAT_OPEN and _holds_huge_integral_float(instance):
+            event("known: #6695 integer-valued float above 2^63")
+            continue
         note(f"instance: {instance!r}")
         try:
             adapter.validate_python(instance)

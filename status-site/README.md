@@ -10,7 +10,12 @@ series and refreshing creation/latest-closure outcomes from public GitHub
 records. The build job has read-only access; the publisher only copies its
 artifact. Both status publishers serialize writes through the same concurrency
 group. `maintenance-status.yml` publishes the static site alongside its existing
-maintenance snapshot twice daily, or on manual dispatch.
+maintenance snapshot twice daily, whenever `status-site/` changes on main, or on
+manual dispatch.
+
+Every section heading links to itself (`#pbt-coverage`, `#incoming-and-closed`,
+…), and `#pbt-coverage/<module>` opens the coverage map with that module
+selected; clicking a module puts its link in the address bar.
 
 The original half-hourly collector's history was imported with:
 
@@ -41,7 +46,9 @@ per module, sized by the statements inside its function bodies and colored by
 the share of those statements that ran during a property-based test. It reads
 `pbt-coverage.json` (`fastmcp-pbt-coverage/1`), which `pbt-coverage.yml`
 publishes to the `status` branch on every push to main that touches the
-package, tests, docs or lockfile, plus once a day.
+package, tests, docs or lockfile, plus once a day. The page names the commit
+it measured and warns when the data is more than 36 hours old, which means the
+rebuild is failing.
 
 ```sh
 uv run scripts/pbt_coverage.py --output status-site/pbt-coverage.json

@@ -61,10 +61,10 @@ Defaults to False (scan once at init, cache results).
 failed_files(self) -> Mapping[Path, str]
 ```
 
-Files that failed to import or register during the most recent load.
+Files that failed to import, construct, or register components.
 
-The returned mapping is a snapshot. Import failures are also logged as
-warnings and registration failures as errors, but applications that
-need a strict startup policy can inspect this property without
-importing the modules again.
+The returned mapping is a snapshot of the most recent load. Import and
+construction failures are logged as warnings, registration failures as
+errors. Applications that need a strict startup policy can inspect this
+property without importing the modules again.
 

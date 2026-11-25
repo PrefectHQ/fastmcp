@@ -41,6 +41,19 @@ def apply_disposition(
             for item in review.get("recommendations", [])
         )
     )
+    # repair_evidence says triage's own record is wrong or incomplete. Only an
+    # assessment that already asked the reporter for evidence may become a public
+    # request for a reproducer (`needs MRE`); anything else goes to a maintainer
+    # with the reviewer's findings, never to the reporter (#6692).
+    if decision == "repair_evidence" and outcome.get("decision") != "evidence_needed":
+        return "decisions", {
+            **outcome,
+            "adversarial_review": review,
+            "triage_review_run_id": run_id,
+            "next_step": review["next_action"],
+            "question": "Reviewer found the triage record needs repair: "
+            + review["next_action"],
+        }
     if unadmitted_review or unsupported_closure:
         ask = (
             "Reviewer points to a contribution triage didn't admit"
@@ -70,8 +83,6 @@ def apply_disposition(
         "next_step": review["next_action"],
     }
     destination = destinations[decision]
-    if decision == "repair_evidence":
-        result["decision"] = "evidence_needed"
     if decision == "environment_failure":
         destination = "operational"
         result["reason"] = review["reason"]

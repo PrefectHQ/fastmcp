@@ -134,6 +134,25 @@ class TestCallToolMRTR:
         assert result.data.result == "Hello, Bob!"
         assert result.structured_content == {"result": "Hello, Bob!"}
 
+    async def test_set_elicitation_callback_answers_on_a_live_session(self):
+        """A handler set while connected answers the next embedded elicitation."""
+
+        async def first(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content=response_type(name="Ada"))
+
+        async def second(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content=response_type(name="Bob"))
+
+        async with Client(
+            _mrtr_server(), mode="auto", elicitation_handler=first
+        ) as client:
+            before = await client.call_tool("greet", {})
+            client.set_elicitation_callback(second)
+            after = await client.call_tool("greet", {})
+
+        assert before.data.result == "Hello, Ada!"
+        assert after.data.result == "Hello, Bob!"
+
     @pytest.mark.parametrize("action", ["decline", "cancel"])
     @pytest.mark.parametrize("result_type", [ElicitResult, mcp_types.ElicitResult])
     async def test_declined_elicitation_is_not_an_accepted_answer(

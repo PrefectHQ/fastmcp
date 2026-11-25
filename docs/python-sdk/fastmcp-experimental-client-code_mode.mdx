@@ -1,0 +1,90 @@
+---
+title: code_mode
+sidebarTitle: code_mode
+---
+
+# `fastmcp.experimental.client.code_mode`
+
+
+Client-side CodeMode: discovery and sandboxed execution over remote tools.
+
+`CodeModeClient` wraps a `Client` or `ClientGroup` and presents the same
+discovery + execute meta-tools as the server-side `CodeMode` transform. The
+sandbox runs locally; each `call_tool` inside it is an ordinary `tools/call`
+on the wrapped client, so servers never see the generated code and need no
+CodeMode support of their own.
+
+This module is experimental and may change without deprecation.
+
+
+## Classes
+
+### `CodeModeClient` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/client/code_mode.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Present a client's tools through CodeMode discovery and execute tools.
+
+`list_tools()` returns only the meta-tools (by default `search`,
+`get_schema`, and `execute`). `call_tool()` runs them locally: discovery
+reads the wrapped client's live tool list, and `execute` runs Python in a
+sandbox where `call_tool(name, params)` calls the wrapped client.
+
+Wrapping a `ClientGroup` lets one `execute` block chain tools from several
+servers, using the group's namespaced tool names.
+
+**Args:**
+- `client`: The connected (or connectable) `Client` or `ClientGroup` whose
+tools the meta-tools expose.
+- `sandbox_provider`: Executes generated code. Defaults to
+`MontySandboxProvider`, which requires `fastmcp[code-mode]`.
+- `discovery_tools`: Discovery tool factories, as for `CodeMode`.
+Defaults to `Search` and `GetSchemas`.
+- `execute_tool_name`: Name of the execute tool.
+- `execute_description`: Description of the execute tool.
+- `max_tool_calls`: Maximum `call_tool` invocations per `execute`;
+`None` removes the limit.
+
+
+**Methods:**
+
+#### `client` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/client/code_mode.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+client(self) -> Client[Any] | ClientGroup
+```
+
+The wrapped client or group.
+
+
+#### `list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/client/code_mode.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self) -> list[mcp_types.Tool]
+```
+
+List the meta-tools in place of the wrapped client's tools.
+
+
+#### `call_tool_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/client/code_mode.py#L141" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+call_tool_mcp(self, name: str, arguments: dict[str, Any] | None = None) -> mcp_types.CallToolResult
+```
+
+Run a meta-tool and return its MCP result.
+
+As with `Client.call_tool_mcp`, a failing tool produces a result with
+`is_error` set rather than raising.
+
+
+#### `call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/client/code_mode.py#L165" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> CallToolResult
+```
+
+Run a meta-tool and parse its result as `Client.call_tool` does.
+
+**Raises:**
+- `ToolError`: If the tool fails and `raise_on_error` is true.
+

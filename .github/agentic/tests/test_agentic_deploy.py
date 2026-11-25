@@ -163,11 +163,15 @@ def test_deploy_registers_and_repins_both_automations(stack):
             "any_"
         ]
     )
-    # Scheduled flows always have a run queued, so deploys don't wait on them.
+    # Scheduled flows always have a run queued, so deploys don't wait on them;
+    # contributor-vouch is a one-record manual run.
     assert set(names) == drained | {
         "cloud-triage-sweep",
         "cloud-triage-memory-sync",
         "cloud-triage-digest",
+        "cloud-triage-follow-through",
+        "cloud-triage-audit",
+        "contributor-vouch",
     }
     puts = sorted(state.glob("put-*.json"))
     assert len(puts) == 2

@@ -121,7 +121,7 @@ def _yielding(read):
 def _revocation_is_per_grant() -> bool:
     """True while revoking an access token and then refreshing revives it.
 
-    The probe runs the minimal history from FINDINGS.md: redeem a code,
+    The probe runs the minimal history from #6620: redeem a code,
     revoke the access token, refresh, and check the revoked token.
     """
     machine = OAuthMachine(probe=True)
@@ -392,10 +392,10 @@ class OAuthMachine(RuleBasedStateMachine):
             ACCESS_REVOCATION_PER_GRANT
             and self.grant[token] in self.grants_with_revocation
         ):
-            # Known finding: every access token of a grant validates against
+            # Known finding (#6620): every access token of a grant validates against
             # the grant's latest upstream token, so revoking one revokes the
             # grant's current upstream token and a refresh revives them all.
-            event("known: access revocation is per grant and undone by refresh")
+            event("known: #6620 access revocation is per grant")
             return
         if token in self.revoked_access:
             event("check access: revoked")
@@ -408,5 +408,5 @@ class OAuthMachine(RuleBasedStateMachine):
             assert got is not None, "an issued access token does not validate"
 
 
-ACCESS_REVOCATION_PER_GRANT = still_open("F10", _revocation_is_per_grant)
+ACCESS_REVOCATION_PER_GRANT = still_open("#6620", _revocation_is_per_grant)
 TestOAuthProxy = OAuthMachine.TestCase

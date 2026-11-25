@@ -9,8 +9,19 @@ from flows.agentic_people import people
 NOW = datetime(2026, 11, 13, tzinfo=UTC)
 
 
-def reader(users: dict, counts: dict, missing: set[str] = frozenset()):
+def reader(
+    users: dict,
+    counts: dict,
+    missing: set[str] = frozenset(),
+    maintainers: set[str] = frozenset(),
+):
     def read(endpoint: str) -> dict:
+        if "/collaborators/" in endpoint:
+            login = endpoint.split("/collaborators/")[1].split("/")[0]
+            if login in missing:
+                raise RuntimeError("gh api exited 1: rate limited")
+            role = "admin" if login in maintainers else "read"
+            return {"permission": role, "role_name": role}
         if endpoint.startswith("users/"):
             login = endpoint.removeprefix("users/")
             if login in missing:
@@ -74,8 +85,12 @@ def test_cards_give_the_agent_what_a_maintainer_would_glance_at():
     assert set(cards) == {"reporter", "sweeper"}
     assert cards["reporter"]["followers"] == 3000
     assert cards["reporter"]["prs_merged_here"] == 12
+    assert cards["reporter"]["role"] == "reporter"
+    assert cards["reporter"]["maintainer"] is False
     assert cards["sweeper"] == {
         "login": "sweeper",
+        "role": "pr_author",
+        "maintainer": False,
         "account_created": "2025-09-13",
         "followers": 4,
         "public_repos": 20,
@@ -92,8 +107,18 @@ def test_a_failed_lookup_leaves_a_gap_instead_of_failing_the_assessment():
         evidence(pr(9, "someone")), reader({}, {}, {"reporter", "someone"}), NOW
     )
     assert result["cards"] == [
-        {"login": "reporter", "unavailable": "RuntimeError"},
-        {"login": "someone", "unavailable": "RuntimeError"},
+        {
+            "login": "reporter",
+            "unavailable": "RuntimeError",
+            "role": "reporter",
+            "maintainer": False,
+        },
+        {
+            "login": "someone",
+            "unavailable": "RuntimeError",
+            "role": "pr_author",
+            "maintainer": False,
+        },
     ]
 
 
@@ -128,3 +153,29 @@ def test_the_elsewhere_sample_is_the_newest_prs():
     )
     query = parse_qs(urlparse(elsewhere).query)
     assert query["sort"] == ["created"] and query["order"] == ["desc"]
+
+
+def test_maintainers_come_from_write_access_not_history():
+    # #6692: a maintainer's own report was treated as an outsider's, and a
+    # commenter asking for assignment was credited as the reporter.
+    issue = {
+        "issue": {"number": 7, "user": {"login": "reporter"}},
+        "prs": [],
+        "comments": [
+            {"author": {"login": "helper", "type": "User"}},
+            {"author": {"login": "bot", "type": "Bot"}},
+        ],
+    }
+    users = {
+        login: {"created_at": "2020-01-01", "followers": 1, "public_repos": 1}
+        for login in ("reporter", "helper")
+    }
+    result = people(issue, reader(users, {}, maintainers={"reporter"}), NOW)
+    assert result["maintainers"] == ["reporter"]
+    assert result["maintainer_check_failed"] == []
+    (card,) = result["cards"]
+    assert (card["login"], card["role"], card["maintainer"]) == (
+        "reporter",
+        "reporter",
+        True,
+    )

@@ -1,8 +1,10 @@
-"""Weekly backlog sweep with a 48-hour veto window. No model runs.
+"""Weekly backlog sweep. No model runs.
 
-`propose` picks inactive external issues and PRs, labels them `sweep:close` and
-lists them in Slack. Removing the label keeps an item. `close` (daily) closes items
-whose label has been on for 48 hours with no comment from a person since.
+`propose` lists inactive external issues and PRs in Slack and writes nothing: a
+maintainer adds `sweep:close` to the ones that should go. `close` (daily) closes
+items whose label has been on for 48 hours with no comment from a person since.
+Triage never applies the label itself, because idleness alone can't tell an
+abandoned report from a confirmed bug nobody has gotten to yet.
 
 Thresholds live in the Prefect Variable `fastmcp_triage_config` under `sweep`, and
 `github_writes` ("off", "dry_run", "on"; default "dry_run") gates every write, so
@@ -155,36 +157,12 @@ def is_maintainer(read: GitHub, login: str) -> bool:
         return True
 
 
-def ensure_label(request: Callable[..., object]) -> None:
-    if request(f"repos/{REPOSITORY}/labels/{SWEEP_LABEL.replace(':', '%3A')}") is None:
-        request(
-            f"repos/{REPOSITORY}/labels",
-            {
-                "name": SWEEP_LABEL,
-                "color": "bfbfbf",
-                "description": "Weekly sweep will close this after 48h; remove the label to keep it",
-            },
-        )
-
-
-def propose(
-    read: GitHub,
-    write: Callable[..., object] | None,
-    config: SweepConfig,
-    now: datetime,
-) -> list[dict]:
+def propose(read: GitHub, config: SweepConfig, now: datetime) -> list[dict]:
+    """Candidates for a maintainer to label; nothing is written."""
     items = read.pages(
         f"repos/{REPOSITORY}/issues?state=open&sort=updated&direction=asc"
     )
-    picked = candidates(items, config, now, lambda login: is_maintainer(read, login))
-    if write is not None and picked:
-        ensure_label(write)
-        for item in picked:
-            write(
-                f"repos/{REPOSITORY}/issues/{item['number']}/labels",
-                {"labels": [SWEEP_LABEL]},
-            )
-    return picked
+    return candidates(items, config, now, lambda login: is_maintainer(read, login))
 
 
 def close(
@@ -235,7 +213,7 @@ def sweep(phase: Literal["propose", "close"], reviewer_app: ReviewApp) -> dict:
 
     def run(write: Callable[..., object] | None) -> list[dict]:
         if phase == "propose":
-            return propose(read, write, config, now)
+            return propose(read, config, now)
         return close(read, write, config, now)
 
     if current_mode == "on":
@@ -251,8 +229,8 @@ def sweep(phase: Literal["propose", "close"], reviewer_app: ReviewApp) -> dict:
     logger.info("%s%s: %s", prefix, phase, numbers)
     if phase == "propose" and items:
         header = (
-            f"{prefix}*Weekly sweep:* {len(items)} inactive items labeled `{SWEEP_LABEL}`. "
-            f"They close in {config.veto_hours}h; remove the label to keep one."
+            f"*Weekly sweep:* {len(items)} inactive items. Nothing is labeled: add "
+            f"`{SWEEP_LABEL}` to any that should go, and they close {config.veto_hours}h later."
         )
         slack("\n".join([header, *map(line, items)]))
     if phase == "close" and items:

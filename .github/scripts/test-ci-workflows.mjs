@@ -105,6 +105,7 @@ for (const filename of [
   "fastmcp_slim/fastmcp/server.py",
   "fastmcp_remote/cli.py",
   "fastmcp_tasks/extension.py",
+  "fastmcp_events/extension.py",
   "tests/test_client.py",
   "examples/demo.py",
   ".github/actions/setup-uv/action.yml",
