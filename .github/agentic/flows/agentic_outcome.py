@@ -111,10 +111,30 @@ def evidence_action(item: dict) -> str:
     return f"{prefix}: " + clip(first_sentence(detail), 70)
 
 
+def duplicate_of(item: dict) -> int | None:
+    """The canonical issue a reviewed close_duplicate recommendation names."""
+    review = item.get("adversarial_review")
+    if not isinstance(review, dict):
+        return None
+    for recommendation in review.get("recommendations") or []:
+        canonical = recommendation.get("canonical_issue")
+        if (
+            recommendation.get("action") == "close_duplicate"
+            and recommendation.get("target_number") == item.get("issue_number")
+            and isinstance(canonical, int)
+            and canonical != item.get("issue_number")
+        ):
+            return canonical
+    return None
+
+
 def action(name: str, item: dict, live: Live | None = None) -> str:
     if name == "existing_review":
         return review_action(item, live)
     if name == "pruning":
+        canonical = duplicate_of(item)
+        if canonical is not None:
+            return f"possible duplicate of #{canonical}: close it?"
         return "close? " + clip(first_sentence(item.get("reason")), 60)
     if name == "evidence":
         return evidence_action(item)

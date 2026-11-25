@@ -57,6 +57,7 @@ anthropic = ["fastmcp-slim[anthropic]=={{ version }}"]
 apps = ["fastmcp-slim[apps]=={{ version }}"]
 azure = ["fastmcp-slim[azure]=={{ version }}"]
 code-mode = ["fastmcp-slim[code-mode]=={{ version }}"]
+events = ["fastmcp-events=={{ version }}"]
 jev = ["fastmcp-slim[jev]=={{ version }}"]
 gemini = ["fastmcp-slim[gemini]=={{ version }}"]
 openai = ["fastmcp-slim[openai]=={{ version }}"]
@@ -69,7 +70,7 @@ bump = true
 fallback-version = "0.0.0"
 
 [tool.uv.workspace]
-members = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks"]
+members = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks", "fastmcp_events"]
 
 [tool.uv]
 default-groups = ["dev"]
@@ -85,7 +86,8 @@ exclude-newer-package = { authlib = false, certifi = false, fastmcp = false, fas
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
-    "fastmcp[anthropic,apps,azure,code-mode,gemini,jev,openai,tasks]",
+    "fastmcp[anthropic,apps,azure,code-mode,events,gemini,jev,openai,tasks]",
+    "fastmcp-events[docket]",
     "fastapi>=0.115.12",
     "fastmcp-remote",
     # FastMCP itself is httpx2-only, but the PEP 723 scripts in scripts/ (and
@@ -111,7 +113,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff>=0.12.8",
-    "ty>=0.0.100",
+    "ty>=0.0.104",
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
@@ -124,6 +126,7 @@ fastmcp = { workspace = true }
 fastmcp-slim = { workspace = true }
 fastmcp-remote = { workspace = true }
 fastmcp-tasks = { workspace = true }
+fastmcp-events = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -147,7 +150,7 @@ markers = [
     "pbt: property-based tests (select with -m pbt; HYPOTHESIS_PROFILE=campaign for long runs)",
     "pbt_smoke: a property-based test that checks the harness itself, so a time-boxed campaign runs it once",
 ]
-pythonpath = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks"]
+pythonpath = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks", "fastmcp_events"]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
@@ -155,7 +158,7 @@ python_functions = ["test_*"]
 addopts = ["--inline-snapshot=disable"]
 
 [tool.ty.src]
-include = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks", "tests", "examples"]
+include = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks", "fastmcp_events", "tests", "examples"]
 exclude = [
     "**/node_modules",
     "**/__pycache__",

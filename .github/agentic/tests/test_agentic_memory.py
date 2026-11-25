@@ -242,3 +242,27 @@ def test_committed_plans_match_the_generator():
     for role, plan in build_plans(directory).items():
         committed = directory / f"fastmcp-stack-{role}.plan.json"
         assert json.loads(committed.read_text()) == plan, role
+
+
+def test_native_triage_plan_gives_the_assess_agent_memory_tools():
+    import json
+    from pathlib import Path
+
+    from flows.agentic_triage_plan import build_triage_plan
+
+    models = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "workflows/stack-models.json"
+        ).read_text()
+    )
+    plan = build_triage_plan(models)
+    assess = plan["nodes"]["assess"]
+    server = assess["mcp"]["mcpServers"]["triage_memory"]
+    assert server["url"] == models["memory_server"]["url"]
+    assert server["tools"] == ["search", "read"]
+    assert "triage_memory search" in assess["objective"]
+    others = [n for k, n in plan["nodes"].items() if k != "assess"]
+    assert all("mcp" not in node for node in others)
+
+    models.pop("memory_server")
+    assert "mcp" not in build_triage_plan(models)["nodes"]["assess"]

@@ -143,6 +143,59 @@ deployments:
           - PyJWT[crypto]==2.15.1
         compute_profile: small
         timeout: 1200
+  - name: cloud-triage-follow-through
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_followup.py:follow_through
+    concurrency_limit: 1
+    parameters: {}
+    schedules:
+      # Hourly: send handed-off issues whose state changed back through intake.
+      # No model runs here; each intake it starts is one an issue event would start.
+      - cron: "45 * * * *"
+        timezone: UTC
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+          - PyJWT[crypto]==2.15.1
+        compute_profile: small
+        timeout: 900
+  - name: cloud-triage-audit
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_audit.py:audit
+    concurrency_limit: 1
+    schedules:
+      # 7am Chicago, before the digest: look for yesterday's wrong writes. Reports only.
+      - cron: "0 7 * * *"
+        timezone: America/Chicago
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+          - PyJWT[crypto]==2.15.1
+        compute_profile: small
+        timeout: 1200
+  - name: contributor-vouch
+    version: "{{ $FASTMCP_AGENTIC_REF }}"
+    entrypoint: flows/agentic_contributors.py:contributor_vouch
+    concurrency_limit: 1
+    parameters: {}
+    # Run by hand: a maintainer's vouch, denounce or retract (private graph).
+    work_pool:
+      name: managed
+      job_variables:
+        image: prefecthq/prefect:3-python3.12
+        pip_packages:
+          - prefect==3.8.2
+          - fastapi==0.141.1
+        compute_profile: small
+        timeout: 300
   - name: cloud-triage-memory-sync
     version: "{{ $FASTMCP_AGENTIC_REF }}"
     entrypoint: flows/agentic_memory_sync.py:triage_memory_sync

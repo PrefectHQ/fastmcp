@@ -137,7 +137,7 @@ fastmcp call server.py summarize --prompt --input-json '{"topic": "weather"}'
 
 ## Watching Events
 
-`fastmcp experimental events` subscribes to a server's [events](/servers/events) from the terminal. Like the Events support it is built on, the command is experimental and may change. It is the quickest way to see whether an events server works. `fastmcp experimental events list` shows the event types a server offers, with the delivery modes each supports and its subscription arguments:
+`fastmcp experimental events` subscribes to a server's [events](/servers/events) from the terminal. Like the Events support it is built on, the command is experimental and may change, and it needs the `events` extra (`pip install "fastmcp[events]"`). It is the quickest way to see whether an events server works. `fastmcp experimental events list` shows the event types a server offers, with the delivery modes each supports and its subscription arguments:
 
 ```bash
 fastmcp experimental events list server.py

@@ -586,6 +586,22 @@ class TestMCPMixinNewParams:
         resources = await mcp.local_provider.list_resources()
         assert any(str(r.uri) == "test://secure" for r in resources)
 
+    async def test_resource_security_param_forwarded_to_template(self):
+        mcp = FastMCP()
+
+        class MyMixin(MCPMixin):
+            @mcp_resource(uri="file:///{path*}", security=None)
+            def read_file(self, path: str) -> str:
+                return path
+
+        MyMixin().register_resources(mcp)
+
+        [template] = await mcp.list_resource_templates()
+        assert template.security is None
+
+        result = await mcp.read_resource("file:///../etc/passwd")
+        assert result.contents[0].content == "../etc/passwd"
+
     async def test_prompt_auth_param_forwarded(self):
         from fastmcp.server.auth import require_scopes
 

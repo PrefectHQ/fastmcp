@@ -4,9 +4,10 @@ import tempfile
 from pathlib import Path
 from uuid import UUID
 
-from prefect import flow
+from prefect import flow, get_run_logger
 from prefect.client.orchestration import get_client
 from prefect.context import FlowRunContext
+from prefect.events import emit_event
 
 from flows.agentic_existing_review import verify_existing
 from flows.agentic_stack_plans import Reproduction
@@ -89,6 +90,7 @@ def finalize(
     number = admission.requested.issue_number
     output = resolve_assessment(admission, parent_id)
     destination = "operational"
+    stage, outcome, decision = "assess", None, None
     result: dict = {
         "issue_number": number,
         "reason": "Assessment did not produce a usable decision",
@@ -98,6 +100,7 @@ def finalize(
         output = redirect_unadmitted(admission, output)
         assessed_item(admission, output)
         branch, assessment = output
+        decision = assessment.get("decision")
         if branch in {"record", "blocked"}:
             destination = {
                 "prune": "pruning",
@@ -107,6 +110,7 @@ def finalize(
             }.get(assessment["decision"], "decisions")
             result = {"issue_number": number, **assessment}
         elif branch == "reproduce":
+            stage = "reproduce"
             reproduced = selected_output(parent_id, observation, "reproduce")
             if reproduced is None:
                 result["reason"] = "Reproduction node did not produce evidence"
@@ -118,15 +122,19 @@ def finalize(
                 if reproduction["base_sha"] != admission.group.base_sha:
                     raise ValueError("Reproduction used a different baseline")
                 destination = reproduction_destination(reproduction["decision"])
+                outcome = reproduction["decision"]
                 result = {
                     "issue_number": number,
                     "assessment": assessment,
                     **reproduction,
                 }
         elif branch == "verify" and verification is not None:
+            stage = "verify"
             result = verification["review"]
             destination = verified_destination(result)
+            outcome = result.get("status")
         elif branch == "verify":
+            stage = "verify"
             verified = selected_output(parent_id, observation, "verify")
             if verified is None or verified[0] != "completed":
                 result["reason"] = "Contribution verification did not complete"
@@ -152,6 +160,7 @@ def finalize(
                     )
                 result = retained["result"]["review"]
                 destination = verified_destination(result)
+                outcome = result.get("status")
     final = {
         "destination": destination,
         "result": result,
@@ -160,7 +169,33 @@ def finalize(
     }
     record(ref.owner, ref.key + "-outcome", final)
     record(parent_id, ref.key + "-outcome", final)
+    announce_stage(
+        number,
+        {
+            "stage": stage,
+            "decision": decision,
+            "outcome": outcome if isinstance(outcome, str) else None,
+            "destination": destination,
+        },
+    )
     return final
+
+
+def announce_stage(number: int, summary: dict) -> None:
+    """Tell the floor which stage an item last went through and how it came out.
+
+    Reproduce runs as a node inside the plan and verify runs inside intake, so
+    neither shows up as its own flow run; finalize sets the stage in the same
+    branch that handles it. Only enum values leave: no free text from the issue.
+    """
+    try:
+        emit_event(
+            event="fastmcp.triage.stage",
+            resource={"prefect.resource.id": f"fastmcp.triage.stage.{number}"},
+            payload={"number": number, **summary},
+        )
+    except Exception as error:  # noqa: BLE001 - visibility only, never fatal
+        get_run_logger().warning("Stage event failed: %s", error)
 
 
 def verified_destination(review: dict) -> str:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import tempfile
@@ -25,7 +26,14 @@ from prefect.states import Completed
 from prefect.variables import Variable
 
 from flows.agentic_artifacts import plain, published_reviews, retain_markdown
-from flows.agentic_backlog import Intake, due, inventory, settle
+from flows.agentic_backlog import (
+    Intake,
+    due,
+    handled_key,
+    handoffs,
+    inventory,
+    settle,
+)
 from flows.agentic_burst import burst, burst_config, burst_line
 from flows.agentic_claims import claim_work
 from flows.agentic_digest import record_next_step
@@ -35,8 +43,8 @@ from flows.agentic_intake import evidence_revision, upgrade_policy_outcomes
 from flows.agentic_labels import (
     CONFIG_VARIABLE,
     apply_writes,
+    cleared_by_person,
     mode,
-    planned_writes,
     summary,
     triage_labels,
 )
@@ -51,6 +59,7 @@ from flows.agentic_stack_runtime import (
     intake_tools,
     secret_sync,
 )
+from flows.agentic_vouch import load_standing
 
 
 def latest(key: str, owner: UUID | None = None) -> dict | None:
@@ -120,6 +129,13 @@ def maintainer(sender: str, read: Callable[[str], object] = github) -> bool:
         return False
 
 
+def vouched(sender: str, lookup=None) -> bool:
+    """Whether the contributor graph vouches for `sender` (and nobody denounced
+    them). Vouched people skip the burst guard. Off or unreachable: False."""
+    lookup = lookup if lookup is not None else load_standing()
+    return bool(lookup) and lookup(sender)["standing"] == "vouched"
+
+
 def sender_burst(config: Intake, read: Callable[[str], object] = github) -> dict | None:
     """The sender's burst, if this event's item is past their limit.
 
@@ -127,6 +143,8 @@ def sender_burst(config: Intake, read: Callable[[str], object] = github) -> dict
     """
     trigger = max([*config.issues, *config.pull_requests], default=0)
     if not config.sender or not trigger:
+        return None
+    if vouched(config.sender):
         return None
     try:
         limits = burst_config(Variable.get(CONFIG_VARIABLE, default={}))
@@ -180,7 +198,15 @@ def admit(
         ]
     selected = pending[: config.max_items]
     batch = None
+    handoff: dict[str, str] = {}
     if selected:
+        try:
+            handoff = handoffs(read, [row["issue_number"] for row in selected])
+        except Exception as error:  # noqa: BLE001 - best effort, never blocks intake
+            # Without it the follow-through pass just looks at these issues again.
+            logging.getLogger(__name__).warning(
+                "Hand-off revisions unavailable: %s", error
+            )
         base = read(f"repos/PrefectHQ/fastmcp/commits/{config.branch}")
         if not isinstance(base, dict):
             raise ValueError("Missing release target")
@@ -212,6 +238,7 @@ def admit(
         "next_page": page,
         "coverage": coverage,
         "batch": batch,
+        "handoff": handoff,
         "runtime": runtime.model_dump(mode="json"),
         "controller_id": str(controller_id),
     }
@@ -367,6 +394,7 @@ def finish(
                 if number in originals
                 else None,
                 "baseline_sha": originals.get(number, {}).get("base_sha"),
+                "handoff_revision": plan.get("handoff", {}).get(str(number)),
             }
             receipts.append(receipt)
         pending = [row for row in pending if row["issue_number"] not in exhausted]
@@ -403,6 +431,10 @@ def finish(
 def commit(owner: UUID, scope: str, state: dict) -> dict:
     for receipt in state["receipts"]:
         retain(owner, f"{scope}-issue-{receipt['issue_number']}", receipt)
+        # One record per issue across every intake (event, follow-through, backlog),
+        # so the follow-through pass knows what triage last saw.
+        if receipt.get("handoff_revision"):
+            retain(owner, handled_key(receipt["issue_number"]), receipt)
     lines = ["# FastMCP intake coverage", "", "| Measure | Observed |", "| --- | --- |"]
     lines.extend(
         f"| {plain(name)} | {plain(value)} |"
@@ -537,7 +569,7 @@ def announce(owner: UUID, state: dict) -> None:
 
 
 def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None:
-    """Label reviewed outcomes so the repository's closers act on them.
+    """Label assessed issues with their area and the maintainer queue.
 
     A failure here is reported on the run but never fails the intake: the
     outcome is already retained and announced.
@@ -548,8 +580,7 @@ def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None
         current_mode = mode(Variable.get(CONFIG_VARIABLE, default={}))
         if current_mode == "off":
             return
-        writes = planned_writes(state["review"], live_item)
-        writes += triage_labels(state["review"], live_item)
+        writes = triage_labels(state["review"], live_item, cleared)
         if writes and current_mode == "on":
             app = runtime.reviewer_app
             if app is None:
@@ -566,6 +597,24 @@ def write_labels(owner: UUID, scope: str, runtime: Runtime, state: dict) -> None
         get_run_logger().warning("Label writes failed: %s", error)
 
 
+def cleared(number: int) -> bool:
+    """Whether a person removed `needs:triage`; unreadable history counts as yes."""
+    try:
+        events = []
+        for page in range(1, 6):
+            batch = github(
+                f"repos/PrefectHQ/fastmcp/issues/{number}/events?per_page=100&page={page}"
+            )
+            if not isinstance(batch, list):
+                return True
+            events.extend(batch)
+            if len(batch) < 100:
+                return cleared_by_person(events)
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
+        return True
+    return True
+
+
 def live_item(number: int) -> dict | None:
     """Current GitHub state of an issue or PR; None when it can't be read."""
     try:
@@ -575,8 +624,9 @@ def live_item(number: int) -> dict | None:
     return current if isinstance(current, dict) else None
 
 
-# Evidence that moved during the run is requeued by `settle`, and the GitHub
-# event for the change starts a fresh triage, so it is not worth an alert.
+# Evidence that moved during the run is requeued by `settle`, and the hourly
+# follow-through pass sees the change and starts a fresh triage, so it is not
+# worth an alert.
 REQUEUED = frozenset({"stale", "baseline_changed"})
 
 

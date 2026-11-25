@@ -54,6 +54,55 @@ def test_bot_comment_and_release():
     assert "number" not in event
 
 
+def test_opened_carries_the_authors_association():
+    payload = {
+        "action": "opened",
+        "issue": {"number": 9, "title": "x", "author_association": "FIRST_TIMER"},
+        "sender": {"login": "new", "type": "User"},
+    }
+    assert feed.to_event("issues", payload, NOW)["association"] == "FIRST_TIMER"
+
+
+def test_closed_issue_carries_its_reason():
+    payload = {
+        "action": "closed",
+        "issue": {"number": 9, "title": "x", "state_reason": "not_planned"},
+        "sender": {"login": "nate", "type": "User"},
+    }
+    event = feed.to_event("issues", payload, NOW)
+    assert event["kind"] == "closed"
+    assert event["reason"] == "not_planned"
+
+
+def test_gate_release_is_ungated_and_other_unlabels_are_recorded():
+    gate = {
+        "action": "unlabeled",
+        "label": {"name": feed.GATE_LABEL},
+        "pull_request": {"number": 8, "title": "x"},
+        "sender": {"login": "marvin[bot]", "type": "Bot"},
+    }
+    assert feed.to_event("pull_request_target", gate, NOW)["kind"] == "ungated"
+    other = {**gate, "label": {"name": "bug"}}
+    event = feed.to_event("pull_request_target", other, NOW)
+    assert event["kind"] == "unlabeled"
+    assert event["label"] == "bug"
+
+
+def test_opened_pr_carries_the_issues_it_closes():
+    payload = {
+        "action": "opened",
+        "pull_request": {
+            "number": 12,
+            "title": "x",
+            "body": "Fixes #6100, and closes: #6101. see #7",
+        },
+        "sender": {"login": "jane", "type": "User"},
+    }
+    assert feed.to_event("pull_request_target", payload, NOW)["links"] == [6100, 6101]
+    payload["pull_request"]["body"] = "no links"
+    assert "links" not in feed.to_event("pull_request_target", payload, NOW)
+
+
 def test_uninteresting_actions_are_skipped():
     assert (
         feed.to_event("issues", {"action": "edited", "issue": {"number": 1}}, NOW)
@@ -245,3 +294,45 @@ def test_an_older_run_keeps_the_newer_counts(monkeypatch):
     feed.put_day("https://pds", "did:plc:x", "t", older, {"ready": {"in": 1, "out": 0}})
     assert bodies[0]["record"]["ready"] == 9
     assert bodies[0]["record"]["flow"]["ready"] == {"in": 1, "out": 0}
+
+
+def test_pr_events_carry_size_reviewer_assignee_and_draft():
+    pull = {
+        "number": 4,
+        "title": "x",
+        "additions": 10,
+        "deletions": 2,
+        "changed_files": 3,
+    }
+    sender = {"login": "jane", "type": "User"}
+    reopened = feed.to_event(
+        "pull_request_target",
+        {"action": "reopened", "pull_request": pull, "sender": sender},
+        NOW,
+    )
+    assert reopened["kind"] == "reopened"
+    assert (reopened["additions"], reopened["deletions"], reopened["files"]) == (
+        10,
+        2,
+        3,
+    )
+    requested = {
+        "action": "review_requested",
+        "pull_request": pull,
+        "requested_team": {"slug": "maintainers"},
+        "sender": sender,
+    }
+    assert (
+        feed.to_event("pull_request_target", requested, NOW)["reviewer"]
+        == "maintainers"
+    )
+    assigned = {
+        "action": "assigned",
+        "issue": {"number": 5},
+        "assignee": {"login": "nate"},
+        "sender": sender,
+    }
+    event = feed.to_event("issues", assigned, NOW)
+    assert (event["kind"], event["assignee"]) == ("assigned", "nate")
+    drafted = {"action": "converted_to_draft", "pull_request": pull, "sender": sender}
+    assert feed.to_event("pull_request_target", drafted, NOW)["kind"] == "drafted"

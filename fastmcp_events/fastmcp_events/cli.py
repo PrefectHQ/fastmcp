@@ -12,8 +12,8 @@ import cyclopts
 from rich.console import Console
 
 from fastmcp.cli import client as client_cli
-from fastmcp.experimental.events import list_events, subscribe_events
-from fastmcp.experimental.events.models import EventOccurrence, EventType
+from fastmcp_events import list_events, subscribe_events
+from fastmcp_events.models import EventOccurrence, EventType
 
 console = Console()
 # Status lines go to stderr so `watch --json` output stays one event per line.

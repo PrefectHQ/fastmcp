@@ -336,7 +336,7 @@ def _client_extensions(*, skills: bool, events: bool) -> list[Any] | None:
     if skills:
         extensions.append(SkillsClientExtension())
     if events:
-        from fastmcp.experimental.events import EventsClientExtension
+        from fastmcp_events import EventsClientExtension
 
         extensions.append(EventsClientExtension())
     return extensions or None

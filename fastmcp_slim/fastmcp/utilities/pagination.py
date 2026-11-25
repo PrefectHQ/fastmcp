@@ -88,3 +88,24 @@ def paginate_sequence(
         next_cursor = CursorState(offset=end).encode()
 
     return page, next_cursor
+
+
+def paginate_request(
+    items: Sequence[T],
+    cursor: str | None,
+    page_size: int | None,
+) -> tuple[list[T], str | None]:
+    """One page of `items` for a list request, or all of them when `page_size` is None.
+
+    An invalid cursor raises an `MCPError` with `INVALID_PARAMS`, so a handler
+    can let it reach the client as is.
+    """
+    if page_size is None:
+        return list(items), None
+    try:
+        return paginate_sequence(items, cursor, page_size)
+    except ValueError as e:
+        from mcp.shared.exceptions import MCPError
+        from mcp_types import INVALID_PARAMS
+
+        raise MCPError(code=INVALID_PARAMS, message=str(e)) from e

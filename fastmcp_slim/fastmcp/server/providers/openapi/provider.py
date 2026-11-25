@@ -210,12 +210,32 @@ class OpenAPIProvider(Provider):
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncGenerator[None, None]:
-        """Manage the lifecycle of the auto-created httpx client."""
-        if self._owns_client:
-            async with self._client:
-                yield
-        else:
+        """Manage the lifecycle of the auto-created httpx client.
+
+        A closed httpx client cannot be reopened, so each lifespan after the
+        first gets a fresh default client.
+        """
+        if not self._owns_client:
             yield
+            return
+        if self._client.is_closed:
+            self._replace_client(
+                httpx2.AsyncClient(
+                    base_url=self._client.base_url, timeout=self._client.timeout
+                )
+            )
+        async with self._client:
+            yield
+
+    def _replace_client(self, client: httpx2.AsyncClient) -> None:
+        """Point the provider and its components at a new client."""
+        self._client = client
+        for component in (
+            *self._tools.values(),
+            *self._resources.values(),
+            *self._templates.values(),
+        ):
+            component._client = client
 
     def _generate_default_name(
         self, route: HTTPRoute, mcp_names_map: dict[str, str] | None = None

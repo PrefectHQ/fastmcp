@@ -10,6 +10,8 @@ from flows.agentic_stack_plans import (
     OBJECTIVES,
     Assessment,
     Reproduction,
+    memory_note,
+    memory_tools,
     tier_models,
 )
 
@@ -72,8 +74,10 @@ def build_triage_plan(models: dict) -> dict:
         "existing_review is only for a contribution listed in context.evidence.prs. When "
         "the pinned base already resolves the report through a commit or existing option "
         "and no contribution is listed, record maintainer with that evidence and a question "
-        "asking to confirm and close.",
+        "asking to confirm and close." + memory_note("assess", models),
     )
+    # The memory tools are attached to the assess node only, as in the stack plan.
+    assess.update(memory_tools("assess", models))
     reproduce = agent(
         "reproduce",
         {

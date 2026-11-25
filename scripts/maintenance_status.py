@@ -109,11 +109,12 @@ AUTOMATIONS = [
     {
         "id": "release-publish",
         "name": "release publishing",
-        "what": "publishes fastmcp-slim, then fastmcp-tasks, fastmcp-remote, and fastmcp to PyPI when a release is cut",
+        "what": "publishes fastmcp-slim, then fastmcp-tasks, fastmcp-events, fastmcp-remote, and fastmcp to PyPI when a release is cut",
         "cadence": "on each release",
         "workflows": [
             "publish-fastmcp-slim.yml",
             "publish-fastmcp-tasks.yml",
+            "publish-fastmcp-events.yml",
             "publish-fastmcp-remote.yml",
             "publish-fastmcp.yml",
         ],

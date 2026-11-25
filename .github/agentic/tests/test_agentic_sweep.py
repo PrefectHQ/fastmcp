@@ -110,20 +110,10 @@ class FakeGitHub:
         return self.items
 
 
-def test_propose_dry_run_writes_nothing_and_on_labels() -> None:
+def test_propose_lists_candidates_and_never_labels() -> None:
+    # 11-23: the first live sweep labeled four confirmed bugs. A person labels now.
     github = FakeGitHub([item(1, 60)], {})
-    assert [i["number"] for i in propose(github, None, SweepConfig(), NOW)] == [1]  # type: ignore[arg-type]
-    calls = []
-
-    def write(path, body=None, method=None):
-        calls.append((path, body))
-        return {"name": SWEEP_LABEL} if path.endswith("labels/sweep%3Aclose") else {}
-
-    propose(github, write, SweepConfig(), NOW)  # type: ignore[arg-type]
-    assert calls[-1] == (
-        "repos/PrefectHQ/fastmcp/issues/1/labels",
-        {"labels": [SWEEP_LABEL]},
-    )
+    assert [i["number"] for i in propose(github, SweepConfig(), NOW)] == [1]  # type: ignore[arg-type]
 
 
 def test_close_comments_then_closes_due_items_only() -> None:

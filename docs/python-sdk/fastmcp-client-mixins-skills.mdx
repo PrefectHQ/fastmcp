@@ -10,7 +10,7 @@ Skills-extension methods for the FastMCP client.
 
 ## Classes
 
-### `ClientSkillsMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientSkillsMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Mixin providing SEP-2640 Skills methods for `Client`.
@@ -18,7 +18,7 @@ Mixin providing SEP-2640 Skills methods for `Client`.
 
 **Methods:**
 
-#### `list_skills_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_skills_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_skills_mcp(self: Client) -> ListSkillsResult
@@ -38,7 +38,7 @@ Send one `skills/list` request and return its protocol result.
 - `MCPError`: If the server rejects the request.
 
 
-#### `list_skills` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L119" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_skills` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L120" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_skills(self: Client, max_pages: int = AUTO_PAGINATION_MAX_PAGES) -> list[MCPSkill]
@@ -58,7 +58,7 @@ Retrieve every page returned by `skills/list`.
 - `MCPError`: If the server rejects a request.
 
 
-#### `get_skill_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_skill_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L167" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_skill_mcp(self: Client, uri: str) -> GetSkillResult
@@ -78,7 +78,27 @@ Send a `skills/get` request and return its protocol result.
 - `MCPError`: If the server rejects the request.
 
 
-#### `get_skill` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L210" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_skill_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L211" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_skill_resources(self: Client) -> list[mcp_types.Resource]
+```
+
+List the skills a server publishes as `skill://.../SKILL.md` resources.
+
+Use this for servers that serve skills as resources but not through the
+Skills extension, such as FastMCP 4.1 and earlier. Pass a returned
+resource's `uri` to `read_skill()` to fetch the whole skill.
+
+When skill paths overlap, advertised manifests distinguish supporting
+`SKILL.md` files from independent skills. Entries are kept if their
+containing skill's manifest is unavailable or invalid.
+
+**Returns:**
+- The `SKILL.md` resource of each skill, in the server's order.
+
+
+#### `get_skill` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L269" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_skill(self: Client, uri: str) -> MCPSkill
@@ -98,7 +118,7 @@ Retrieve one skill entry by its `SKILL.md` resource URI.
 - `MCPError`: If the server rejects the request.
 
 
-#### `read_skill` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L232" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_skill` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/skills.py#L291" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_skill(self: Client, uri: str) -> Skill

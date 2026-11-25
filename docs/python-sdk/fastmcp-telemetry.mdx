@@ -119,7 +119,21 @@ Inject current trace context into a meta dict for MCP request propagation.
 - or None if no trace context to inject and meta was None
 
 
-### `record_span_error` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/telemetry.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `error_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/telemetry.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+error_span_attributes(exception: BaseException) -> dict[str, str]
+```
+
+
+Map an exception to the `error.type` attributes for a failed MCP span.
+
+Per the MCP semantic conventions, a JSON-RPC error reports its code as
+both `error.type` and `rpc.response.status_code`; a tool error reports
+`tool_error`; anything else reports its class name.
+
+
+### `record_span_error` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/telemetry.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 record_span_error(span: Span, exception: BaseException) -> None
@@ -129,7 +143,7 @@ record_span_error(span: Span, exception: BaseException) -> None
 Record an exception on a span and set error status.
 
 
-### `restore_dropped_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/telemetry.py#L209" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `restore_dropped_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/telemetry.py#L226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 restore_dropped_attributes(span: Span, attrs: Mapping[str, otel_types.AttributeValue]) -> None
@@ -179,7 +193,7 @@ kept at call sites so it reads alongside the sibling `is_recording()`
 guards already in those functions.
 
 
-### `extract_trace_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/telemetry.py#L263" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `extract_trace_context` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/telemetry.py#L280" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 extract_trace_context(meta: dict[str, Any] | None) -> Context

@@ -436,3 +436,95 @@ def test_author_collection_mutations_cannot_establish_a_fix(tmp_path, mutation):
             assert result["probe_head"]["status"] == "input_mutation"
     else:
         assert "probe_base" not in result
+
+
+@pytest.mark.parametrize("output", ["hypothesis", "ignored"])
+def test_ignored_tool_output_is_a_runner_failure_not_missing_evidence(tmp_path, output):
+    """Tool state in the checkout is ours to isolate, never the contributor's to fix.
+
+    Hypothesis writes `.hypothesis/` next to the code unless told otherwise (#6784).
+    The runner points it elsewhere; anything else ignored that still lands in the
+    checkout makes the run an operational failure instead of an evidence request.
+    """
+    repo = tmp_path / "origin"
+    repo.mkdir()
+    for args in (
+        ("init",),
+        ("config", "user.name", "Test"),
+        ("config", "user.email", "test@example.invalid"),
+    ):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname="verification-fixture"\nversion="0.1"\nrequires-python=">=3.12"\ndependencies=["pytest>=8,<10", "pytest-xdist"]\n[tool.pytest.ini_options]\npythonpath=["."]\n'
+    )
+    (repo / ".gitignore").write_text(".hypothesis/\n.tool-state/\n")
+    (repo / "implementation.py").write_text("value = 1\n")
+    subprocess.run(["uv", "lock"], cwd=repo, check=True, capture_output=True)
+    base = commit(repo, "Broken value")
+    (repo / "implementation.py").write_text("value = 2\n")
+    (repo / "tests").mkdir()
+    if output == "hypothesis":
+        # What Hypothesis does with its example database by default.
+        write = (
+            "import os\nfrom pathlib import Path\n"
+            "def store():\n"
+            "    root = Path(os.environ.get('HYPOTHESIS_STORAGE_DIRECTORY', '.hypothesis'))\n"
+            "    (root / 'examples').mkdir(parents=True, exist_ok=True)\n"
+            "    (root / 'examples' / 'db').write_text('x')\n"
+        )
+    else:
+        write = (
+            "from pathlib import Path\n"
+            "def store():\n"
+            "    Path('.tool-state').mkdir(exist_ok=True)\n"
+            "    Path('.tool-state/db').write_text('x')\n"
+        )
+    (repo / "tests/test_value.py").write_text(
+        write
+        + "import implementation\ndef test_value():\n    store()\n    assert implementation.value == 2\n"
+    )
+    head = commit(repo, "Fix value")
+    spec = VerificationSpec(
+        issue_number=6294,
+        pr_number=6311,
+        head_sha=head,
+        trunk_sha=base,
+        trunk_ref="main",
+        evidence_revision="c" * 64,
+    )
+    directory = tmp_path / "verification"
+    directory.mkdir()
+    result = verify(spec, directory, str(repo))
+    if output == "hypothesis":
+        assert result["status"] == "verification_recorded"
+        assert result["comparison"]["fixed_tests"] == ["tests.test_value::test_value"]
+        assert not (directory / "head" / ".hypothesis").exists()
+        return
+    assert result["status"] == "environment_failure"
+    assert result["head"]["status"] == "environment_failure"
+    assert ".tool-state/db" in result["head"]["input_changes"]
+    assert not result["comparison"]["fixed_tests"]
+
+
+def test_tracked_changes_stay_mutations_even_when_ignored_patterns_match(tmp_path):
+    from flows.agentic_verification_inputs import VerificationInputs
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    (repo / ".gitignore").write_text("*.cache\n")
+    (repo / "kept.cache").write_text("tracked anyway")
+    subprocess.run(
+        ["git", "add", "-f", ".gitignore", "kept.cache"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    inputs = VerificationInputs(repo)
+    (repo / "kept.cache").write_text("changed")
+    (repo / "new.cache").write_text("tool output")
+    assert inputs.tool_output(["new.cache"])
+    assert not inputs.tool_output(["kept.cache"])
+    assert not inputs.tool_output(["kept.cache", "new.cache"])
+    assert not inputs.tool_output([".venv/lib/x.pth"])
+    assert not inputs.tool_output(["notignored.txt"])

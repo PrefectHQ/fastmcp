@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -1442,6 +1442,38 @@ async def test_multi_server_clone_does_not_close_original_backends():
         assert result.data == 3
 
     assert len(closed) == 4
+
+
+@pytest.mark.parametrize("closer_connected", [False, True])
+async def test_multi_server_close_leaves_live_clone_backends(closer_connected: bool):
+    """Closing one client of a config leaves a live `new()` clone's backends alone."""
+    closed: list[FastMCPTransport] = []
+    config = MCPConfig(
+        mcpServers={
+            "server1": ClosingInMemoryStdioMCPServer(
+                mcp=_make_add_server(), closed=closed
+            ),
+            "server2": ClosingInMemoryStdioMCPServer(
+                mcp=_make_add_server(), closed=closed
+            ),
+        }
+    )
+
+    original = Client(config)
+    clone = original.new()
+
+    async with AsyncExitStack() as stack:
+        if closer_connected:
+            await stack.enter_async_context(original)
+        async with clone:
+            await original.close()
+
+            # Only the closed client's own backends go, if it had any.
+            assert len(closed) == (2 if closer_connected else 0)
+            result = await clone.call_tool("server1_add", {"a": 1, "b": 2})
+            assert result.data == 3
+
+    assert len(closed) == (4 if closer_connected else 2)
 
 
 async def test_single_server_config_transport():

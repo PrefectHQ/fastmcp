@@ -16,9 +16,9 @@ from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
 from mcp_types import RequestId
 from pydantic import ValidationError
 
-from fastmcp.experimental.events._constants import EVENTS_EXTENSION_ID
-from fastmcp.experimental.events.models import StreamFrame
 from fastmcp.utilities.logging import get_logger
+from fastmcp_events._constants import EVENTS_EXTENSION_ID
+from fastmcp_events.models import StreamFrame
 
 logger = get_logger(__name__)
 

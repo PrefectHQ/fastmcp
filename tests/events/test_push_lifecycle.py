@@ -7,13 +7,17 @@ from typing import Any
 
 import anyio
 import pytest
+from fastmcp_events._constants import NOT_FOUND
+from fastmcp_events.client import Frame
+from fastmcp_events.models import StreamFrame
 from mcp.shared.exceptions import MCPError
 from mcp.shared.message import SessionMessage
 from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
 from mcp_types import CONNECTION_CLOSED, JSONRPCNotification
+from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
-from fastmcp.experimental.events import (
+from fastmcp_events import (
     Event,
     EventBacklogFullError,
     EventBatch,
@@ -22,11 +26,8 @@ from fastmcp.experimental.events import (
     EventsExtension,
     subscribe_events,
 )
-from fastmcp.experimental.events import client as events_client_module
-from fastmcp.experimental.events import subscription as subscription_module
-from fastmcp.experimental.events._constants import NOT_FOUND
-from fastmcp.experimental.events.client import Frame
-from fastmcp.experimental.events.models import StreamFrame
+from fastmcp_events import client as events_client_module
+from fastmcp_events import subscription as subscription_module
 
 SendRaw = Callable[[str, Any, Any], Awaitable[Any]]
 
@@ -39,7 +40,11 @@ def replaying_server(
     events = EventsExtension(poll_interval_ms=10)
     server.add_extension(events)
 
-    @events.event(name="tick")
+    @events.event("tick")
+    class Tick(BaseModel):
+        """A tick"""
+
+    @events.reader(Tick)
     async def tick(poll: EventPoll) -> EventBatch:
         if checked is not None:
             checked(poll.cursor)
@@ -201,7 +206,11 @@ async def test_an_error_response_to_a_reconnect_ends_the_subscription(
     opens = 0
     first_check = anyio.Event()
 
-    @events.event(name="tick")
+    @events.event("tick")
+    class Tick(BaseModel):
+        """A tick"""
+
+    @events.reader(Tick)
     async def tick(poll: EventPoll) -> EventBatch:
         if opens > 1:
             raise MCPError(code=NOT_FOUND, message="Unknown event: tick")
@@ -235,7 +244,11 @@ async def test_an_overflowing_stream_is_stopped_before_the_consumer_drains_it(
     checks = 0
     checks_at_overflow: list[int] = []
 
-    @events.event(name="tick")
+    @events.event("tick")
+    class Tick(BaseModel):
+        """A tick"""
+
+    @events.reader(Tick)
     async def tick(poll: EventPoll) -> EventBatch:
         nonlocal checks
         checks += 1
@@ -275,7 +288,11 @@ async def test_a_mid_stream_gap_keeps_the_cursor_before_its_events(
     events = EventsExtension(poll_interval_ms=10)
     server.add_extension(events)
 
-    @events.event(name="tick")
+    @events.event("tick")
+    class Tick(BaseModel):
+        """A tick"""
+
+    @events.reader(Tick)
     async def tick(poll: EventPoll) -> EventBatch:
         if poll.cursor == "1":
             return EventBatch(
@@ -319,7 +336,11 @@ async def test_a_stream_that_never_answers_is_retried_a_bounded_number_of_times(
     server.add_extension(events)
     opens = 0
 
-    @events.event(name="tick")
+    @events.event("tick")
+    class Tick(BaseModel):
+        """A tick"""
+
+    @events.reader(Tick)
     async def tick(poll: EventPoll) -> EventBatch:
         nonlocal opens
         opens += 1

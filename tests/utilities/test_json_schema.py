@@ -11,6 +11,7 @@ from fastmcp.utilities.json_schema import (
     _strip_remote_refs,
     compress_schema,
     dereference_refs,
+    is_object_schema,
     ref_target_name,
     resolve_root_ref,
 )
@@ -1433,3 +1434,19 @@ class TestDereferenceRefsRemoteRefSafety:
         # Remote ref should be stripped
         assert "$ref" not in result["properties"]["evil"]
         assert "$defs" not in result
+
+
+def _ref_alias_chain(hops: int) -> dict[str, Any]:
+    defs: dict[str, Any] = {
+        f"D{i}": {"$ref": f"#/$defs/D{i + 1}"} for i in range(hops - 1)
+    }
+    defs[f"D{hops - 1}"] = {"type": "object"}
+    return {"$ref": "#/$defs/D0", "$defs": defs}
+
+
+class TestIsObjectSchemaRefChains:
+    def test_short_alias_chain_resolves(self):
+        assert is_object_schema(_ref_alias_chain(5)) is True
+
+    def test_long_alias_chain_is_bounded(self):
+        assert is_object_schema(_ref_alias_chain(40)) is False
