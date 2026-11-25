@@ -1228,3 +1228,38 @@ async def test_transform_fn_generators_with_context_injection():
         assert async_res.structured_content == {"result": [10, 15]}
         assert isinstance(async_res.content[0], TextContent)
         assert async_res.content[0].text == "[10,15]"
+
+
+async def test_transform_fn_receives_typed_arguments():
+    """transform_fn should receive arguments converted to its type annotations."""
+    import datetime
+
+    from pydantic import BaseModel
+
+    class Point(BaseModel):
+        x: int
+        y: int
+
+    def base(when: datetime.date, p: Point) -> str:
+        return f"{when.isoformat()}:{p.x},{p.y}"
+
+    async def custom(when: datetime.date, p: Point) -> str:
+        return f"when={type(when).__name__} p={type(p).__name__} x={p.x}"
+
+    async def guard(when: datetime.date, p: Point) -> str:
+        assert isinstance(when, datetime.date)
+        assert isinstance(p, Point)
+        return await forward(when=when, p=p)
+
+    base_tool = Tool.from_function(base)
+    transformed = Tool.from_tool(base_tool, transform_fn=custom)
+    guarded = Tool.from_tool(base_tool, transform_fn=guard)
+
+    args = {"when": "2024-03-01", "p": {"x": 1, "y": 2}}
+    res_custom = await transformed.run(args)
+    assert isinstance(res_custom.content[0], TextContent)
+    assert res_custom.content[0].text == "when=date p=Point x=1"
+
+    res_guarded = await guarded.run(args)
+    assert isinstance(res_guarded.content[0], TextContent)
+    assert res_guarded.content[0].text == "2024-03-01:1,2"

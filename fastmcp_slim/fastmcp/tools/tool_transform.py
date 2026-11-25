@@ -5,7 +5,7 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, LiteralString, cast
+from typing import Annotated, Any, Literal, LiteralString, cast, get_type_hints
 
 import mcp_types
 from mcp_types import ToolAnnotations
@@ -482,6 +482,26 @@ class TransformedTool(Tool):
 
             body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
             fn = without_injected_parameters(body_fn)
+            if self.fn is not self.forwarding_fn:
+                overridden_types = self._arg_transform_type_override_names(
+                    self.transform_args
+                )
+                try:
+                    hints = get_type_hints(fn, include_extras=True)
+                except Exception:
+                    hints = {}
+                for param_name, param in inspect.signature(fn).parameters.items():
+                    if param_name not in arguments or param_name in overridden_types:
+                        continue
+                    annotation = hints.get(param_name, param.annotation)
+                    if annotation is inspect.Parameter.empty or annotation is Any:
+                        continue
+                    try:
+                        arguments[param_name] = get_cached_typeadapter(
+                            annotation
+                        ).validate_python(arguments[param_name])
+                    except PydanticValidationError as exc:
+                        raise ValidationError(str(exc)) from exc
             try:
                 if is_coroutine_function(fn):
                     result = await fn(**arguments)
