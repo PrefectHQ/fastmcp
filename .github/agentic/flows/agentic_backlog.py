@@ -6,6 +6,9 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
+from flows.agentic_intake import directly_addresses
+from flows.agentic_labels import AREA_LABELS as TRIAGE_AREAS
+from flows.agentic_labels import TRIAGE_LABEL
 from flows.agentic_stack import digest
 
 
@@ -111,6 +114,131 @@ def inventory(read: Callable[[str], object], config: Intake, page: int) -> dict:
             "limitation": "Rolling pages are not a snapshot census. Concurrent changes can shift pages; later sweeps revisit them. PR activity is checked during full intake, not inferred from issue timestamps.",
         },
     }
+
+
+HANDLED_KEY = "fastmcp-triage-handled-{number}"
+
+
+def handled_key(number: int) -> str:
+    return HANDLED_KEY.format(number=number)
+
+
+MAINTAINER_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
+
+
+def contributions(pulls: list[dict]) -> list[dict]:
+    """Open, ready pull requests from people outside the maintainers.
+
+    Maintainers' own PRs and bot PRs are not triage's to review.
+    """
+    return [
+        pull
+        for pull in pulls
+        if pull.get("state") == "open"
+        and not pull.get("draft")
+        and (pull.get("user") or {}).get("type") == "User"
+        and pull.get("author_association") not in MAINTAINER_ASSOCIATIONS
+    ]
+
+
+def addressed(pulls: list[dict]) -> dict[int, list[dict]]:
+    """Issue number -> contributions that say they fix it."""
+    found: dict[int, list[dict]] = {}
+    for pull in contributions(pulls):
+        body = pull.get("body") or ""
+        for number in referenced_issues(body):
+            if directly_addresses(body, number):
+                found.setdefault(number, []).append(pull)
+    return found
+
+
+def handoff_revision(issue: dict, pulls: list[dict]) -> str:
+    """What a handed-off issue looks like to the person who has to act on it.
+
+    It changes when anyone, person or bot, edits, comments on, labels, assigns,
+    closes or reopens the issue, or opens, pushes to, reopens, drafts or closes a
+    contribution that fixes it. Triage's own labels are left out, so a run never
+    makes its own issue look changed.
+    """
+    number = issue["number"]
+    own = {TRIAGE_LABEL, *TRIAGE_AREAS}
+    return digest(
+        {
+            "number": number,
+            "state": issue.get("state"),
+            "title": issue.get("title"),
+            "body": digest(issue.get("body") or ""),
+            "comments": issue.get("comments", 0),
+            "labels": sorted(
+                label["name"]
+                for label in issue.get("labels") or []
+                if label["name"] not in own
+            ),
+            "assignees": sorted(
+                actor["login"] for actor in issue.get("assignees") or []
+            ),
+            "contributions": sorted(
+                [
+                    pull["number"],
+                    (pull.get("head") or {}).get("sha"),
+                    pull.get("comments"),
+                ]
+                for pull in addressed(pulls).get(number, [])
+            ),
+        }
+    )
+
+
+def open_pulls(read: Callable[[str], object], pages: int = 3) -> list[dict]:
+    pulls: list[dict] = []
+    for page in range(1, pages + 1):
+        rows = read(
+            f"repos/PrefectHQ/fastmcp/pulls?state=open&per_page=100&page={page}"
+        )
+        if not isinstance(rows, list):
+            raise ValueError("Expected a page of pull requests")
+        pulls.extend(row for row in rows if isinstance(row, dict))
+        if len(rows) < 100:
+            return with_discussion(read, pulls)
+    raise ValueError("More open pull requests than the follow-through bound")
+
+
+def with_discussion(read: Callable[[str], object], pulls: list[dict]) -> list[dict]:
+    """Add each PR's conversation comment count, which the pulls listing leaves out.
+
+    A contributor answering on their PR is a change to the hand-off. Triage's own
+    output on a PR is a review, which this count doesn't include.
+    """
+    counts: dict[int, int] = {}
+    for page in range(1, 11):
+        rows = read(
+            f"repos/PrefectHQ/fastmcp/issues?state=open&per_page=100&page={page}"
+        )
+        if not isinstance(rows, list):
+            raise ValueError("Expected a page of issues")
+        for row in rows:
+            if isinstance(row, dict) and "pull_request" in row:
+                counts[row["number"]] = row.get("comments", 0)
+        if len(rows) < 100:
+            return [{**pull, "comments": counts.get(pull["number"])} for pull in pulls]
+    raise ValueError("More open issues than the follow-through bound")
+
+
+def handoffs(read: Callable[[str], object], numbers: list[int]) -> dict[str, str]:
+    """The hand-off revision of each issue as it is now, keyed by issue number.
+
+    Taken when intake admits the issues, so anything that changes while triage
+    works on them shows up as a change on the next follow-through pass.
+    """
+    if not numbers:
+        return {}
+    pulls = open_pulls(read)
+    found = {}
+    for number in numbers:
+        issue = read(f"repos/PrefectHQ/fastmcp/issues/{number}")
+        if isinstance(issue, dict) and isinstance(issue.get("number"), int):
+            found[str(number)] = handoff_revision(issue, pulls)
+    return found
 
 
 def due(

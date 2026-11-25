@@ -6,7 +6,7 @@ Triage writes only labels that are cheap to be wrong about:
   and the issue has none yet;
 - `needs:triage` on every issue whose outcome waits on a person: review a linked PR,
   fix a reproduced bug, decide a direction, ask the reporter for something, or
-  close it.
+  close it. A person removing it clears the hand-off, and triage never re-adds it.
 
 Triage never starts a closing clock on its own. Asking the reporter for a
 reproducer (`needs MRE`, closed after 7 days) and flagging a duplicate
@@ -71,7 +71,23 @@ def waits_on_maintainer(bin_name: str, item: dict) -> bool:
     return bin_name in {"existing_review", "decisions", "evidence", "pruning"}
 
 
-def triage_labels(review: dict, live: Live) -> list[dict]:
+def cleared_by_person(events: list[dict]) -> bool:
+    """Whether a person took `needs:triage` off the issue.
+
+    That is the person saying the hand-off is done. Triage keeps following the issue
+    but never puts the label back; a person can.
+    """
+    return any(
+        event.get("event") == "unlabeled"
+        and (event.get("label") or {}).get("name") == TRIAGE_LABEL
+        and (event.get("actor") or {}).get("type") == "User"
+        for event in events
+    )
+
+
+def triage_labels(
+    review: dict, live: Live, cleared: Callable[[int], bool] = lambda number: False
+) -> list[dict]:
     """Area and `needs:triage` labels for every assessed issue, without comments."""
     writes: list[dict] = []
     seen: set[int] = set()
@@ -91,7 +107,11 @@ def triage_labels(review: dict, live: Live) -> list[dict]:
             present = labels_of(current)
             if area and not present & AREA_LABELS:
                 writes.append({"issue_number": number, "label": area})
-            if waiting and not present & {TRIAGE_LABEL, MRE_LABEL, DUPLICATE_LABEL}:
+            if (
+                waiting
+                and not present & {TRIAGE_LABEL, MRE_LABEL, DUPLICATE_LABEL}
+                and not cleared(number)
+            ):
                 writes.append({"issue_number": number, "label": TRIAGE_LABEL})
     return writes
 

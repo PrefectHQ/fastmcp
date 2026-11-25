@@ -23,7 +23,6 @@ from fastmcp.cli import run as run_module
 from fastmcp.cli.auth import auth_app
 from fastmcp.cli.client import call_command, discover_command, list_command
 from fastmcp.cli.deploy.command import login, logout, whoami
-from fastmcp.cli.events import events_app
 from fastmcp.cli.generate import generate_cli_command
 from fastmcp.cli.install import install_app
 from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
@@ -1130,7 +1129,22 @@ experimental_app = cyclopts.App(
     name="experimental",
     help="Experimental commands that may change in any release",
 )
-experimental_app.command(events_app)
+if importlib.util.find_spec("fastmcp_events") is not None:
+    # Lazy, so `fastmcp` startup does not import the events package; cyclopts
+    # 4.0 refuses extra settings such as `help=` on a lazily imported App.
+    experimental_app.command("fastmcp_events.cli:events_app", name="events")
+else:
+
+    @experimental_app.command(name="events")
+    def events_not_installed(*_tokens: str) -> None:
+        """Subscribe to a server's events (needs the `events` extra)."""
+        console.print(
+            "[bold red]Error:[/bold red] [cyan]fastmcp experimental events[/cyan] "
+            'needs fastmcp-events: [cyan]pip install "fastmcp\\[events]"[/cyan]'
+        )
+        sys.exit(1)
+
+
 app.command(experimental_app)
 
 # Add auth subcommand group (includes CIMD commands)

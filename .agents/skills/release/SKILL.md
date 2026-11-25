@@ -10,7 +10,7 @@ the current major and `release/<major>.<minor>` or `release/<major>.x` for maint
 Notes are generated against that branch, but every changelog entry lands on `main`,
 the only lineage gofastmcp.com/docs serves. Merging that docs PR drafts the release
 (`draft-release.yml`); publishing the draft makes the tag. The tag triggers `Publish fastmcp-slim to PyPI`;
-its success fans out to `fastmcp-tasks`, `fastmcp-remote`, and `fastmcp`, and the
+its success fans out to `fastmcp-tasks`, `fastmcp-events`, `fastmcp-remote`, and `fastmcp`, and the
 `fastmcp` publish job opens the `published-docs` PR for stable release-triggered
 publication when the release SHA is an ancestor of the default branch. Prereleases
 do not open that PR. The slim job waits in the `pypi` environment for a required
@@ -249,6 +249,10 @@ connections instead of raising.
 
 ## Gotchas
 
+- Every package the fan-out publishes needs its PyPI trusted publisher (workflow
+  file and `pypi-fanout` environment) before its first release. A missing one
+  fails that package's upload, and `fastmcp` then refuses to publish because its
+  pinned extra would be uninstallable, after `fastmcp-slim` is already on PyPI.
 - `--generate-notes` copies PR titles verbatim; a title containing `<1`, `{`, or `}`
   breaks MDX, and `__name__` renders as bold. `scripts/changelog_entry.py` wraps
   those in backticks; the validator in step 5 catches anything else.

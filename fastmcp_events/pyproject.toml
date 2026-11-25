@@ -1,0 +1,61 @@
+[project]
+name = "fastmcp-events"
+dynamic = ["version", "dependencies", "optional-dependencies"]
+description = "Events for FastMCP servers and clients via the io.modelcontextprotocol/events extension (SEP-3415)."
+authors = [{ name = "Jeremiah Lowin" }, { name = "Nate Nowack" }]
+
+requires-python = ">=3.11"
+readme = "README.md"
+license = "Apache-2.0"
+
+keywords = [
+    "mcp",
+    "fastmcp events",
+    "events",
+    "model context protocol",
+    "fastmcp",
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://gofastmcp.com"
+Repository = "https://github.com/PrefectHQ/fastmcp"
+Documentation = "https://gofastmcp.com"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["fastmcp_events"]
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
+# The client and server parts load lazily, so either side installs only what it
+# uses: `fastmcp-slim[client]` to subscribe, `fastmcp-slim[server]` to serve.
+dependencies = ["fastmcp-slim[mcp]=={{ version }}"]
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning.optional-dependencies]
+# DocketEventLog keeps emitted events in Redis streams through Docket.
+docket = ["pydocket>=0.29.1", "redis!=8.1.0"]
