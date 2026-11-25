@@ -19,7 +19,7 @@
     "reproduce": {
       "kind": "AgentNode",
       "model": {
-        "connection_id": "06ad84ea-0b25-7034-8000-caab9dbc44f6",
+        "connection_id": "7d556f44-6880-5d80-90c5-7b273a13afbd",
         "id": "gpt-6-luna",
         "effort": "medium"
       },
