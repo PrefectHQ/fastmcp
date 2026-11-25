@@ -13,7 +13,7 @@ from mcp_types import INVALID_PARAMS
 from pydantic import BaseModel, Field
 
 from fastmcp import Client, FastMCP
-from fastmcp.experimental.events import (
+from fastmcp_events import (
     EventsClientExtension,
     EventsExtension,
     list_events,

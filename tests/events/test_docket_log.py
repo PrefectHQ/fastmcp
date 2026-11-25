@@ -9,7 +9,7 @@ import pytest
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
-from fastmcp.experimental.events import (
+from fastmcp_events import (
     EventsClientExtension,
     EventsExtension,
     poll_events_mcp,
@@ -18,7 +18,7 @@ from fastmcp.experimental.events import (
 
 pytest.importorskip("docket")
 
-from fastmcp.experimental.events.docket_log import DocketEventLog  # noqa: E402
+from fastmcp_events.docket_log import DocketEventLog  # noqa: E402
 
 
 class AlertFired(BaseModel):

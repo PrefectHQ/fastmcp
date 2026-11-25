@@ -7,6 +7,9 @@ from typing import Any
 
 import anyio
 import pytest
+from fastmcp_events._constants import NOT_FOUND
+from fastmcp_events.client import Frame
+from fastmcp_events.models import StreamFrame
 from mcp.shared.exceptions import MCPError
 from mcp.shared.message import SessionMessage
 from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
@@ -14,7 +17,7 @@ from mcp_types import CONNECTION_CLOSED, JSONRPCNotification
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
-from fastmcp.experimental.events import (
+from fastmcp_events import (
     Event,
     EventBacklogFullError,
     EventBatch,
@@ -23,11 +26,8 @@ from fastmcp.experimental.events import (
     EventsExtension,
     subscribe_events,
 )
-from fastmcp.experimental.events import client as events_client_module
-from fastmcp.experimental.events import subscription as subscription_module
-from fastmcp.experimental.events._constants import NOT_FOUND
-from fastmcp.experimental.events.client import Frame
-from fastmcp.experimental.events.models import StreamFrame
+from fastmcp_events import client as events_client_module
+from fastmcp_events import subscription as subscription_module
 
 SendRaw = Callable[[str, Any, Any], Awaitable[Any]]
 

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 import anyio
 
-from fastmcp.experimental.events.extension import Event
+from fastmcp_events.extension import Event
 
 
 @dataclass(frozen=True)

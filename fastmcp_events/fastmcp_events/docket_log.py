@@ -2,7 +2,7 @@
 
 Experimental: this API may change in any release without a deprecation period.
 
-Requires `pydocket`, which `pip install "fastmcp[tasks]"` provides.
+Requires `pydocket`, which the `docket` extra provides: `pip install "fastmcp[events]" "fastmcp-events[docket]"`.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from fastmcp.experimental.events.extension import Event
-from fastmcp.experimental.events.log import EventLog, LogRead
+from fastmcp_events.extension import Event
+from fastmcp_events.log import EventLog, LogRead
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -46,8 +46,8 @@ class DocketEventLog(EventLog):
     connection to `url` for the server's lifespan.
 
     ```python
-    from fastmcp.experimental.events import EventsExtension
-    from fastmcp.experimental.events.docket_log import DocketEventLog
+    from fastmcp_events import EventsExtension
+    from fastmcp_events.docket_log import DocketEventLog
 
     events = EventsExtension(log=DocketEventLog("redis://localhost:6379/0"))
     ```
@@ -69,7 +69,7 @@ class DocketEventLog(EventLog):
             import docket as _docket  # noqa: F401
         except ImportError as error:
             raise ImportError(
-                'DocketEventLog requires pydocket: pip install "fastmcp[tasks]"'
+                'DocketEventLog requires pydocket: pip install "fastmcp-events[docket]"'
             ) from error
         self.url = url
         self.name = name

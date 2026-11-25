@@ -28,9 +28,11 @@ from mcp_types import CONNECTION_CLOSED, HEADER_MISMATCH
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.client.telemetry import client_span
-from fastmcp.experimental.events._constants import EVENTS_EXTENSION_ID, UNSUPPORTED
-from fastmcp.experimental.events.client import EventsClientExtension
-from fastmcp.experimental.events.models import (
+from fastmcp.telemetry import inject_trace_context
+from fastmcp.utilities.logging import get_logger
+from fastmcp_events._constants import EVENTS_EXTENSION_ID, UNSUPPORTED
+from fastmcp_events.client import EventsClientExtension
+from fastmcp_events.models import (
     EventOccurrence,
     EventType,
     ListEventsParams,
@@ -43,8 +45,6 @@ from fastmcp.experimental.events.models import (
     StreamEventsRequest,
     StreamFrame,
 )
-from fastmcp.telemetry import inject_trace_context
-from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.client.client import Client

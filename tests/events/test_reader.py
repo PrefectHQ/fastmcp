@@ -8,7 +8,7 @@ from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
-from fastmcp.experimental.events import (
+from fastmcp_events import (
     Event,
     EventBatch,
     EventPoll,

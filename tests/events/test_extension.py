@@ -5,13 +5,27 @@ from datetime import UTC, datetime
 
 import anyio
 import pytest
+from fastmcp_events._constants import (
+    EVENTS_EXTENSION_ID,
+    FORBIDDEN,
+    NOT_FOUND,
+    UNSUPPORTED,
+)
+from fastmcp_events.models import (
+    EventOccurrence,
+    PollEventsParams,
+    PollEventsRequest,
+    PollEventsResult,
+)
+from fastmcp_events.subscription import Delivery
 from mcp.shared.exceptions import MCPError
 from mcp_types import HEADER_MISMATCH, INVALID_PARAMS, METHOD_NOT_FOUND
 from pydantic import BaseModel
 from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
-from fastmcp.experimental.events import (
+from fastmcp.utilities.tests import run_server_async
+from fastmcp_events import (
     Event,
     EventBacklogFullError,
     EventBatch,
@@ -24,21 +38,7 @@ from fastmcp.experimental.events import (
     poll_events_mcp,
     subscribe_events,
 )
-from fastmcp.experimental.events import client as events_client_module
-from fastmcp.experimental.events._constants import (
-    EVENTS_EXTENSION_ID,
-    FORBIDDEN,
-    NOT_FOUND,
-    UNSUPPORTED,
-)
-from fastmcp.experimental.events.models import (
-    EventOccurrence,
-    PollEventsParams,
-    PollEventsRequest,
-    PollEventsResult,
-)
-from fastmcp.experimental.events.subscription import Delivery
-from fastmcp.utilities.tests import run_server_async
+from fastmcp_events import client as events_client_module
 
 FIRED_AT = datetime(2026, 11, 14, 2, 17, 30, tzinfo=UTC)
 

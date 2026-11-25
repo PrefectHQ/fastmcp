@@ -28,13 +28,22 @@ from mcp_types import HEADER_MISMATCH, INTERNAL_ERROR, INVALID_REQUEST
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import BaseModel
 
-from fastmcp.experimental.events._constants import (
+from fastmcp import _install_hints
+
+try:
+    from fastmcp.server.dependencies import get_http_headers
+    from fastmcp.server.extensions import MethodBinding, ServerExtension
+except ImportError as exc:  # pragma: no cover - exercised by wheel installs
+    raise ImportError(_install_hints.SERVER_SUPPORT) from exc
+from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.pagination import paginate_request
+from fastmcp_events._constants import (
     EVENTS_EXTENSION_ID,
     FORBIDDEN,
     NOT_FOUND,
     UNSUPPORTED,
 )
-from fastmcp.experimental.events.models import (
+from fastmcp_events.models import (
     EventOccurrence,
     ListEventsParams,
     ListEventsResult,
@@ -45,14 +54,10 @@ from fastmcp.experimental.events.models import (
     StreamFrame,
     StreamNotification,
 )
-from fastmcp.server.dependencies import get_http_headers
-from fastmcp.server.extensions import MethodBinding, ServerExtension
-from fastmcp.server.mixins.mcp_operations import _apply_pagination
-from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
-    from fastmcp.experimental.events.log import EventLog
-    from fastmcp.experimental.events.registration import EventRegistration
+    from fastmcp_events.log import EventLog
+    from fastmcp_events.registration import EventRegistration
 
 logger = get_logger(__name__)
 
@@ -132,7 +137,7 @@ class EventsExtension(ServerExtension):
     from pydantic import BaseModel
 
     from fastmcp import FastMCP
-    from fastmcp.experimental.events import EventsExtension
+    from fastmcp_events import EventsExtension
 
     mcp = FastMCP("ci")
     events = EventsExtension()
@@ -176,7 +181,7 @@ class EventsExtension(ServerExtension):
                 `InMemoryEventLog`; pass a `DocketEventLog` to keep them in
                 Redis, shared across replicas and restarts.
         """
-        from fastmcp.experimental.events.log import InMemoryEventLog
+        from fastmcp_events.log import InMemoryEventLog
 
         if poll_interval_ms < 0:
             raise ValueError("poll_interval_ms must not be negative")
@@ -215,7 +220,7 @@ class EventsExtension(ServerExtension):
             raise ValueError(f"An event named {name!r} is already registered.")
 
         def register(model: ModelT) -> ModelT:
-            from fastmcp.experimental.events.registration import EventRegistration
+            from fastmcp_events.registration import EventRegistration
 
             if name in self._registrations:
                 raise ValueError(f"An event named {name!r} is already registered.")
@@ -327,7 +332,7 @@ class EventsExtension(ServerExtension):
             (r.descriptor(push=self._push) for r in self._registrations.values()),
             key=lambda descriptor: descriptor.name,
         )
-        page, next_cursor = _apply_pagination(
+        page, next_cursor = paginate_request(
             descriptors, params.cursor, self.server._list_page_size
         )
         return ListEventsResult(events=page, next_cursor=next_cursor)

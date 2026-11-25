@@ -555,7 +555,7 @@ EVENTS_SERVER = textwrap.dedent("""
     import sys
     from pydantic import BaseModel
     from fastmcp import FastMCP
-    from fastmcp.experimental.events import EventsExtension
+    from fastmcp_events import EventsExtension
     mcp = FastMCP("events-smoke")
     events = EventsExtension(poll_interval_ms=200)
     mcp.add_extension(events)
@@ -576,7 +576,7 @@ EVENTS_SERVER = textwrap.dedent("""
 
 async def _events(url):
     from fastmcp import Client
-    from fastmcp.experimental.events import (
+    from fastmcp_events import (
         EventsClientExtension,
         list_events,
         subscribe_events,

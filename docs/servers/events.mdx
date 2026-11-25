@@ -7,7 +7,9 @@ tag: EXPERIMENTAL
 ---
 
 <Warning>
-Events support is experimental and lives in `fastmcp.experimental.events`. The extension is new, and the names and signatures here may change in any release, without a deprecation period, as the specification and its clients settle. Webhook delivery (`events/subscribe`) is not implemented.
+Events support is experimental and ships as the `fastmcp-events` package, installed with the `events` extra (`pip install "fastmcp[events]"`). The extension is new, and the names and signatures here may change in any release, without a deprecation period, as the specification and its clients settle. Webhook delivery (`events/subscribe`) is not implemented.
+
+Before the `fastmcp-events` package, Events lived at `fastmcp.experimental.events`. That module is gone; install the `events` extra and import from `fastmcp_events` instead.
 </Warning>
 
 Tools answer when a client asks. Events cover the other direction: an alert fired, a build finished, an email arrived, and a client that is not in the middle of a request should find out. The MCP Events extension ([SEP-3415](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415)) defines event types a client can subscribe to, and FastMCP serves two of its delivery modes for you.
@@ -24,7 +26,7 @@ Decorate a Pydantic model to declare an event type, then call `emit()` with an i
 from pydantic import BaseModel
 
 from fastmcp import FastMCP
-from fastmcp.experimental.events import EventsExtension
+from fastmcp_events import EventsExtension
 
 mcp = FastMCP("Builds")
 events = EventsExtension()
@@ -61,7 +63,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from fastmcp import FastMCP
-from fastmcp.experimental.events import EventsExtension
+from fastmcp_events import EventsExtension
 
 mcp = FastMCP("Alerts")
 events = EventsExtension()
@@ -101,18 +103,18 @@ The buffer belongs to one process. A restart empties it, and a cursor from befor
 
 ### Sharing events across replicas with Docket
 
-When emitted events have to survive a restart or reach every replica, keep them in Redis with `DocketEventLog`. It stores each event type's log as a Redis stream through [Docket](https://github.com/chrisguidry/docket), the same backend that runs [background tasks](/servers/tasks), so it needs the `tasks` extra:
+When emitted events have to survive a restart or reach every replica, keep them in Redis with `DocketEventLog`. It stores each event type's log as a Redis stream through [Docket](https://github.com/chrisguidry/docket), the same backend that runs [background tasks](/servers/tasks), so it needs the package's `docket` extra alongside the server:
 
 ```bash
-pip install "fastmcp[tasks]"
+pip install "fastmcp[events]" "fastmcp-events[docket]"
 ```
 
 Pass the log to the extension. Nothing else about declaring or emitting events changes:
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.experimental.events import EventsExtension
-from fastmcp.experimental.events.docket_log import DocketEventLog
+from fastmcp_events import EventsExtension
+from fastmcp_events.docket_log import DocketEventLog
 
 log = DocketEventLog("redis://localhost:6379/0", max_events=10_000)
 events = EventsExtension(log=log)
@@ -139,7 +141,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from fastmcp import FastMCP
-from fastmcp.experimental.events import Event, EventBatch, EventPoll, EventsExtension
+from fastmcp_events import Event, EventBatch, EventPoll, EventsExtension
 
 mcp = FastMCP("Mail")
 events = EventsExtension()
@@ -246,7 +248,7 @@ Push needs a server that can keep a response stream open. Stateless and serverle
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.experimental.events import EventsExtension
+from fastmcp_events import EventsExtension
 
 mcp = FastMCP("Alerts")
 mcp.add_extension(EventsExtension(push=False))
@@ -264,7 +266,7 @@ A client opts into the extension with `EventsClientExtension`. The event calls a
 import asyncio
 
 from fastmcp import Client
-from fastmcp.experimental.events import (
+from fastmcp_events import (
     EventsClientExtension,
     list_events,
     subscribe_events,

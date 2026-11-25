@@ -27,20 +27,20 @@ from mcp.shared.inbound import find_invalid_x_mcp_header
 from mcp_types import INVALID_PARAMS
 from pydantic import BaseModel, ValidationError, validate_call
 
-from fastmcp.experimental.events.extension import (
-    Event,
-    EventBatch,
-    EventPoll,
-    EventReader,
-)
-from fastmcp.experimental.events.log import EventLog
-from fastmcp.experimental.events.models import EventType
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
 from fastmcp.utilities.json_schema import compress_schema
+from fastmcp_events.extension import (
+    Event,
+    EventBatch,
+    EventPoll,
+    EventReader,
+)
+from fastmcp_events.log import EventLog
+from fastmcp_events.models import EventType
 
 # How many logged events one poll reads at a time while it filters.
 _READ_CHUNK = 500
