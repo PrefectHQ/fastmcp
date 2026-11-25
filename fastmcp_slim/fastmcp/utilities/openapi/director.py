@@ -319,6 +319,8 @@ class RequestDirector:
         route: HTTPRoute,
         flat_args: dict[str, Any],
         base_url: str = "http://localhost",
+        *,
+        client_cookies: httpx2.Cookies | None = None,
     ) -> httpx2.Request:
         """
         Constructs a final httpx2.Request object, handling all OpenAPI serialization.
@@ -327,6 +329,7 @@ class RequestDirector:
             route: HTTPRoute containing OpenAPI operation details
             flat_args: Flattened arguments from LLM (may include suffixed parameters)
             base_url: Base URL for the request
+            client_cookies: Client cookies to merge with declared cookie parameters
 
         Returns:
             httpx2.Request: Properly formatted HTTP request
@@ -396,24 +399,6 @@ class RequestDirector:
         if route.request_body and route.request_body.content_schema:
             raw_content_type = next(iter(route.request_body.content_schema))
             declared_content_type = raw_content_type.split(";")[0].strip().lower()
-
-        # Cookie parameters always use the OpenAPI "form" style. Build the
-        # Cookie header directly so exploded arrays and objects can repeat
-        # names, which httpx's cookies= mapping cannot express.
-        cookie_pairs = self._serialize_cookie_params(route, cookie_params)
-        if cookie_pairs:
-            headers = dict(headers) if headers else {}
-            cookie_value = "; ".join(f"{name}={value}" for name, value in cookie_pairs)
-            existing_cookie = next(
-                (name for name in headers if name.lower() == "cookie"), None
-            )
-            if existing_cookie is None:
-                headers["Cookie"] = cookie_value
-            else:
-                existing = str(headers[existing_cookie])
-                headers[existing_cookie] = (
-                    f"{existing}; {cookie_value}" if existing else cookie_value
-                )
 
         # Step 6: Handle request body — dispatch on declared content type.
         # httpx body kwargs (json, content, data, files) are mutually exclusive
@@ -512,7 +497,7 @@ class RequestDirector:
                         )
 
         # Step 7: Create httpx2.Request
-        return httpx2.Request(
+        request = httpx2.Request(
             method=method,
             url=url,
             params=params,
@@ -522,6 +507,25 @@ class RequestDirector:
             data=data,
             files=files,
         )
+
+        cookie_pairs = self._serialize_cookie_params(route, cookie_params)
+        if cookie_pairs:
+            if client_cookies and "cookie" not in request.headers:
+                # Request cookies replace only jar entries with the same name,
+                # empty domain and root path, matching httpx2.build_request.
+                names = {name for name, _ in cookie_pairs}
+                defaults = httpx2.Cookies()
+                for cookie in client_cookies.jar:
+                    if cookie.domain or cookie.path != "/" or cookie.name not in names:
+                        defaults.jar.set_cookie(cookie)
+                defaults.set_cookie_header(request)
+
+            # Exploded arrays may repeat names, which a cookie mapping loses.
+            values = [f"{name}={value}" for name, value in cookie_pairs]
+            if existing := request.headers.get("cookie"):
+                values.insert(0, existing)
+            request.headers["Cookie"] = "; ".join(values)
+        return request
 
     def _unflatten_arguments(
         self, route: HTTPRoute, flat_args: dict[str, Any]
