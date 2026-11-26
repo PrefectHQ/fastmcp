@@ -193,16 +193,18 @@ class WebhookDelivery:
         return _Progress.model_validate(record) if record else None
 
     async def _save_progress(self, sub: _Subscription, progress: _Progress) -> None:
-        remaining = (sub.refresh_before - _now()).total_seconds()
-        if remaining > 0:
-            await self._put(f"progress-{sub.id}", progress, remaining)
+        # Kept for the longest lease rather than this one: a refresh can extend
+        # the lease while a sender holding the old one is still saving.
+        # Progress that outlives its subscription is never read.
+        await self._put(f"progress-{sub.id}", progress, self.max_ttl.total_seconds())
 
     async def _index(self, name: str) -> dict[str, float]:
         """The live subscription IDs for an event type, with when each lapses.
 
         The store has no way to list keys, so each event type keeps an index.
         Two replicas adding to it at once can lose an entry; every refresh
-        adds its subscription back, so a lost entry returns within a lease.
+        adds its subscription back, so a lost entry returns within a lease,
+        and its saved progress means the events it missed are sent then.
         """
         record = await self._get(f"index-{name}") or {}
         now = _now().timestamp()
@@ -247,6 +249,13 @@ class WebhookDelivery:
         subscription_id = (
             "sub_" + _digest(principal, target.url, registration.name, arguments)[:24]
         )
+        existing = await self._subscription(subscription_id)
+        progress = await self._progress(subscription_id) if existing else None
+        truncated = False
+        if progress is None:
+            # New, or lost to a restart of a memory store: start where the
+            # client says, which is how a lapsed subscription recovers.
+            progress, truncated = await self._start(registration, arguments, params)
         await self._verify_endpoint(principal, subscription_id, target)
 
         now = _now()
@@ -260,13 +269,6 @@ class WebhookDelivery:
             secret=target.secret,
             refresh_before=now + grant,
         )
-        existing = await self._subscription(subscription_id)
-        progress = await self._progress(subscription_id) if existing else None
-        truncated = False
-        if progress is None:
-            # New, or lost to a restart of a memory store: start where the
-            # client says, which is how a lapsed subscription recovers.
-            progress, truncated = await self._start(registration, arguments, params)
         await self._put(f"sub-{subscription_id}", sub, grant.total_seconds())
         await self._save_progress(sub, progress)
         index = await self._index(registration.name)
@@ -296,6 +298,14 @@ class WebhookDelivery:
         """Where a new subscription starts delivering, and whether that skips events."""
         if params.cursor is None:
             batch = await registration.poll(EventPoll(arguments=arguments))
+            if batch.cursor is None:
+                # The sender resumes from a saved position on every pass, so
+                # an event type with no replay has nothing to send from.
+                raise MCPError(
+                    UNSUPPORTED,
+                    f"{registration.name!r} keeps no cursor, so it cannot be "
+                    "delivered by webhook; poll or push it instead",
+                )
             return _Progress(cursor=batch.cursor), False
         batch = await registration.poll(
             EventPoll(
@@ -508,6 +518,12 @@ class WebhookDelivery:
             return
         sent = 0
         while sent < _EVENTS_PER_PASS:
+            if sent:
+                # Cancelled or lapsed mid-backlog: stop now, not next pass.
+                current = await self._subscription(subscription_id)
+                if current is None:
+                    return
+                sub = current
             try:
                 batch = await registration.poll(
                     EventPoll(

@@ -6,7 +6,12 @@ from datetime import timedelta
 import anyio
 import httpx2
 import pytest
-from fastmcp_events._constants import CALLBACK_ENDPOINT_ERROR, FORBIDDEN, NOT_FOUND
+from fastmcp_events._constants import (
+    CALLBACK_ENDPOINT_ERROR,
+    FORBIDDEN,
+    NOT_FOUND,
+    UNSUPPORTED,
+)
 from fastmcp_events.webhooks import secret_bytes, sign
 from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
@@ -351,3 +356,63 @@ async def test_reader_that_forbids_terminates_the_subscription(receiver):
         with pytest.raises(MCPError) as caught:
             await unsubscribe_webhook(client, "alert.fired", url=HOOK)
     assert caught.value.error.code == NOT_FOUND
+
+
+async def test_event_type_without_a_cursor_is_refused(receiver):
+    server = FastMCP("alerts", auth=tokens())
+    events = EventsExtension(webhooks=MockedDelivery(receiver))
+    server.add_extension(events)
+    events.event("alert.fired")(AlertFired)
+
+    @events.reader(AlertFired)
+    def read(poll: EventPoll) -> EventBatch:
+        return EventBatch()
+
+    async with connect(server) as client:
+        with pytest.raises(MCPError) as caught:
+            await subscribe_webhook(
+                client, "alert.fired", url=HOOK, secret=receiver.secrets[0]
+            )
+    assert caught.value.error.code == UNSUPPORTED
+    # Refused before the endpoint is challenged.
+    assert receiver.messages == []
+
+
+async def test_unsubscribe_stops_a_backlog_mid_pass(receiver):
+    delivery = MockedDelivery(receiver)
+    server, events = make_server(delivery)
+    async with connect(server) as client:
+        await subscribe_webhook(
+            client, "alert.fired", url=HOOK, secret=receiver.secrets[0]
+        )
+        for key in "abc":
+            await events.emit(AlertFired(key=key, severity="P1"), event_id=key)
+        post = delivery._post
+
+        async def post_then_cancel(*args, **kwargs):
+            await post(*args, **kwargs)
+            delivery._post = post
+            await unsubscribe_webhook(client, "alert.fired", url=HOOK)
+
+        delivery._post = post_then_cancel
+        await events.deliver_webhooks()
+    assert [e["eventId"] for e in receiver.events] == ["a"]
+
+
+async def test_progress_outlives_a_stale_lease_save(receiver):
+    delivery = MockedDelivery(receiver, min_ttl=timedelta(milliseconds=200))
+    server, events = make_server(delivery)
+    async with connect(server) as client:
+        sub = await subscribe_webhook(
+            client, "alert.fired", url=HOOK, secret=receiver.secrets[0], ttl_ms=1
+        )
+        stale = await delivery._subscription(sub.id)
+        progress = await delivery._progress(sub.id)
+        assert stale is not None and progress is not None
+        # A refresh extends the lease; then a sender holding the old lease saves.
+        await subscribe_webhook(
+            client, "alert.fired", url=HOOK, secret=receiver.secrets[0], ttl_ms=60_000
+        )
+        await delivery._save_progress(stale, progress)
+        await anyio.sleep(0.3)
+        assert await delivery._progress(sub.id) is not None
