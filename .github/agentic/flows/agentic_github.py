@@ -43,7 +43,8 @@ class GitHub:
             with urllib.request.urlopen(request, timeout=60) as response:
                 return None if response.status == 204 else json.load(response)
         except urllib.error.HTTPError as error:
-            if error.code == 404 and body is None:
+            # Absent (404) or deleted (410): a read finds nothing.
+            if error.code in (404, 410) and body is None:
                 return None
             raise
 
