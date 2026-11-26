@@ -1,7 +1,7 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-26T19:15:11+00:00",
- "source_commit": "b6dfe87bdeb268a9a7037db560cf739556721ad9",
+ "generated_at": "2026-11-26T20:42:31+00:00",
+ "source_commit": "a337640e424b98cb452ed58f5af408c3cdb4bbed",
  "suite": {
   "status": "passed",
   "pytest_exit_code": 0,
@@ -2001,8 +2001,8 @@
    "module": "fastmcp.server.auth.jwt_issuer",
    "path": "fastmcp_slim/fastmcp/server/auth/jwt_issuer.py",
    "public": false,
-   "statements": 55,
-   "hit": 39,
+   "statements": 57,
+   "hit": 41,
    "functions": 5,
    "functions_hit": 5,
    "symbols": [],
@@ -2065,16 +2065,16 @@
    "module": "fastmcp.server.auth.oauth_proxy.proxy",
    "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py",
    "public": true,
-   "statements": 767,
-   "hit": 293,
+   "statements": 773,
+   "hit": 272,
    "functions": 40,
-   "functions_hit": 23,
+   "functions_hit": 20,
    "symbols": [
     {
      "name": "OAuthProxy",
      "kind": "class",
-     "statements": 745,
-     "hit": 293
+     "statements": 751,
+     "hit": 272
     }
    ],
    "tests": 1,
@@ -2086,7 +2086,7 @@
    "module": "fastmcp.server.auth.oauth_proxy.revocation",
    "path": "fastmcp_slim/fastmcp/server/auth/oauth_proxy/revocation.py",
    "public": false,
-   "statements": 29,
+   "statements": 37,
    "hit": 15,
    "functions": 11,
    "functions_hit": 3,
@@ -4757,7 +4757,7 @@
    "path": "fastmcp_slim/fastmcp/utilities/json_schema_type.py",
    "public": false,
    "statements": 637,
-   "hit": 441,
+   "hit": 444,
    "functions": 59,
    "functions_hit": 47,
    "symbols": [],
