@@ -19,10 +19,6 @@ async def main() -> None:
                 folder = skill.to_directory(Path(directory) / skill.name)
                 print(f"Exported {folder.name} to a temporary directory")
 
-    async with Client(mcp) as client:
-        skill = await client.read_skill("skill://code-review/SKILL.md")
-        print(f"Read without the Skills extension: {skill.name}")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
