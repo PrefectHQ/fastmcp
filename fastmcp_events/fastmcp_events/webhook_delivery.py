@@ -551,10 +551,10 @@ class WebhookDelivery:
                 payload = occurrence.model_dump(by_alias=True, exclude_none=True)
                 payload["cursor"] = batch.cursor if last else start
                 # The same message gets the same ID from every replica and
-                # every retry, so receivers can drop repeats.
-                message_id = (
-                    "msg_" + _digest(sub.id, start, position, occurrence.event_id)[:32]
-                )
+                # every retry, so receivers can drop repeats. It comes from
+                # the subscription and the log position, never the eventId,
+                # which the upstream chose and every subscription shares.
+                message_id = "msg_" + _digest(sub.id, start, position)[:32]
                 try:
                     await self._post(
                         client, sub.url, sub.secret, message_id, sub.id, payload
