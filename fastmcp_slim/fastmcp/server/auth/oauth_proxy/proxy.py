@@ -2055,12 +2055,6 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "Upstream token set not found: %s", jti_mapping.upstream_token_id[:8]
             )
             raise TokenError("invalid_grant", "Upstream token not found")
-        if await self._ended_grant_store.get(key=jti_mapping.upstream_token_id):
-            logger.debug(
-                "Grant has ended for upstream token: %s",
-                jti_mapping.upstream_token_id[:8],
-            )
-            raise TokenError("invalid_grant", "Grant was revoked")
 
         # Decrypt upstream refresh token
         if not upstream_token_set.refresh_token:
@@ -2688,9 +2682,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         """Revoke token locally and with upstream server if supported.
 
-        For refresh tokens, removes from local storage by hash and ends the
-        grant, so the access tokens issued alongside it stop validating too
-        (RFC 7009 section 2.1). For an access
+        For refresh tokens, ends the grant, so the access tokens issued
+        alongside it stop validating too (RFC 7009 section 2.1), then removes
+        the token from local storage. A refresh token that was already rotated
+        still names its grant, so revoking it ends the grant as well. For an access
         token presented to the revocation route, removes its JTI mapping, so
         the token cannot validate again after a refresh puts a new upstream
         token behind its grant. An `AccessToken` from `load_access_token`

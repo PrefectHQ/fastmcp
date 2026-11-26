@@ -16,9 +16,10 @@ The model is RFC 6749 and RFC 7009 as the proxy documents them:
   (refresh-token rotation, RFC 9700 4.14.2)
 - of two concurrent redemptions of one code or one refresh token, exactly one
   succeeds
-- a revoked refresh token never works again, and revoking a grant's live
-  refresh token ends the grant's access tokens too; a revoked access token
-  stops validating and never validates again (RFC 7009 2.1)
+- a revoked refresh token never works again, and revoking any refresh token
+  of a grant, live or already rotated, ends the grant's access tokens too; a
+  revoked access token stops validating and never validates again (RFC 7009
+  2.1)
 - revoking an access token may revoke its whole grant (RFC 7009 2.1): every
   access token of the grant stops validating until a refresh gives the grant
   a new upstream token
@@ -358,14 +359,13 @@ class OAuthMachine(RuleBasedStateMachine):
         rt = RefreshToken(token=token, client_id=client, scopes=["read"])
         self.run(self.proxy.revoke_token(rt))
         event("revoke refresh token")
-        if token in self.refresh:
-            del self.refresh[token]
-            self.dead_refresh[token] = client
-            # Revoking a grant's live refresh token ends the grant, so its
-            # access tokens stop validating too (RFC 7009 2.1). A rotated
-            # refresh token no longer names the grant, so revoking it is a
-            # no-op.
-            self.grant_live[self.grant[token]] = False
+        # Revoking any refresh token of a grant, live or already rotated, ends
+        # the grant: its access tokens stop validating too (RFC 7009 2.1), and
+        # so does the refresh token a rotation put in its place.
+        grant = self.grant[token]
+        for live in [t for t in self.refresh if self.grant[t] == grant]:
+            self.dead_refresh[live] = self.refresh.pop(live)
+        self.grant_live[grant] = False
 
     @precondition(lambda self: self.access)
     @rule(data=st.data())
