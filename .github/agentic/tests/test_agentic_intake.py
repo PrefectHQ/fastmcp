@@ -229,3 +229,43 @@ def test_security_routes_before_public_contribution_review(evidence):
     evidence["issue"]["labels"] = ["security"]
     evidence["prs"] = [{"body": "Fixes #2692"}]
     assert route_intake(evidence)["route"] == "restricted_review"
+
+
+def test_intake_labels_admitted_issues_before_running_them(monkeypatch):
+    """A run that fails must still leave the issue where follow-through looks (#6814)."""
+    from uuid import uuid4
+
+    from flows import agentic_triage
+    from flows.agentic_backlog import Intake
+
+    calls = []
+    plan = {
+        "phase": "admitted",
+        "batch": {"groups": [{"items": [{"issue_number": 6796}]}]},
+    }
+    monkeypatch.setattr(agentic_triage, "admit", lambda *_: plan)
+    monkeypatch.setattr(
+        agentic_triage,
+        "admission_labels",
+        lambda numbers, *_: [
+            {"issue_number": n, "label": "needs:triage"} for n in numbers
+        ],
+    )
+
+    def write_labels(owner, scope, runtime, writes):
+        calls.append(("labels", scope.endswith("-admission"), writes()))
+
+    def dispatch(_):
+        calls.append(("dispatch",))
+        raise ValueError("corrupt patch")
+
+    monkeypatch.setattr(agentic_triage, "write_labels", write_labels)
+    monkeypatch.setattr(agentic_triage, "dispatch", dispatch)
+    monkeypatch.setattr(agentic_triage, "finish", lambda *_: {"review": None})
+
+    agentic_triage.triage(Intake(issues=[6796]), None, uuid4(), uuid4())
+
+    assert calls == [
+        ("labels", True, [{"issue_number": 6796, "label": "needs:triage"}]),
+        ("dispatch",),
+    ]

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from mcp.shared.exceptions import MCPError
-from mcp_types import TextResourceContents
+from mcp_types import INTERNAL_ERROR, TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.server import create_proxy
@@ -19,6 +19,7 @@ from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
+from fastmcp.skills.models import GetSkillResult, ListSkillsResult, MCPSkill
 from fastmcp.skills.provider import SkillCatalog, SkillCatalogProvider
 from fastmcp.utilities.tests import temporary_settings
 
@@ -196,6 +197,84 @@ async def test_backend_pagination_is_bounded(monkeypatch: pytest.MonkeyPatch) ->
         with pytest.raises(MCPError):
             await client.list_skills()
     assert requests.count == 1
+
+
+async def test_legacy_backend_is_not_asked_for_skills() -> None:
+    upstream = backend(REVIEW)
+    requests = ListSkillsRequests()
+    upstream.add_middleware(requests)
+    server = FastMCP("gateway")
+    server.add_provider(
+        ProxyProvider(lambda: ProxyClient(upstream, mode="legacy"), skills=True)
+    )
+    server.provider_error_strategy = "raise"
+
+    async with skills_client(server) as client:
+        assert await client.list_skills() == []
+    assert requests.count == 0
+
+
+BROKEN_URI = "skill://broken/SKILL.md"
+
+
+def broken_entry() -> MCPSkill:
+    return REVIEW.to_mcp_skill().model_copy(update={"uri": BROKEN_URI})
+
+
+class OneInvalidEntrySkillsExtension(SkillsExtension):
+    """Also returns an entry whose URI does not name its skill."""
+
+    async def _handle_list(self, context, params):
+        result = await super()._handle_list(context, params)
+        return ListSkillsResult.model_construct(
+            skills=[*result.skills, broken_entry()], next_cursor=result.next_cursor
+        )
+
+    async def _handle_get(self, context, params):
+        if params.uri == BROKEN_URI:
+            return GetSkillResult.model_construct(skill=broken_entry())
+        return await super()._handle_get(context, params)
+
+
+async def test_invalid_backend_entry_is_omitted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    upstream = backend(REVIEW)
+    upstream.add_extension(OneInvalidEntrySkillsExtension())
+    server = gateway(upstream)
+    server.provider_error_strategy = "raise"
+
+    async with skills_client(server) as client:
+        listed = await client.list_skills()
+        with pytest.raises(MCPError, match="Unknown skill URI"):
+            await client.get_skill(BROKEN_URI)
+    assert [skill.uri for skill in listed] == ["skill://review/SKILL.md"]
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "fastmcp.skills._proxy" and record.levelname == "WARNING"
+    ]
+    assert warnings == [
+        "Omitting an invalid Skills entry from backend skills/list (validation errors: 1)",
+        "Omitting an invalid Skills entry from backend skills/get (validation errors: 1)",
+    ]
+
+
+class InvalidPageSkillsExtension(SkillsExtension):
+    async def _handle_list(self, context, params):
+        return ListSkillsResult.model_construct(skills=[], next_cursor=5)
+
+
+async def test_invalid_backend_page_is_an_internal_error() -> None:
+    upstream = backend(REVIEW)
+    upstream.add_extension(InvalidPageSkillsExtension())
+    server = gateway(upstream)
+    server.provider_error_strategy = "raise"
+
+    async with skills_client(server) as client:
+        with pytest.raises(MCPError) as exc:
+            await client.list_skills()
+    assert exc.value.error.code == INTERNAL_ERROR
 
 
 async def test_local_and_proxied_skills_share_one_catalog() -> None:

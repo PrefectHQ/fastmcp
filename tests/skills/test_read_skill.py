@@ -409,3 +409,35 @@ async def test_read_skill_preserves_manifest_resource_uris(query: str):
 
     async with skills_client(server) as client:
         assert await client.read_skill(main_uri) == REVIEW
+
+
+async def test_read_skill_accepts_a_prefix_with_a_percent_encoded_slash():
+    prefix = (
+        "skill://atlassian/"
+        "ari%3Acloud%3Aplatform%3A%3Askill%2F3eb3c9b0-b5f8-45cd-8f7e-a50718d4772a"
+    )
+    original = REVIEW.to_mcp_skill()
+    assert isinstance(original.resources, list)
+    records = [
+        record.model_copy(
+            update={"uri": record.uri.replace("skill://review/", f"{prefix}/review/")}
+        )
+        for record in original.resources
+    ]
+    entry = original.model_copy(
+        update={"uri": f"{prefix}/review/SKILL.md", "resources": records}
+    )
+
+    class Published(SkillsExtension):
+        async def _get_entry(
+            self, uri: str, context: ServerRequestContext[Any, Any]
+        ) -> MCPSkill | None:
+            return entry if uri == entry.uri else None
+
+    server = FastMCP("Encoded prefix")
+    server.add_extension(Published())
+    for path, record in zip(REVIEW.files, records, strict=True):
+        server.resource(record.uri)(_constant(REVIEW.files[path]))
+
+    async with skills_client(server) as client:
+        assert await client.read_skill(entry.uri) == REVIEW

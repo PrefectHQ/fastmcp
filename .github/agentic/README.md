@@ -150,7 +150,7 @@ remain separate steps. No live workflow changes follow from this patch.
 Merging does not deploy. Live automations run the `source_sha` pinned in their
 runtime parameters. Run the [Deploy agentic triage](../workflows/deploy-agentic.yml)
 workflow from main to deploy main's tip, or pass a commit on main as `ref`. It uses the
-`PREFECT_API_KEY` repo secret against `prefect-technologies/marvin-bot` and runs:
+`PREFECT_API_KEY` repo secret against `prefect-technologies/fastmcp-oss` and runs:
 
 ```sh
 bash scripts/agentic_stack.sh deploy
