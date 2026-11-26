@@ -6,6 +6,27 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.2.7a1" description="2026-11-25">
+
+**[v4.2.7a1: Slashdance](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.7a1)**
+
+Skills proxies now skip discovery on backends that use older MCP protocol versions and keep valid skills when a backend returns malformed entries. FastMCP also accepts percent-encoded slashes in skill URI prefixes, so clients can discover and read skills published under those URIs.
+
+Thanks to our 3 contributors.
+
+### Fixes 🐞
+* Skip legacy backends and omit invalid entries in proxied skills/list by [@parkedwards](https://github.com/parkedwards) in [#6828](https://github.com/PrefectHQ/fastmcp/pull/6828)
+* Accept percent-encoded slashes in skill path prefixes by [@parkedwards](https://github.com/parkedwards) in [#6827](https://github.com/PrefectHQ/fastmcp/pull/6827)
+* fix(skills): sanitize proxy validation warnings by [@jlowin](https://github.com/jlowin) in [#6830](https://github.com/PrefectHQ/fastmcp/pull/6830)
+### Docs 📚
+* Say what changed for events since 4.2.5 in the v4.2.6 notes by [@zzstoatzz](https://github.com/zzstoatzz) in [#6811](https://github.com/PrefectHQ/fastmcp/pull/6811)
+* docs: explain dynamic skills over MCP by [@jlowin](https://github.com/jlowin) in [#6829](https://github.com/PrefectHQ/fastmcp/pull/6829)
+
+
+**Full Changelog**: [v4.2.6...v4.2.7a1](https://github.com/PrefectHQ/fastmcp/compare/v4.2.6...v4.2.7a1)
+
+</Update>
+
 <Update label="v4.2.6" description="2026-11-25">
 
 **[v4.2.6: Turn of Events](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.2.6)**

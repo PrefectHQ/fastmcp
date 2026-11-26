@@ -2,6 +2,7 @@ from flows.agentic_labels import (
     DUPLICATE_LABEL,
     MRE_LABEL,
     TRIAGE_LABEL,
+    admission_labels,
     apply_writes,
     mode,
     summary,
@@ -160,3 +161,21 @@ def test_assessor_must_answer_area_but_old_assessments_still_validate() -> None:
         }
     )
     assert old.area == ""
+
+
+def test_admission_labels_mark_first_time_issues_before_any_outcome() -> None:
+    live = {
+        1: issue(1),
+        2: issue(2, (TRIAGE_LABEL,)),
+        3: issue(3, (MRE_LABEL,)),
+        4: issue(4),
+        5: issue(5),
+        6: issue(6, pull_request={}),
+    }
+    writes = admission_labels(
+        [1, 2, 3, 4, 5, 6, 7],
+        live.get,
+        first_time=lambda number: number != 4,
+        cleared=lambda number: number == 5,
+    )
+    assert writes == [{"issue_number": 1, "label": TRIAGE_LABEL}]

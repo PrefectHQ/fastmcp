@@ -70,10 +70,11 @@ one gets a follow-up patch, never a re-tag.
    and bots. The helper's `total_contributors` is the proposed total; its
    `generated_first_time_count` is only the original baseline, not the final count.
    Resolve unknown identities and opt-outs before finalizing totals. Include the
-   final counts in the release introduction (for example, `Thanks to our 12
-   contributors, including 3 first-time contributors.`), and update any other
-   contributor totals in the notes to agree. These counts and shared attribution
-   must appear in both the GitHub release and the docs changelog.
+   total contributor count in the release introduction. Include the first-time
+   count only when it is greater than zero. For example, write `Thanks to our 12
+   contributors, including 3 first-time contributors.` or `Thanks to our 3
+   contributors.` when everyone has contributed before. Keep contributor totals
+   and shared attribution consistent across the GitHub release and docs changelog.
    Follow [Contributor credit](../../../docs/development/contributing.mdx#contributor-credit),
    honor opt-outs, and deduplicate entries. Save the completed generated notes to
    `/tmp/generated-notes.md`.
