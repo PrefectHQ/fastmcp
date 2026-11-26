@@ -10,7 +10,6 @@ from fastmcp_events._constants import (
     CALLBACK_ENDPOINT_ERROR,
     FORBIDDEN,
     NOT_FOUND,
-    RESOURCE_EXHAUSTED,
     UNSUPPORTED,
 )
 from fastmcp_events.webhooks import secret_bytes, sign
@@ -419,70 +418,16 @@ async def test_progress_outlives_a_stale_lease_save(receiver):
         assert await delivery._progress(sub.id) is not None
 
 
-async def test_one_client_holds_at_most_max_subscriptions(receiver):
-    server, events = make_server(MockedDelivery(receiver, max_subscriptions=2))
-    async with connect(server) as alice, connect(server, "bob") as bob:
-        for severity in ("P1", "P2"):
-            await subscribe_webhook(
-                alice,
-                "alert.fired",
-                {"severity": severity},
-                url=HOOK,
-                secret=receiver.secrets[0],
-            )
+async def test_a_non_ascii_echo_fails_verification(receiver):
+    def echo_non_ascii(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"challenge": "é"})
+
+    delivery = MockedDelivery(receiver)
+    delivery.receiver = echo_non_ascii
+    server, _ = make_server(delivery)
+    async with connect(server) as client:
         with pytest.raises(MCPError) as caught:
             await subscribe_webhook(
-                alice,
-                "alert.fired",
-                {"severity": "P3"},
-                url=HOOK,
-                secret=receiver.secrets[0],
+                client, "alert.fired", url=HOOK, secret=receiver.secrets[0]
             )
-        assert caught.value.error.code == RESOURCE_EXHAUSTED
-        assert caught.value.error.data == {"limit": "subscriptions", "max": 2}
-        # Renewing one already held is not a new subscription.
-        await subscribe_webhook(
-            alice,
-            "alert.fired",
-            {"severity": "P1"},
-            url=HOOK,
-            secret=receiver.secrets[0],
-        )
-        # The limit is per client.
-        await subscribe_webhook(
-            bob, "alert.fired", url=HOOK, secret=receiver.secrets[0]
-        )
-        # Unsubscribing frees a place.
-        await unsubscribe_webhook(alice, "alert.fired", {"severity": "P2"}, url=HOOK)
-        await subscribe_webhook(
-            alice,
-            "alert.fired",
-            {"severity": "P3"},
-            url=HOOK,
-            secret=receiver.secrets[0],
-        )
-
-
-async def test_challenges_to_one_host_are_rate_limited(receiver):
-    server, _ = make_server(MockedDelivery(receiver, challenges_per_host=1))
-    async with connect(server) as alice, connect(server, "bob") as bob:
-        await subscribe_webhook(
-            alice, "alert.fired", url=HOOK, secret=receiver.secrets[0]
-        )
-        # The same client and URL is already verified, so no new challenge.
-        await subscribe_webhook(
-            alice,
-            "alert.fired",
-            {"severity": "P1"},
-            url=HOOK,
-            secret=receiver.secrets[0],
-        )
-        for client, url in ((alice, HOOK.replace("/a", "/b")), (bob, HOOK)):
-            with pytest.raises(MCPError) as caught:
-                await subscribe_webhook(
-                    client, "alert.fired", url=url, secret=receiver.secrets[0]
-                )
-            assert caught.value.error.code == RESOURCE_EXHAUSTED
-            assert caught.value.error.data == {"limit": "challenges", "max": 1}
-    challenges = [m for _, m in receiver.messages if m.get("type") == "verification"]
-    assert len(challenges) == 1
+    assert caught.value.error.code == CALLBACK_ENDPOINT_ERROR

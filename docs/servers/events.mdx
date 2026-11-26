@@ -353,8 +353,6 @@ The server refuses private and loopback addresses (`allow_private_addresses=True
 | `interval` | 5 seconds | Time between sender passes (an emit in the same process wakes it at once) |
 | `sender` | `True` | Whether this process sends deliveries |
 | `store` | memory | Where subscriptions are kept |
-| `max_subscriptions` | 100 | Live subscriptions one client may hold; past it, subscribing fails with `ResourceExhausted` |
-| `challenges_per_host` | 10 | Verification challenges each process sends to one host per minute |
 
 ### Running more than one replica
 
