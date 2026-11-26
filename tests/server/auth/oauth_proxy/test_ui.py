@@ -117,3 +117,51 @@ class TestConsentPageRendering:
 
         assert 'evil<img src=x onerror=alert("xss")>' not in html
         assert "evil&lt;img src=x onerror=alert(&quot;xss&quot;)&gt;" in html
+
+    def test_consent_tooltip_uses_default_branding_without_server_name(self):
+        """Without a server name, the tooltip keeps FastMCP branding."""
+
+        html = create_consent_html(
+            client_id="client-123",
+            redirect_uri="https://example.com/callback",
+            scopes=["read"],
+            txn_id="txn",
+            csrf_token="csrf",
+        )
+
+        assert "This FastMCP server requires your consent" in html
+        assert "Learn more about\n                    FastMCP security" in html
+
+    def test_consent_tooltip_uses_server_name_when_provided(self):
+        """With a server name, the tooltip refers to the server by name and
+        omits the FastMCP-branded documentation link."""
+
+        html = create_consent_html(
+            client_id="client-123",
+            redirect_uri="https://example.com/callback",
+            scopes=["read"],
+            txn_id="txn",
+            csrf_token="csrf",
+            server_name="Acme Cloud",
+            server_icon_url="https://acme.example.com/logo.png",
+        )
+
+        assert "This Acme Cloud server requires your consent" in html
+        # No residual FastMCP branding anywhere on a fully-branded page
+        assert "FastMCP" not in html
+        assert "gofastmcp.com" not in html
+
+    def test_consent_tooltip_escapes_server_name(self):
+        """Server name is HTML-escaped in the tooltip."""
+
+        html = create_consent_html(
+            client_id="client-123",
+            redirect_uri="https://example.com/callback",
+            scopes=["read"],
+            txn_id="txn",
+            csrf_token="csrf",
+            server_name="<script>alert('xss')</script>",
+        )
+
+        assert "<script>alert('xss')</script>" not in html
+        assert "This &lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt; server" in html

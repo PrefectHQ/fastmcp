@@ -128,22 +128,29 @@ def create_consent_html(
         </form>
     """
 
-    # Build help link with tooltip (identical to current implementation)
-    help_link = """
+    # Build help link with tooltip. The tooltip refers to the server by its
+    # configured name, and the FastMCP-branded "learn more" link is only shown
+    # under default branding — servers with a custom name shouldn't direct
+    # their end users to FastMCP documentation.
+    if server_name:
+        learn_more_link = ""
+    else:
+        learn_more_link = """<br><br>
+                    <a
+                    href="https://gofastmcp.com/servers/auth/oauth-proxy#confused-deputy-attacks"
+                    target="_blank" class="tooltip-link">Learn more about
+                    FastMCP security →</a>"""
+    help_link = f"""
         <div class="help-link-container">
             <span class="help-link">
                 Why am I seeing this?
                 <span class="tooltip">
-                    This FastMCP server requires your consent to allow a new client
+                    This {server_name_escaped} server requires your consent to allow a new client
                     to connect. This protects you from <a
                     href="https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem"
                     target="_blank" class="tooltip-link">confused deputy
                     attacks</a>, where malicious clients could impersonate you
-                    and steal access.<br><br>
-                    <a
-                    href="https://gofastmcp.com/servers/auth/oauth-proxy#confused-deputy-attacks"
-                    target="_blank" class="tooltip-link">Learn more about
-                    FastMCP security →</a>
+                    and steal access.{learn_more_link}
                 </span>
             </span>
         </div>
