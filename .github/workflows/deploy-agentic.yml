@@ -27,9 +27,9 @@ jobs:
       run:
         working-directory: source/.github/agentic
     env:
-      # prefect-technologies/marvin-bot
-      PREFECT_WORKSPACE_ID: cafa2ffa-f6cc-4ed6-ab76-eaa4ba1ad40e
-      PREFECT_WORKSPACE_HANDLE: prefect-technologies/marvin-bot
+      # prefect-technologies/fastmcp-oss
+      PREFECT_WORKSPACE_ID: b2ae5e38-e3b3-420c-a774-60b1b582b581
+      PREFECT_WORKSPACE_HANDLE: prefect-technologies/fastmcp-oss
     steps:
       # The driver always comes from main's tip so older targets can be deployed
       # (rollback) even when they predate it.

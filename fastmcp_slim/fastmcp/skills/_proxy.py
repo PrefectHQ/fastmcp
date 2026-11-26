@@ -6,9 +6,12 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
+import mcp_types
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
-from mcp_types import INVALID_PARAMS, METHOD_NOT_FOUND
+from mcp_types import INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
+from pydantic import JsonValue, ValidationError
 
 from fastmcp.client.client import Client
 from fastmcp.client.mixins.skills import AUTO_PAGINATION_MAX_PAGES
@@ -30,9 +33,17 @@ from fastmcp.skills.models import (
     GetSkillResult,
     ListSkillsParams,
     ListSkillsRequest,
-    ListSkillsResult,
     MCPSkill,
 )
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class _BackendSkillsPage(mcp_types.PaginatedResult):
+    """A `skills/list` page whose entries are validated one at a time."""
+
+    skills: list[JsonValue]
 
 
 class _ProxiedSkills:
@@ -100,19 +111,36 @@ class _ProxiedSkills:
         cursor: str | None = None
         seen: set[str] = set()
         async with self._client() as client:
+            # Skills needs a modern connection. Many legacy servers answer an
+            # unknown method with -32602 rather than -32601, so don't ask them.
+            if client.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+                return []
             for _ in range(AUTO_PAGINATION_MAX_PAGES):
                 request = ListSkillsRequest(
                     params=ListSkillsParams(cursor=cursor, meta=meta)
                 )
                 try:
                     page = await client._await_with_session_monitoring(
-                        client.session.send_request(request, ListSkillsResult)
+                        client.session.send_request(request, _BackendSkillsPage)
                     )
                 except MCPError as error:
                     if error.error.code == METHOD_NOT_FOUND:
                         return []
                     raise
-                entries.extend(page.skills)
+                except ValidationError as error:
+                    raise MCPError(
+                        code=INTERNAL_ERROR,
+                        message="Backend returned an invalid skills/list result",
+                    ) from error
+                for raw_entry in page.skills:
+                    try:
+                        entries.append(MCPSkill.model_validate(raw_entry))
+                    except ValidationError as error:
+                        logger.warning(
+                            "Omitting an invalid Skills entry from backend skills/list"
+                            " (validation errors: %d)",
+                            error.error_count(),
+                        )
                 if page.next_cursor is None or page.next_cursor in seen:
                     return entries
                 seen.add(page.next_cursor)
@@ -134,6 +162,13 @@ class _ProxiedSkills:
                 if error.error.code in (INVALID_PARAMS, METHOD_NOT_FOUND):
                     return None
                 raise
+            except ValidationError as error:
+                logger.warning(
+                    "Omitting an invalid Skills entry from backend skills/get"
+                    " (validation errors: %d)",
+                    error.error_count(),
+                )
+                return None
         return result.skill
 
     async def _is_served(self, entry: MCPSkill) -> bool:

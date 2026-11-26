@@ -19,7 +19,7 @@
     "digest": {
       "kind": "AgentNode",
       "model": {
-        "connection_id": "06ad84ea-0b25-7034-8000-caab9dbc44f6",
+        "connection_id": "7d556f44-6880-5d80-90c5-7b273a13afbd",
         "id": "gpt-6.1-sol",
         "effort": "medium"
       },
@@ -72,11 +72,11 @@
         "mcpServers": {
           "triage_memory": {
             "type": "http",
-            "url": "https://fastmcp-triage-memory.fastmcp.app/mcp",
+            "url": "https://fastmcp-oss-triage-memory.fastmcp.app/mcp",
             "headers": {
               "Authorization": {
                 "$ref": {
-                  "block_document_id": "4c9b600b-6940-4e83-8ac0-f72810c08e85"
+                  "block_document_id": "2bcc6295-de4c-4c67-9da0-8d76afd78d71"
                 }
               }
             },
