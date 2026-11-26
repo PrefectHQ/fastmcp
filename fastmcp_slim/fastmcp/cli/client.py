@@ -145,7 +145,11 @@ def resolve_server_spec(
 def _build_stdio_from_command(command_str: str) -> StdioTransport:
     """Shell-split a command string into a ``StdioTransport``."""
     try:
-        parts = shlex.split(command_str)
+        parts = (
+            _split_windows_command(command_str)
+            if sys.platform == "win32"
+            else shlex.split(command_str)
+        )
     except ValueError as exc:
         console.print(f"[bold red]Error:[/bold red] Invalid command: {exc}")
         sys.exit(1)
@@ -155,6 +159,36 @@ def _build_stdio_from_command(command_str: str) -> StdioTransport:
         sys.exit(1)
 
     return StdioTransport(command=parts[0], args=parts[1:])
+
+
+def _split_windows_command(command_str: str) -> list[str]:
+    """Parse native Windows quoting, including quotes embedded in option values."""
+    if sys.platform != "win32":
+        raise RuntimeError("Windows command parsing requires Windows")
+    import ctypes
+    from ctypes import wintypes
+
+    if "\0" in command_str:
+        raise ValueError("Command contains a null character")
+    command_str = command_str.lstrip()
+    if not command_str:
+        return []
+    shell = ctypes.WinDLL("shell32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    split = shell.CommandLineToArgvW
+    split.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    split.restype = ctypes.POINTER(wintypes.LPWSTR)
+    free = kernel.LocalFree
+    free.argtypes = [ctypes.c_void_p]
+    free.restype = ctypes.c_void_p
+    count = ctypes.c_int()
+    arguments = split(command_str, ctypes.byref(count))
+    if not arguments:
+        raise ValueError(f"Windows command parsing failed: {ctypes.get_last_error()}")
+    try:
+        return [arguments[index] for index in range(count.value)]
+    finally:
+        free(arguments)
 
 
 def _resolve_json_spec(path: Path) -> str | dict[str, Any]:
