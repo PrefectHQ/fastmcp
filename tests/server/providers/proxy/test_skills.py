@@ -249,7 +249,15 @@ async def test_invalid_backend_entry_is_omitted(
         with pytest.raises(MCPError, match="Unknown skill URI"):
             await client.get_skill(BROKEN_URI)
     assert [skill.uri for skill in listed] == ["skill://review/SKILL.md"]
-    assert "Omitting an invalid Skills entry" in caplog.text
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "fastmcp.skills._proxy" and record.levelname == "WARNING"
+    ]
+    assert warnings == [
+        "Omitting an invalid Skills entry from backend skills/list (validation errors: 1)",
+        "Omitting an invalid Skills entry from backend skills/get (validation errors: 1)",
+    ]
 
 
 class InvalidPageSkillsExtension(SkillsExtension):
