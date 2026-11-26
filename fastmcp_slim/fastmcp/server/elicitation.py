@@ -141,6 +141,20 @@ class ElicitationJsonSchema(GenerateJsonSchema):
         # Get the base schema from parent - always use simple enum pattern
         return super().enum_schema(schema)
 
+    def literal_schema(self, schema: core_schema.LiteralSchema) -> JsonSchemaValue:
+        """Render a single-value `Literal` as a one-option `enum`, not `const`.
+
+        `const` is not one of the MCP 2025-11-25 `PrimitiveSchemaDefinition`
+        shapes, so a spec client reads it as a plain value and drops the
+        choice. The same normalization fixes single-option multi-selects:
+        `list_schema` generates the items through here, so a one-option
+        `list[Literal[...]]` becomes an enum array instead of being refused.
+        """
+        json_schema = super().literal_schema(schema)
+        if "const" in json_schema:
+            json_schema["enum"] = [json_schema.pop("const")]
+        return json_schema
+
 
 # we can't use the low-level AcceptedElicitation because it only works with BaseModels
 class AcceptedElicitation(BaseModel, Generic[T]):

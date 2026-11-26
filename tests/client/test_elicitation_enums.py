@@ -437,6 +437,88 @@ def test_choice_shorthand_rejects_values_not_offered(response_type, valid, inval
         handle_elicit_accept(config, {"value": invalid})
 
 
+def test_single_option_choice_uses_enum_not_const():
+    """A one-option choice is a single-value `enum`, not a `const`.
+
+    `const` is not a MCP 2025-11-25 PrimitiveSchemaDefinition shape, so a
+    spec client reads it as a plain value and drops the choice."""
+    from typing import Literal
+
+    single = parse_elicit_response_type(["a"])
+    assert single.schema["properties"]["value"] == {
+        "enum": ["a"],
+        "title": "Value",
+        "type": "string",
+    }
+    assert handle_elicit_accept(single, {"value": "a"}).data == "a"
+
+    literal = parse_elicit_response_type(Literal["a"])
+    assert literal.schema["properties"]["value"] == {
+        "enum": ["a"],
+        "title": "Value",
+        "type": "string",
+    }
+
+
+def test_single_option_multi_select_uses_enum():
+    """A multi-select of a single option is an enum array, not a refusal."""
+    from typing import Literal
+
+    config = parse_elicit_response_type(list[Literal["a"]])
+    assert config.schema["properties"]["value"] == {
+        "type": "array",
+        "items": {"enum": ["a"], "type": "string"},
+        "title": "Value",
+    }
+    assert handle_elicit_accept(config, {"value": ["a"]}).data == ["a"]
+    with pytest.raises(ValidationError):
+        handle_elicit_accept(config, {"value": ["b"]})
+
+
+def test_single_option_integer_multi_select_is_no_longer_refused():
+    """A single-option integer multi-select is accepted as an enum array.
+
+    The integer `enum` shape itself is #6693's scope; this fix only ends
+    the refusal, so the value round-trips."""
+    from typing import Literal
+
+    config = parse_elicit_response_type(list[Literal[1]])
+    assert config.schema["properties"]["value"] == {
+        "type": "array",
+        "items": {"enum": [1], "type": "integer"},
+        "title": "Value",
+    }
+    assert handle_elicit_accept(config, {"value": [1]}).data == [1]
+
+
+async def test_single_option_multi_select_round_trips_through_client():
+    """End to end: a one-option multi-select goes through the client."""
+    from typing import Literal
+
+    mcp = FastMCP("elicit-single")
+
+    @mcp.tool
+    async def ask(ctx: Context) -> str:
+        result = await ctx.elicit("pick one", response_type=list[Literal["a"]])
+        assert result.action == "accept"
+        assert isinstance(result, AcceptedElicitation)
+        return f"got {','.join(result.data)}"
+
+    async def elicitation_handler(message, response_type, params, context):
+        assert params.requested_schema["properties"]["value"] == {
+            "type": "array",
+            "items": {"enum": ["a"], "type": "string"},
+            "title": "Value",
+        }
+        return {"value": ["a"]}
+
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
+        result = await client.call_tool("ask")
+        assert result.data == "got a"
+
+
 async def test_validation_allows_enum_arrays():
     """Test validation accepts arrays with enum items."""
     schema = {
