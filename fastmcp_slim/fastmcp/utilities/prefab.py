@@ -11,6 +11,8 @@ from typing import Any
 @lru_cache(maxsize=1)
 def prefab_available() -> bool:
     """Return whether Prefab UI is installed without importing it."""
+    if sys.modules.get("prefab_ui") is not None:
+        return True
     return find_spec("prefab_ui") is not None
 
 

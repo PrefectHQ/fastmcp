@@ -21,6 +21,7 @@ from fastmcp.server.providers.addressing import (
     hash_tool,
     parse_hashed_resource_uri,
 )
+from fastmcp.utilities.prefab import prefab_available
 
 if TYPE_CHECKING:
     from fastmcp.resources.base import Resource
@@ -225,6 +226,9 @@ def _walk_prefab_tools(server: FastMCP) -> list[Tool]:
 
 async def _effective_prefab_tools(server: FastMCP) -> list[Tool]:
     """Use provider and session transforms before deriving resource identity."""
+    if not prefab_available():
+        return []
+
     from fastmcp.server.providers.base import Provider
     from fastmcp.server.transforms.visibility import (
         apply_session_transforms,
