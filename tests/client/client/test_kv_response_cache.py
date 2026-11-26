@@ -25,6 +25,7 @@ from mcp_types import ListToolsResult, Tool
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.caching import (
+    _MAX_CLEAR_PAGES,
     CACHEABLE_RESULT_MODELS,
     KeyValueResponseCacheStore,
     _CacheEnvelope,
@@ -178,6 +179,63 @@ class TestClear:
 
         assert await store_a.get(key) is None
         assert await store_b.get(key) is not None  # untouched
+
+    async def test_clear_removes_more_than_one_page_of_keys(self):
+        """Backends list at most one page of keys per call; clear() keeps paging."""
+        backend = MemoryStore()
+        store = KeyValueResponseCacheStore(backend, collection="cache")
+        filler = [f"filler-{i}" for i in range(10_050)]
+        await backend.put_many(
+            filler, [{"v": i} for i in range(len(filler))], collection="cache"
+        )
+        key = _key("p1")
+        await store.set(
+            key, CacheEntry(value=_tools_result(), scope="public", expires_at=None)
+        )
+        first_page = await backend.keys(collection="cache")
+        assert KeyValueResponseCacheStore._string_key(key) not in first_page
+
+        await store.clear()
+
+        assert await store.get(key) is None
+        assert await backend.keys(collection="cache") == []
+
+    async def test_clear_stops_when_backend_deletes_nothing(self):
+        """A backend that keeps listing undeletable keys can't make clear() hang."""
+
+        class UndeletableStore(MemoryStore):
+            async def delete(self, key, *, collection=None) -> bool:
+                return False
+
+            async def delete_many(self, keys, *, collection=None) -> int:
+                return 0
+
+        backend = UndeletableStore()
+        store = KeyValueResponseCacheStore(backend, collection="cache")
+        await backend.put("stuck", {"v": 1}, collection="cache")
+
+        await store.clear()
+
+        assert await backend.keys(collection="cache") == ["stuck"]
+
+    async def test_clear_stops_when_writers_keep_adding_keys(self):
+        """Entries that keep arriving during clear() can't keep it running."""
+
+        class BusyStore(MemoryStore):
+            listings = 0
+
+            async def keys(self, collection=None, *, limit=None) -> list[str]:
+                # Another client writes a new entry before every listing.
+                self.listings += 1
+                await self.put(f"new-{self.listings}", {"v": 1}, collection=collection)
+                return await super().keys(collection=collection, limit=limit)
+
+        backend = BusyStore()
+        store = KeyValueResponseCacheStore(backend, collection="cache")
+
+        await store.clear()
+
+        assert backend.listings == _MAX_CLEAR_PAGES
 
 
 class TestAllowlist:

@@ -56,6 +56,9 @@ logger = get_logger(__name__)
 DEFAULT_CACHE_COLLECTION = "fastmcp_response_cache"
 """Collection namespace owned by one adapter instance; `clear()` never reaches beyond it."""
 
+_MAX_CLEAR_PAGES = 1_000
+"""Most key pages one `clear()` deletes, so clients that keep writing can't keep it running."""
+
 
 def _cacheable_result_models() -> dict[str, type[CacheableResult]]:
     """Allowlist of `{class name: model}` for cacheable result types.
@@ -189,17 +192,32 @@ class KeyValueResponseCacheStore:
     async def clear(self) -> None:
         """Clear this adapter's collection only.
 
-        Prefers deleting each enumerated key (which leaves the collection
-        usable), and falls back to whole-collection destruction. Against a
-        backend that supports neither, this is a no-op (entries age out by TTL)
-        and a warning is logged once. Either path is scoped to this adapter's
-        own collection, so a shared store's other tenants are never touched.
+        Prefers deleting enumerated keys page by page until none are listed
+        (which leaves the collection usable), and falls back to whole-collection
+        destruction. Against a backend that supports neither, this is a no-op
+        (entries age out by TTL) and a warning is logged once. Either path is
+        scoped to this adapter's own collection, so a shared store's other
+        tenants are never touched.
+
+        Enumeration is only as complete as the backend's key listing: a backend
+        that can list no keys while entries remain leaves those entries to age
+        out by TTL.
         """
         storage = self._storage
         if isinstance(storage, AsyncEnumerateKeysProtocol):
-            keys = await storage.keys(collection=self._collection)
-            for stored_key in keys:
-                await storage.delete(key=stored_key, collection=self._collection)
+            # Backends list at most one page of keys per call, so keep deleting
+            # until none are left. Stop if a page deletes nothing, so a backend
+            # that keeps listing undeletable keys can't loop forever, and after
+            # a bounded number of pages, so concurrent writers can't either.
+            for _ in range(_MAX_CLEAR_PAGES):
+                keys = await storage.keys(collection=self._collection)
+                if not keys:
+                    break
+                deleted = await storage.delete_many(
+                    keys=keys, collection=self._collection
+                )
+                if not deleted:
+                    break
             return
         if isinstance(storage, AsyncDestroyCollectionProtocol):
             await storage.destroy_collection(collection=self._collection)
