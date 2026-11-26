@@ -642,3 +642,43 @@ class TestEscapedSchemaNameReferences:
         assert schema["$defs"]["Alias One"] == {"type": "string"}
         assert schema["properties"]["slashed"] == {"$ref": "#/$defs/a~1b"}
         assert schema["properties"]["spaced"] == {"$ref": "#/$defs/Alias%20One"}
+
+
+def test_schema_definitions_follow_component_order():
+    """`$defs` order must not depend on the per-process string hash seed (#6839)."""
+    names = [f"Model{i}" for i in range(12)]
+    schemas: dict = {
+        name: {"type": "object", "properties": {"x": {"type": "string"}}}
+        for name in names
+    }
+    schemas["Body"] = {
+        "type": "object",
+        "properties": {
+            name.lower(): {"$ref": f"#/components/schemas/{name}"} for name in names
+        },
+    }
+    body_ref = {"schema": {"$ref": "#/components/schemas/Body"}}
+    spec = {
+        "openapi": "3.1.0",
+        "info": {"title": "Test", "version": "1.0.0"},
+        "components": {"schemas": schemas},
+        "paths": {
+            "/items": {
+                "post": {
+                    "operationId": "create_item",
+                    "requestBody": {"content": {"application/json": body_ref}},
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "content": {"application/json": body_ref},
+                        }
+                    },
+                }
+            }
+        },
+    }
+
+    route = parse_openapi_to_http_routes(spec)[0]
+
+    assert list(route.request_schemas) == names
+    assert list(route.response_schemas) == names + ["Body"]

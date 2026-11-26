@@ -693,7 +693,9 @@ class OpenAPIParser(
 
         # Return only the needed input schemas
         return {
-            name: all_schemas[name] for name in needed_schemas if name in all_schemas
+            name: schema
+            for name, schema in all_schemas.items()
+            if name in needed_schemas
         }
 
     def _extract_output_schema_dependencies(
@@ -734,7 +736,9 @@ class OpenAPIParser(
                     )
 
         return {
-            name: all_schemas[name] for name in needed_schemas if name in all_schemas
+            name: schema
+            for name, schema in all_schemas.items()
+            if name in needed_schemas
         }
 
     def parse(self) -> list[HTTPRoute]:
