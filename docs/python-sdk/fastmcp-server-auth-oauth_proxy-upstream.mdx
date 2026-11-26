@@ -24,13 +24,19 @@ authlib's wire behavior exactly:
 - `expires_at` computed onto the returned token dict
 - the previous refresh token injected into the response when the server does
   not rotate it
-- `OAuthError` (authlib's httpx-free core error class) raised for RFC 6749
+- `OAuthError` raised for RFC 6749
   error responses, and 5xx responses raised as HTTP status errors
 
 
 ## Classes
 
-### `AsyncOAuth2Client` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OAuthError` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L39" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+An upstream OAuth error response (RFC 6749 §5.2).
+
+
+### `AsyncOAuth2Client` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Minimal async OAuth2 client for upstream token-endpoint interactions.
@@ -43,13 +49,13 @@ Drop-in replacement for the slice of authlib's `AsyncOAuth2Client` that
 
 **Methods:**
 
-#### `aclose` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `aclose` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 aclose(self) -> None
 ```
 
-#### `fetch_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `fetch_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 fetch_token(self, url: str, **params: Any) -> dict[str, Any]
@@ -60,7 +66,7 @@ Exchange an authorization grant for tokens at the token endpoint.
 Falsy parameters are dropped from the request body, matching authlib.
 
 
-#### `refresh_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L126" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `refresh_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/oauth_proxy/upstream.py#L143" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 refresh_token(self, url: str, **params: Any) -> dict[str, Any]

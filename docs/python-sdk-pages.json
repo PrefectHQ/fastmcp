@@ -44,7 +44,6 @@
         ]
       },
       "python-sdk/fastmcp-cli-discovery",
-      "python-sdk/fastmcp-cli-events",
       "python-sdk/fastmcp-cli-generate",
       {
         "group": "install",
@@ -131,16 +130,6 @@
         "group": "client",
         "pages": [
           "python-sdk/fastmcp-experimental-client-code_mode"
-        ]
-      },
-      {
-        "group": "events",
-        "pages": [
-          "python-sdk/fastmcp-experimental-events-__init__",
-          "python-sdk/fastmcp-experimental-events-client",
-          "python-sdk/fastmcp-experimental-events-extension",
-          "python-sdk/fastmcp-experimental-events-models",
-          "python-sdk/fastmcp-experimental-events-subscription"
         ]
       },
       {

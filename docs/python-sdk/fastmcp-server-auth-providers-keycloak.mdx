@@ -13,7 +13,11 @@ Keycloak authentication provider for FastMCP.
 ### `KeycloakAuthProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/keycloak.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-Keycloak authentication provider using Dynamic Client Registration (DCR).
+Keycloak authentication provider.
+
+Keycloak handles client registration: MCP clients register through Dynamic
+Client Registration (DCR), or through Client ID Metadata Documents (CIMD) when
+Keycloak's experimental `cimd` feature is enabled.
 
 Requires Keycloak 26.6.0 or later, which includes the fix for DCR compatibility
 with MCP clients (https://github.com/keycloak/keycloak/pull/45309).
