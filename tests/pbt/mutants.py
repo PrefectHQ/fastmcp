@@ -30,8 +30,47 @@ AUTHZ = "fastmcp_slim/fastmcp/server/middleware/authorization.py"
 CACHING = "fastmcp_slim/fastmcp/server/middleware/caching.py"
 RATE = "fastmcp_slim/fastmcp/server/middleware/rate_limiting.py"
 MW = "tests/pbt/test_middleware.py"
+WEBHOOKS = "fastmcp_events/fastmcp_events/webhooks.py"
+WEBHOOKS_TEST = "tests/pbt/test_webhook_signing.py"
 
 MUTANTS: dict[str, list[dict[str, str]]] = {
+    "webhook_signing": [
+        {
+            "name": "timestamp left out of the signed string",
+            "file": WEBHOOKS,
+            "old": 'signed = f"{message_id}.{timestamp}.".encode() + body',
+            "new": 'signed = f"{message_id}..".encode() + body',
+            "test": WEBHOOKS_TEST,
+        },
+        {
+            "name": "future timestamps accepted",
+            "file": WEBHOOKS,
+            "old": "if abs(time.time() - sent) > tolerance:",
+            "new": "if time.time() - sent > tolerance:",
+            "test": WEBHOOKS_TEST,
+        },
+        {
+            "name": "only the first offered signature checked",
+            "file": WEBHOOKS,
+            "old": "for given in offered)",
+            "new": "for given in offered[:1])",
+            "test": WEBHOOKS_TEST,
+        },
+        {
+            "name": "only the first secret tried",
+            "file": WEBHOOKS,
+            "old": "for secret in candidates:",
+            "new": "for secret in candidates[:1]:",
+            "test": WEBHOOKS_TEST,
+        },
+        {
+            "name": "non-ASCII signature compared as str",
+            "file": WEBHOOKS,
+            "old": "offered = [given.encode() for given in signatures.split()]",
+            "new": "offered = [given.encode() if given.isascii() else given for given in signatures.split()]",
+            "test": WEBHOOKS_TEST,
+        },
+    ],
     "uri_template": [
         {
             "name": "simple value keeps slash",

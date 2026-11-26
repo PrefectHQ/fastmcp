@@ -260,17 +260,91 @@ The extension serves the event types of the server it is added to. A server moun
 
 ## Webhook delivery
 
-With webhooks, the client hands your server an `https` URL and a secret, and your server POSTs each event there, signed with [Standard Webhooks](https://www.standardwebhooks.com/). The client doesn't have to stay connected; it renews a lease by subscribing again. Pass a `WebhookDelivery` to turn it on:
+With webhooks, the client hands your server an `https` URL and a secret and goes away. Your server POSTs each event to that URL, signed with [Standard Webhooks](https://www.standardwebhooks.com/), until the client stops renewing. Three pieces: the server turns on `WebhookDelivery`, the client subscribes once, and the receiver checks each POST.
 
-```python
+<CodeGroup>
+```python server.py
+from pydantic import BaseModel
+
 from fastmcp import FastMCP
 from fastmcp_events import EventsExtension, WebhookDelivery
 
 mcp = FastMCP("Alerts", auth=...)
-mcp.add_extension(EventsExtension(webhooks=WebhookDelivery()))
+events = EventsExtension(webhooks=WebhookDelivery())
+mcp.add_extension(events)
+
+
+@events.event("alert.fired")
+class AlertFired(BaseModel):
+    """An alert fired."""
+
+    service: str
+    severity: str
+
+
+@mcp.tool
+async def fire_alert(service: str, severity: str) -> str:
+    await events.emit(AlertFired(service=service, severity=severity))
+    return "fired"
 ```
 
-Webhook subscriptions require an authenticated client. The server challenges a URL before its first delivery, refuses private and loopback addresses (`allow_private_addresses=True` for local development), and never follows redirects.
+```python subscribe.py
+import asyncio
+import os
+
+from fastmcp import Client
+from fastmcp_events import EventsClientExtension, subscribe_webhook
+
+
+async def main() -> None:
+    async with Client(
+        "https://alerts.example.com/mcp",
+        auth=os.environ["ALERTS_TOKEN"],
+        extensions=[EventsClientExtension()],
+    ) as client:
+        subscription = await subscribe_webhook(
+            client,
+            "alert.fired",
+            url="https://hooks.example.com/alerts",
+            secret=os.environ["WEBHOOK_SECRET"],
+        )
+    print("renew before", subscription.refresh_before)
+
+
+asyncio.run(main())
+```
+
+```python receiver.py
+import os
+
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
+
+from fastmcp_events import WebhookVerificationError, verify_webhook
+
+SECRET = os.environ["WEBHOOK_SECRET"]
+
+
+async def alerts(request: Request) -> Response:
+    try:
+        message = verify_webhook(SECRET, request.headers, await request.body())
+    except WebhookVerificationError:
+        return Response(status_code=401)
+    if message.get("type") == "verification":
+        return JSONResponse({"challenge": message["challenge"]})
+    print(message["data"])
+    return Response(status_code=204)
+
+
+app = Starlette(routes=[Route("/alerts", alerts, methods=["POST"])])
+```
+</CodeGroup>
+
+Make the secret once with `new_webhook_secret()` and give the same value to the subscriber and the receiver. The first POST to a new URL is a `verification` challenge, which the receiver echoes; after that, each POST is one event. The server needs an auth provider, because a subscription belongs to whoever made it.
+
+The server refuses private and loopback addresses (`allow_private_addresses=True` for local development), and never follows redirects.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -331,49 +405,7 @@ A push subscription can also end with an error that is not retried. When the ser
 
 ### Receiving webhooks
 
-Generate a secret, give it to your receiver, and subscribe with the receiver's URL. Subscribe again before `refresh_before` to keep the subscription.
-
-```python
-from fastmcp import Client
-from fastmcp_events import new_webhook_secret, subscribe_webhook
-
-
-async def start(client: Client) -> None:
-    secret = new_webhook_secret()
-    subscription = await subscribe_webhook(
-        client,
-        "alert.fired",
-        {"severity": "high"},
-        url="https://hooks.example.com/mcp/alerts",
-        secret=secret,
-    )
-    print(subscription.id, subscription.refresh_before)
-```
-
-The receiver checks each POST with `verify_webhook()` and echoes the challenge on the first one. Answer `2xx` once the event is stored.
-
-```python
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
-
-from fastmcp_events import WebhookVerificationError, verify_webhook
-
-SECRET = "whsec_..."
-
-
-async def receive(request: Request) -> Response:
-    body = await request.body()
-    try:
-        message = verify_webhook(SECRET, request.headers, body)
-    except WebhookVerificationError:
-        return Response(status_code=401)
-    if message.get("type") == "verification":
-        return JSONResponse({"challenge": message["challenge"]})
-    print(message)
-    return Response(status_code=204)
-```
-
-`unsubscribe_webhook()` ends a subscription right away; otherwise it lapses when you stop refreshing.
+`subscribe_webhook()` and `verify_webhook()` are shown together in [Webhook delivery](#webhook-delivery). Call `subscribe_webhook()` again before `refresh_before` to keep the subscription, and store the `cursor` each event carries: subscribing with it after a lapse replays what you missed. Answer `2xx` once an event is stored, and drop any `webhook-id` you've already seen. `unsubscribe_webhook()` ends a subscription right away; otherwise it lapses when you stop renewing.
 
 To try a server from the terminal, `fastmcp experimental events watch` does the same thing and prints each event; see [the CLI](/cli/client#watching-events).
 

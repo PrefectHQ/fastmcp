@@ -103,10 +103,12 @@ def verify_webhook(
         raise WebhookVerificationError("Invalid webhook-timestamp") from None
     if abs(time.time() - sent) > tolerance:
         raise WebhookVerificationError("Delivery timestamp is outside the tolerance")
-    offered = signatures.split()
+    # Compared as bytes: `compare_digest` raises on a non-ASCII str, and the
+    # header is whatever the sender put there.
+    offered = [given.encode() for given in signatures.split()]
     candidates = [secrets] if isinstance(secrets, str) else list(secrets)
     for secret in candidates:
-        expected = sign(secret, message_id, sent, body)
+        expected = sign(secret, message_id, sent, body).encode()
         if any(hmac.compare_digest(expected, given) for given in offered):
             return json.loads(body)
     raise WebhookVerificationError("No signature matches")

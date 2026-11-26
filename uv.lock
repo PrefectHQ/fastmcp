@@ -850,6 +850,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "standardwebhooks" },
     { name = "ty" },
 ]
 
@@ -898,6 +899,7 @@ dev = [
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "pytest-xdist", specifier = ">=3.6.1" },
     { name = "ruff", specifier = ">=0.12.8" },
+    { name = "standardwebhooks", specifier = ">=1.3.0" },
     { name = "ty", specifier = ">=0.0.104" },
 ]
 
@@ -3117,6 +3119,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/28/e3/55dcc2cfbc3ca9c29519eb6884dd1415ecb53b0e934862d3559ddcb7e20b/stack_data-0.6.3.tar.gz", hash = "sha256:836a778de4fec4dcd1dcd89ed8abff8a221f58308462e1c4aa2a3cf30148f0b9", size = 44707, upload-time = "2023-09-30T13:58:05.479Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/7b/ce1eafaf1a76852e2ec9b22edecf1daa58175c090266e9f6c64afcd81d91/stack_data-0.6.3-py3-none-any.whl", hash = "sha256:d5558e0c25a4cb0853cddad3d77da9891a08cb85dd9f9f91b9f8cd66e511e695", size = 24521, upload-time = "2023-09-30T13:58:03.53Z" },
+]
+
+[[package]]
+name = "standardwebhooks"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6d/41/c53141ee70970c3e553e90b4aaa65cdcbdd72fabbab91ff3b0a63f902526/standardwebhooks-1.3.0.tar.gz", hash = "sha256:ee071d454f1d349802678d4990fdebd6c2d629be11be294f561343b6db200608", size = 4987, upload-time = "2026-11-17T21:27:13.524Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/e4/4e66444745a07b6cfeb0c3b058fe1d042b5928c8b8c0f3047d3610895aed/standardwebhooks-1.3.0-py3-none-any.whl", hash = "sha256:5bec388e29d3e8c6211af66affa1430ac801cb02f3b132484ef4b8f89d32a5ad", size = 5556, upload-time = "2026-11-17T21:27:12.306Z" },
 ]
 
 [[package]]

@@ -22,6 +22,7 @@ bugs (mutants) show it can fail.
 | `test_middleware.py` | `AuthMiddleware` lists only what a caller can call and names every scope a denial still needs; `ResponseCachingMiddleware` answers like no cache for every caller, version and argument; both rate limiters admit no more than their limit under a fake clock |
 | `test_elicitation.py` | a form `ctx.elicit()` requests is one the MCP spec's primitive shapes describe, and what the user fills in reaches the server as the value they chose |
 | `test_openapi_params.py` | path, header, cookie and object query parameters, under drawn `style`/`explode`, read back as sent by a decoder written from the OpenAPI rules |
+| `test_webhook_signing.py` | fastmcp-events webhook signatures match the `standardwebhooks` reference both ways; any change to body, id, timestamp or secret fails; hostile headers only ever raise `WebhookVerificationError` |
 | `mutants.py` | planted bugs and their catch rate across seeds (not collected by pytest) |
 
 ## profiles
