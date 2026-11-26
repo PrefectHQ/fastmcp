@@ -859,7 +859,11 @@ class FastMCP(
                 - Tools become "namespace_toolname"
                 - Resources become "protocol://namespace/path"
                 - Prompts become "namespace_promptname"
+
+        Raises:
+            ValueError: If adding the provider would create a composition cycle.
         """
+        self._check_provider_cycle(provider)
         self._validate_provider_extensions(provider)
         self._register_provider_extensions(provider)
         super().add_provider(provider, namespace=namespace)
@@ -2671,6 +2675,9 @@ class FastMCP(
             tool_names: Optional mapping of original tool names to custom names. Use this
                 to override namespaced names. Keys are the original tool names from the
                 mounted server.
+
+        Raises:
+            ValueError: If mounting the server would create a composition cycle.
         """
         from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
 

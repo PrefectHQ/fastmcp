@@ -148,10 +148,14 @@ class AggregateProvider(Provider):
                 - Tools become "namespace_toolname"
                 - Resources become "protocol://namespace/path"
                 - Prompts become "namespace_promptname"
+
+        Raises:
+            ValueError: If adding the provider would create a composition cycle.
         """
         # Import here to avoid circular imports
         from fastmcp.server.server import FastMCP
 
+        self._check_provider_cycle(provider)
         self._validate_provider_extensions(provider)
 
         # Auto-wrap FastMCP servers to ensure middleware is invoked
@@ -177,6 +181,29 @@ class AggregateProvider(Provider):
             for scope, stack in attached:
                 scope.stack.enter_context(stack.pop_all())
             self.providers.append(provider)
+
+    def _check_provider_cycle(self, provider: Provider) -> None:
+        """Reject a new edge back to this aggregate before changing any state."""
+        from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
+        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
+
+        pending = [provider]
+        visited: set[int] = set()
+        while pending:
+            current = pending.pop()
+            if current is self:
+                raise ValueError(
+                    "Cannot add provider: cycle detected in the provider graph"
+                )
+            if id(current) in visited:
+                continue
+            visited.add(id(current))
+            if isinstance(current, AggregateProvider):
+                pending.extend(current.providers)
+            elif isinstance(current, FastMCPProvider):
+                pending.append(current.server)
+            elif isinstance(current, _WrappedProvider):
+                pending.append(current._inner)
 
     def _validate_provider_extensions(self, provider: Provider) -> None:
         """Require a provider's bundles in every active runtime using this aggregate."""
