@@ -71,7 +71,7 @@ class EventRegistration:
         )
         self.reader: EventReader | None = None
         self._hook: Callable[..., Any] | None = None
-        self._arguments: Callable[..., dict[str, Any]] = lambda **kwargs: kwargs
+        self._arguments: Callable[..., dict[str, Any]]
         hook = inspect.getattr_static(model, "for_subscription", None)
         if hook is not None:
             if not inspect.isfunction(hook):
@@ -127,6 +127,14 @@ class EventRegistration:
 
     def arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """A subscription's arguments, validated and coerced for the hook."""
+        if self._hook is None:
+            if arguments:
+                raise MCPError(
+                    code=INVALID_PARAMS,
+                    message=f"{self.name} takes no arguments, got "
+                    + ", ".join(sorted(arguments)),
+                )
+            return {}
         try:
             return self._arguments(**arguments)
         except ValidationError as error:
