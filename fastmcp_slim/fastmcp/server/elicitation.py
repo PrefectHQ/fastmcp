@@ -9,7 +9,7 @@ from mcp.server.elicitation import (
     CancelledElicitation,
     DeclinedElicitation,
 )
-from pydantic import BaseModel
+from pydantic import AliasChoices, AliasPath, BaseModel, ValidationError
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 from pydantic_core import core_schema
 from typing_extensions import TypeVar
@@ -130,6 +130,72 @@ class ElicitationJsonSchema(GenerateJsonSchema):
         # A `None` default has no meaning once the null type is gone
         if json_schema.get("default") is None:
             json_schema.pop("default", None)
+        elif (
+            json_schema.get("type") == "string"
+            and "enum" in json_schema
+            and isinstance(json_schema.get("default"), int | float)
+            and not isinstance(json_schema.get("default"), bool)
+        ):
+            # A numeric choice rendered as a string enum carries its default
+            # in the same string form.
+            json_schema["default"] = str(json_schema["default"])
+        elif (
+            json_schema.get("type") == "array"
+            and isinstance(json_schema.get("items"), dict)
+            and isinstance(json_schema["items"].get("enum"), list)
+            and isinstance(json_schema.get("default"), list)
+        ):
+            # A multi-select default lists the same stringified choices as
+            # the items enum.
+            items_enum = json_schema["items"]["enum"]
+            json_schema["default"] = [
+                str(value)
+                if isinstance(value, int | float)
+                and not isinstance(value, bool)
+                and str(value) in items_enum
+                else value
+                for value in json_schema["default"]
+            ]
+        return json_schema
+
+    @staticmethod
+    def _stringify_numeric_enum(json_schema: JsonSchemaValue) -> JsonSchemaValue:
+        """Render numeric `enum`/`const` choices as MCP string enums.
+
+        MCP 2025-11-25 enums are string-only, so an integer or float
+        `Literal` or `Enum` must not go on the wire as an integer/number
+        `enum`: spec clients read that shape as a free number and drop the
+        choices. Boolean choices are left alone: they have no string-enum
+        form and are out of scope here.
+        """
+        if "enum" in json_schema:
+            values = json_schema["enum"]
+            if isinstance(values, list) and values:
+
+                def is_number(v: Any) -> bool:
+                    return isinstance(v, int | float) and not isinstance(v, bool)
+
+                if any(map(is_number, values)) and all(
+                    isinstance(v, str) or is_number(v) for v in values
+                ):
+                    json_schema["enum"] = [
+                        str(v) if is_number(v) else v for v in values
+                    ]
+                    if json_schema.get("type") in {"integer", "number"}:
+                        json_schema["type"] = "string"
+                    elif "type" not in json_schema:
+                        # Mixed literals (e.g. Literal[1, "a"]) carry no type.
+                        json_schema["type"] = "string"
+            return json_schema
+        if "const" in json_schema:
+            value = json_schema["const"]
+            if isinstance(value, int | float) and not isinstance(value, bool):
+                # A single numeric choice is a one-option string enum, not a
+                # `const`: `const` is not a PrimitiveSchemaDefinition shape.
+                json_schema.pop("const")
+                json_schema["enum"] = [str(value)]
+                if json_schema.get("type") in {"integer", "number"}:
+                    json_schema["type"] = "string"
         return json_schema
 
     def enum_schema(self, schema: core_schema.EnumSchema) -> JsonSchemaValue:
@@ -139,7 +205,11 @@ class ElicitationJsonSchema(GenerateJsonSchema):
         Titled enums are handled separately via dict-based syntax in ctx.elicit().
         """
         # Get the base schema from parent - always use simple enum pattern
-        return super().enum_schema(schema)
+        return self._stringify_numeric_enum(super().enum_schema(schema))
+
+    def literal_schema(self, schema: core_schema.LiteralSchema) -> JsonSchemaValue:
+        """Generate literal schema, normalizing numeric choices to string enums."""
+        return self._stringify_numeric_enum(super().literal_schema(schema))
 
 
 # we can't use the low-level AcceptedElicitation because it only works with BaseModels
@@ -383,7 +453,44 @@ def handle_elicit_accept(
     # For typed schemas, validate with Pydantic
     if config.response_type is not None:
         type_adapter = get_cached_typeadapter(config.response_type)
-        validated_data = type_adapter.validate_python(content)
+        try:
+            validated_data = type_adapter.validate_python(content)
+        except ValidationError as exc:
+            # A spec client answers a string enum with strings, so a
+            # stringified numeric choice ("1") fails validation against the
+            # numeric type. Retry with exactly the strings the schema
+            # offered coerced back to numbers — but only for the fields and
+            # list items validation failed on, so a genuine string choice
+            # that merely looks numeric ("10") is never rewritten and still
+            # validates.
+            if not isinstance(content, dict):
+                raise
+            # Validation error locations use field names when the model sets
+            # loc_by_alias=False, while the schema and the wire use aliases.
+            # Translate locations to schema property names first.
+            alias_map = _field_name_to_schema_key(config.response_type)
+            failed: dict[str, set[int] | None] = {}
+            for error in exc.errors():
+                loc = error.get("loc", ())
+                if not loc or not isinstance(loc[0], str):
+                    continue
+                key = alias_map.get(loc[0], loc[0])
+                if len(loc) >= 2 and isinstance(loc[1], int):
+                    current = failed.get(key)
+                    if current is not None:
+                        current.add(loc[1])
+                    elif key not in failed:
+                        failed[key] = {loc[1]}
+                    # A bare loc already recorded means the whole field.
+                else:
+                    failed[key] = None
+            coerced = _coerce_stringified_numeric_enums(content, config.schema, failed)
+            if coerced is None:
+                raise
+            try:
+                validated_data = type_adapter.validate_python(coerced)
+            except ValidationError:
+                raise exc from None
         if isinstance(validated_data, ScalarElicitationType):
             return AcceptedElicitation[Any](data=validated_data.value)
         return AcceptedElicitation[Any](data=validated_data)
@@ -394,6 +501,126 @@ def handle_elicit_accept(
             f"Elicitation expected an empty response, but received: {content}"
         )
     return AcceptedElicitation[dict[str, Any]](data={})
+
+
+def _parse_number(value: str) -> int | float | None:
+    """Parse a stringified numeric enum choice, preferring `int`."""
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _schema_key_for_field(field: Any) -> str | None:
+    """The schema property name for a model field, if it differs from the
+    field name.
+
+    The validation alias names the property, taking precedence over `alias`;
+    an `AliasChoices` names it by its first string choice. An `AliasPath`
+    or a serialization alias does not rename the property.
+    """
+    validation_alias = field.validation_alias
+    if isinstance(validation_alias, str):
+        return validation_alias
+    if isinstance(validation_alias, AliasChoices):
+        for choice in validation_alias.choices:
+            if isinstance(choice, str):
+                return choice
+            if (
+                isinstance(choice, AliasPath)
+                and len(choice.path) == 1
+                and isinstance(choice.path[0], str)
+            ):
+                # Pydantic skips multi-segment paths when naming the
+                # property, so only a single-segment path can be the key.
+                return choice.path[0]
+    if isinstance(field.alias, str):
+        return field.alias
+    return None
+
+
+def _field_name_to_schema_key(response_type: Any) -> dict[str, str]:
+    """Map model field names to the schema property names the wire uses.
+
+    Pydantic schemas name aliased fields by their alias, but validation
+    errors report the field name when the model sets `loc_by_alias=False`.
+    Only then is a translation needed: with the default `loc_by_alias=True`
+    the locations already are aliases, and translating them would
+    mistranslate when one field's name collides with another's alias.
+    """
+    mapping: dict[str, str] = {}
+    if isinstance(response_type, type) and issubclass(response_type, BaseModel):
+        if response_type.model_config.get("loc_by_alias") is False:
+            for name, field in response_type.model_fields.items():
+                key = _schema_key_for_field(field)
+                if key is not None and key != name:
+                    mapping[name] = key
+    return mapping
+
+
+def _coerce_stringified_numeric_enums(
+    content: dict[str, Any],
+    schema: dict[str, Any],
+    fields: dict[str, set[int] | None],
+) -> dict[str, Any] | None:
+    """Coerce string answers back to the numbers a string enum stands for.
+
+    Only the given fields are touched — a list field only at the given
+    item indexes (`None` means the whole field) — and only strings the
+    schema itself offered are coerced, so a value the client was never
+    offered ("01", "3") is left alone and still rejected. Returns `None`
+    when nothing changed.
+    """
+    props = schema.get("properties", {})
+    coerced: dict[str, Any] | None = None
+    for key, value in content.items():
+        if key not in fields:
+            continue
+        prop = props.get(key)
+        if not isinstance(prop, dict):
+            continue
+        if (
+            isinstance(value, str)
+            and prop.get("type") == "string"
+            and isinstance(prop.get("enum"), list)
+            and value in prop["enum"]
+        ):
+            number = _parse_number(value)
+            if number is None:
+                continue
+            if coerced is None:
+                coerced = dict(content)
+            coerced[key] = number
+        elif (
+            isinstance(value, list)
+            and prop.get("type") == "array"
+            and isinstance(prop.get("items"), dict)
+            and isinstance(prop["items"].get("enum"), list)
+        ):
+            items_enum = prop["items"]["enum"]
+            indexes = fields[key]
+            new_list: list[Any] = []
+            changed = False
+            for index, item in enumerate(value):
+                if (
+                    (indexes is None or index in indexes)
+                    and isinstance(item, str)
+                    and item in items_enum
+                    and (number := _parse_number(item)) is not None
+                ):
+                    new_list.append(number)
+                    changed = True
+                else:
+                    new_list.append(item)
+            if changed:
+                if coerced is None:
+                    coerced = dict(content)
+                coerced[key] = new_list
+    return coerced
 
 
 def _dict_to_enum_schema(

@@ -434,13 +434,27 @@ async def _elicit(form: Form, answers: dict[str, Any]) -> Any:
     return got[0]
 
 
+def wire_answer(s: Spec, v: Any) -> Any:
+    """What a spec client sends for the value the user chose.
+
+    MCP 2025-11-25 enums are string-only, so an integer `Literal` or `Enum`
+    choice goes on the wire as a string ("1") and the server coerces it back
+    to the number (1) or member. Every other kind answers with its own JSON.
+    """
+    if s.kind in INT_CHOICES:
+        if isinstance(v, enum.Enum):
+            return str(v.value)
+        return str(v)
+    return v
+
+
 @given(data=st.data(), form=forms())
 def test_the_server_gets_what_the_user_chose(data, form):
     chosen: dict[str, Any] = {}
     for name, s in form.fields.items():
         if s.mode == "required" or data.draw(st.booleans(), label=f"fill {name}"):
             chosen[name] = data.draw(values(s), label=name)
-    answers = {k: to_json(v) for k, v in chosen.items()}
+    answers = {k: to_json(wire_answer(form.fields[k], v)) for k, v in chosen.items()}
     note(f"answers {answers}")
     want = form.expected(chosen)
     try:

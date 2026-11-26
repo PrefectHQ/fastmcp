@@ -437,6 +437,302 @@ def test_choice_shorthand_rejects_values_not_offered(response_type, valid, inval
         handle_elicit_accept(config, {"value": invalid})
 
 
+def test_integer_choices_render_as_string_enum_and_accept_string_values():
+    """MCP 2025-11-25 enums are string-only: integer choices go on the wire
+    as string enums, and a spec client's string answer coerces back."""
+    from typing import Literal
+
+    class Rating(Enum):
+        LOW = 1
+        HIGH = 2
+
+    lit_config = parse_elicit_response_type(Literal[1, 2])
+    assert lit_config.schema["properties"]["value"] == {
+        "enum": ["1", "2"],
+        "title": "Value",
+        "type": "string",
+    }
+    assert handle_elicit_accept(lit_config, {"value": "1"}).data == 1
+    # A numeric answer still validates directly.
+    assert handle_elicit_accept(lit_config, {"value": 2}).data == 2
+    # A value that was never offered is still rejected, not coerced.
+    with pytest.raises(ValidationError):
+        handle_elicit_accept(lit_config, {"value": "3"})
+
+    enum_config = parse_elicit_response_type(Rating)
+    assert enum_config.schema["properties"]["value"] == {
+        "enum": ["1", "2"],
+        "title": "Rating",
+        "type": "string",
+    }
+    assert handle_elicit_accept(enum_config, {"value": "2"}).data is Rating.HIGH
+
+
+def test_single_integer_literal_renders_as_string_enum():
+    """A one-option integer choice is a string enum, not an integer `const`."""
+    from typing import Literal
+
+    config = parse_elicit_response_type(Literal[1])
+    assert config.schema["properties"]["value"] == {
+        "enum": ["1"],
+        "title": "Value",
+        "type": "string",
+    }
+    assert handle_elicit_accept(config, {"value": "1"}).data == 1
+
+
+def test_numeric_multi_select_renders_as_string_enum():
+    """Multi-select integer/float choices use string enum items."""
+    from typing import Literal
+
+    int_config = parse_elicit_response_type(list[Literal[1, 2]])
+    assert int_config.schema["properties"]["value"] == {
+        "type": "array",
+        "items": {"enum": ["1", "2"], "type": "string"},
+        "title": "Value",
+    }
+    assert handle_elicit_accept(int_config, {"value": ["2", "1"]}).data == [2, 1]
+
+    class Score(Enum):
+        LOW = 1.5
+        HIGH = 2.5
+
+    float_config = parse_elicit_response_type(list[Score])
+    assert float_config.schema["properties"]["value"]["items"] == {
+        "enum": ["1.5", "2.5"],
+        "title": "Score",
+        "type": "string",
+    }
+    assert handle_elicit_accept(float_config, {"value": ["2.5"]}).data == [Score.HIGH]
+
+
+def test_float_and_mixed_literals_render_as_string_enum():
+    """Float enums and mixed numeric/string literals are string enums too."""
+    from typing import Literal
+
+    class Score(Enum):
+        LOW = 1.5
+        HIGH = 2.5
+
+    float_config = parse_elicit_response_type(Score)
+    assert float_config.schema["properties"]["value"] == {
+        "enum": ["1.5", "2.5"],
+        "title": "Score",
+        "type": "string",
+    }
+    assert handle_elicit_accept(float_config, {"value": "2.5"}).data is Score.HIGH
+
+    mixed_config = parse_elicit_response_type(Literal[1, "a"])
+    assert mixed_config.schema["properties"]["value"] == {
+        "enum": ["1", "a"],
+        "title": "Value",
+        "type": "string",
+    }
+    assert handle_elicit_accept(mixed_config, {"value": "1"}).data == 1
+    assert handle_elicit_accept(mixed_config, {"value": "a"}).data == "a"
+
+
+def test_integer_enum_default_is_stringified():
+    """A defaulted integer-enum field carries its default as a string."""
+
+    class Rating(Enum):
+        LOW = 1
+        HIGH = 2
+
+    class Model(BaseModel):
+        rating: Rating = Field(default=Rating.LOW)
+
+    schema = get_elicitation_schema(Model)
+    assert schema["properties"]["rating"] == {
+        "enum": ["1", "2"],
+        "title": "Rating",
+        "type": "string",
+        "default": "1",
+    }
+
+    config = parse_elicit_response_type(Model)
+    assert handle_elicit_accept(config, {}).data == Model(rating=Rating.LOW)
+    assert handle_elicit_accept(config, {"rating": "2"}).data == Model(
+        rating=Rating.HIGH
+    )
+
+
+def test_numeric_string_choice_beside_integer_choice_is_not_coerced():
+    """A string choice that looks numeric ("10") must survive beside an
+    integer choice: only the field validation failed on is coerced."""
+    from typing import Literal
+
+    class Model(BaseModel):
+        count: Literal[1, 2]
+        code: Literal["10", "20"]
+
+    config = parse_elicit_response_type(Model)
+    assert handle_elicit_accept(config, {"count": "1", "code": "10"}).data == Model(
+        count=1, code="10"
+    )
+    with pytest.raises(ValidationError):
+        handle_elicit_accept(config, {"count": "1", "code": "99"})
+
+
+def test_multi_select_default_is_stringified():
+    """A defaulted multi-select carries its default as string choices."""
+    from typing import Literal
+
+    class Model(BaseModel):
+        choices: list[Literal[1, 2]] = Field(default=[1])
+
+    schema = get_elicitation_schema(Model)
+    assert schema["properties"]["choices"] == {
+        "default": ["1"],
+        "items": {"enum": ["1", "2"], "type": "string"},
+        "title": "Choices",
+        "type": "array",
+    }
+
+    config = parse_elicit_response_type(Model)
+    assert handle_elicit_accept(config, {}).data == Model(choices=[1])
+    assert handle_elicit_accept(config, {"choices": ["2"]}).data == Model(choices=[2])
+
+
+def test_mixed_multi_select_coerces_only_failing_items():
+    """In a mixed multi-select only the failing items coerce: a genuine
+    numeric-looking string choice ("10") next to an integer choice survives."""
+    from typing import Literal
+
+    class Model(BaseModel):
+        choices: list[Literal[1, "10"]]
+
+    config = parse_elicit_response_type(Model)
+    assert config.schema["properties"]["choices"]["items"] == {
+        "enum": ["1", "10"],
+        "type": "string",
+    }
+    assert handle_elicit_accept(config, {"choices": ["1", "10"]}).data == Model(
+        choices=[1, "10"]
+    )
+    with pytest.raises(ValidationError):
+        handle_elicit_accept(config, {"choices": ["3", "10"]})
+
+
+def test_aliased_integer_choice_coerces():
+    """An aliased field coerces too: error locations report the field name
+    when the model sets loc_by_alias=False, while the schema uses the alias."""
+    from typing import Literal
+
+    from pydantic import ConfigDict
+
+    class Model(BaseModel):
+        model_config = ConfigDict(loc_by_alias=False)
+        choice: Literal[1, 2] = Field(alias="selection")
+
+    config = parse_elicit_response_type(Model)
+    assert config.schema["properties"]["selection"] == {
+        "enum": ["1", "2"],
+        "title": "Selection",
+        "type": "string",
+    }
+    assert handle_elicit_accept(config, {"selection": "1"}).data == (
+        Model.model_validate({"selection": 1})
+    )
+
+
+def test_aliased_fields_do_not_mistranslate_by_default():
+    """With the default loc_by_alias=True, error locations already use
+    aliases, so no translation happens — even when one field's name is
+    another field's alias."""
+    from typing import Literal
+
+    class Model(BaseModel):
+        first: Literal[1] = Field(alias="second")
+        second: Literal[2] = Field(alias="third")
+
+    config = parse_elicit_response_type(Model)
+    assert handle_elicit_accept(
+        config, {"second": "1", "third": "2"}
+    ).data == Model.model_validate({"second": 1, "third": 2})
+
+
+def test_alias_choices_integer_choice_coerces():
+    """An AliasChoices validation alias names the schema property by its
+    first choice, and coercion follows it when loc_by_alias=False."""
+    from typing import Literal
+
+    from pydantic import AliasChoices, ConfigDict
+
+    class Model(BaseModel):
+        model_config = ConfigDict(loc_by_alias=False)
+        choice: Literal[1, 2] = Field(
+            validation_alias=AliasChoices("wire", "alternate")
+        )
+
+    config = parse_elicit_response_type(Model)
+    assert config.schema["properties"]["wire"] == {
+        "enum": ["1", "2"],
+        "title": "Wire",
+        "type": "string",
+    }
+    assert handle_elicit_accept(config, {"wire": "1"}).data == (
+        Model.model_validate({"wire": 1})
+    )
+
+
+def test_alias_choices_skips_multi_segment_alias_path():
+    """A multi-segment AliasPath inside AliasChoices does not name the
+    schema property — the next string choice does — so coercion follows
+    that, not the path's first segment."""
+    from typing import Literal
+
+    from pydantic import AliasChoices, AliasPath, ConfigDict
+
+    class Model(BaseModel):
+        model_config = ConfigDict(loc_by_alias=False)
+        choice: Literal[1, 2] = Field(
+            validation_alias=AliasChoices(AliasPath("nested", "choice"), "choice")
+        )
+
+    config = parse_elicit_response_type(Model)
+    assert config.schema["properties"]["choice"] == {
+        "enum": ["1", "2"],
+        "title": "Choice",
+        "type": "string",
+    }
+    assert handle_elicit_accept(config, {"choice": "1"}).data == (
+        Model.model_validate({"choice": 1})
+    )
+
+
+async def test_integer_choice_round_trips_through_client_as_string():
+    """End to end: a spec client answers the string enum with a string."""
+
+    class Rating(Enum):
+        LOW = 1
+        HIGH = 2
+
+    mcp = FastMCP("elicit-int")
+
+    @mcp.tool
+    async def ask(ctx: Context) -> str:
+        result = await ctx.elicit("pick one", response_type=Rating)
+        assert result.action == "accept"
+        assert isinstance(result, AcceptedElicitation)
+        return f"got {result.data.name}"
+
+    async def elicitation_handler(message, response_type, params, context):
+        # A spec client sees the string enum and answers with a string.
+        assert params.requested_schema["properties"]["value"] == {
+            "enum": ["1", "2"],
+            "title": "Rating",
+            "type": "string",
+        }
+        return {"value": "2"}
+
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
+        result = await client.call_tool("ask")
+        assert result.data == "got HIGH"
+
+
 async def test_validation_allows_enum_arrays():
     """Test validation accepts arrays with enum items."""
     schema = {
