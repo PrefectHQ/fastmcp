@@ -331,11 +331,7 @@ class FunctionPrompt(Prompt):
                                     converted_kwargs[param_name] = (
                                         adapter.validate_json(param_value)
                                     )
-                                except (
-                                    ValueError,
-                                    TypeError,
-                                    pydantic_core.ValidationError,
-                                ):
+                                except pydantic_core.ValidationError:
                                     converted_kwargs[param_name] = python_value
                     except pydantic_core.ValidationError as e:
                         # An unconvertible argument is a client error. Not chained,
