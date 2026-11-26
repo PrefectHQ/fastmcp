@@ -369,6 +369,19 @@ class TestFormatToolSignature:
         )
         assert format_tool_signature(tool) == "my_tool(q: str) -> dict"
 
+    def test_wrapped_output_schema_shows_result_type(self):
+        tool = self._make_tool(
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {"type": "array", "items": {"type": "integer"}}
+                },
+                "required": ["result"],
+                "x-fastmcp-wrap-result": True,
+            },
+        )
+        assert format_tool_signature(tool) == "my_tool() -> list"
+
     def test_anyof_type(self):
         tool = self._make_tool(
             properties={"value": {"anyOf": [{"type": "string"}, {"type": "integer"}]}},
@@ -854,6 +867,15 @@ class TestListCommandCLI:
         captured = capsys.readouterr()
         assert "greet" in captured.out
         assert "add" in captured.out
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_list_shows_return_type_of_wrapped_results(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        await list_command("fake://server")
+        captured = capsys.readouterr()
+        assert "greet(name: str) -> str" in captured.out
+        assert "add(a: int, b: int) -> int" in captured.out
 
     @pytest.mark.usefixtures("_patch_client")
     async def test_list_json(self, capsys: pytest.CaptureFixture[str]):

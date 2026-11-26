@@ -552,7 +552,13 @@ def format_tool_signature(tool: mcp_types.Tool) -> str:
     sig = f"{tool.name}({', '.join(params)})"
 
     if tool.output_schema:
-        ret = _json_schema_type_to_str(tool.output_schema)
+        output_schema = tool.output_schema
+        # Non-object returns travel as {"result": ...}; show the wrapped type.
+        if output_schema.get("x-fastmcp-wrap-result"):
+            result_schema = output_schema.get("properties", {}).get("result")
+            if isinstance(result_schema, dict):
+                output_schema = result_schema
+        ret = _json_schema_type_to_str(output_schema)
         sig += f" -> {ret}"
 
     return sig
