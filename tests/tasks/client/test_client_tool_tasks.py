@@ -10,6 +10,7 @@ transport, since tasks are modern-only.
 from __future__ import annotations
 
 import asyncio
+from typing import cast
 
 import pytest
 from fastmcp_tasks.models import MISSING_REQUIRED_CLIENT_CAPABILITY
@@ -56,6 +57,89 @@ async def test_tool_task_result_returns_parsed_result(tool_task_server: FastMCP)
         task = await call_tool_task(client, "multiply", {"a": 6, "b": 7})
         result = await task.result()
         assert result.data == 42
+
+
+@pytest.mark.parametrize("version", [None, "1.0"])
+@pytest.mark.parametrize("raise_on_error", [True, False])
+async def test_tool_task_result_validates_output_schema(
+    version: str | None, raise_on_error: bool
+) -> None:
+    mcp = FastMCP("invalid-task-output")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(version=version, task=True)
+    async def liar() -> int:
+        return cast(int, "oops")  # Deliberately violate the exposed schema.
+
+    async with Client(mcp) as client:
+        with pytest.raises(RuntimeError, match="Invalid structured content"):
+            await client.call_tool("liar", version=version)
+
+        task = await call_tool_task(
+            client, "liar", version=version, raise_on_error=raise_on_error
+        )
+        with pytest.raises(RuntimeError, match="Invalid structured content"):
+            await task.result()
+
+
+@pytest.mark.parametrize(
+    ("meta_version", "version", "expected_data"),
+    [("1.0", None, None), ("2.0", "1.0", 7)],
+)
+async def test_tool_task_result_validates_the_wire_version(
+    meta_version: str, version: str | None, expected_data: int | None
+) -> None:
+    mcp = FastMCP("tool-task-wire-version")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(name="value", version="1.0", task=True)
+    async def value_v1() -> int:
+        return 7
+
+    @mcp.tool(name="value", version="2.0", task=True)
+    async def value_v2() -> str:
+        return "current"
+
+    meta = {"fastmcp": {"version": meta_version}}
+    async with Client(mcp) as client:
+        transparent = await client.call_tool("value", version=version, meta=meta)
+        task = await call_tool_task(client, "value", version=version, meta=meta)
+        explicit = await task.result()
+
+    assert explicit.structured_content == transparent.structured_content
+    assert explicit.structured_content == {"result": 7}
+    assert explicit.data == transparent.data == expected_data
+    assert meta == {"fastmcp": {"version": meta_version}}
+
+
+async def test_tool_task_result_monitors_cold_schema_lookup(
+    tool_task_server: FastMCP, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with Client(tool_task_server) as client:
+        task = await call_tool_task(client, "multiply", {"a": 6, "b": 7})
+        assert "multiply" not in client.session._tool_output_schemas
+        list_started = asyncio.Event()
+
+        async def stall_list_tools() -> None:
+            list_started.set()
+            await asyncio.Event().wait()
+
+        async def fail_session_runner() -> None:
+            await list_started.wait()
+            raise RuntimeError("session runner failed during schema lookup")
+
+        session_runner = asyncio.create_task(fail_session_runner())
+        try:
+            with monkeypatch.context() as patch:
+                patch.setattr(client.session, "list_tools", stall_list_tools)
+                patch.setattr(client._session_state, "session_task", session_runner)
+                with pytest.raises(RuntimeError, match="session runner failed"):
+                    await asyncio.wait_for(task.result(), timeout=2)
+        finally:
+            session_runner.cancel()
+            await asyncio.gather(session_runner, return_exceptions=True)
+
+        assert list_started.is_set()
 
 
 async def test_tool_task_await_syntax(tool_task_server: FastMCP):

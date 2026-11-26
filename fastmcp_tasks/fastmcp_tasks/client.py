@@ -33,6 +33,7 @@ from mcp.client.session import ClientRequestContext, ClientSession, ElicitationF
 from mcp_types import CallToolResult
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
+from fastmcp.client._version_pin import PinnedCall, pinned_call
 from fastmcp.client.telemetry import client_span
 from fastmcp.exceptions import ToolError
 from fastmcp.telemetry import inject_trace_context
@@ -406,12 +407,16 @@ class ToolTask:
         *,
         raise_on_error: bool = True,
         pinned_version: str | None = None,
+        validation_version: str | None = None,
     ) -> None:
         self._client = client
         self._tool_name = tool_name
         self._create_result = create_result
         self._raise_on_error = raise_on_error
         self._pinned_version = pinned_version
+        self._validation_version = (
+            pinned_version if validation_version is None else validation_version
+        )
         self._cached_result: FastMCPCallToolResult | None = None
 
     @property
@@ -505,6 +510,20 @@ class ToolTask:
                 is_error=True,
             )
 
+        if not mcp_result.is_error:
+            pin_token = (
+                pinned_call.set(PinnedCall(self._session, self._validation_version))
+                if self._validation_version is not None
+                else None
+            )
+            try:
+                await self._client._await_with_session_monitoring(
+                    self._session.validate_tool_result(self._tool_name, mcp_result)
+                )
+            finally:
+                if pin_token is not None:
+                    pinned_call.reset(pin_token)
+
         parsed = await self._client._parse_call_tool_result(
             self._tool_name,
             mcp_result,
@@ -550,6 +569,14 @@ async def call_tool_task(
         fastmcp_meta = dict(combined_meta.get("fastmcp") or {})
         fastmcp_meta["version"] = version
         combined_meta["fastmcp"] = fastmcp_meta
+
+    # Match call_tool_mcp's wire pin for validation. Result parsing still
+    # uses the public version argument, as it does for transparent calls.
+    fastmcp_meta = combined_meta.get("fastmcp")
+    wire_version = (
+        fastmcp_meta.get("version") if isinstance(fastmcp_meta, dict) else None
+    )
+    validation_version = str(wire_version) if wire_version is not None else None
     with client_span("tools/call", "tools/call", name, tool_name=name):
         # Propagate the trace into the tasked submission, like a foreground call.
         propagated = inject_trace_context(combined_meta)
@@ -570,6 +597,7 @@ async def call_tool_task(
             raw,
             raise_on_error=raise_on_error,
             pinned_version=version,
+            validation_version=validation_version,
         )
     raise ToolError(
         f"Tool {name!r} did not run as a task: the server returned a "
