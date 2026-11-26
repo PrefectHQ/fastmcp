@@ -418,13 +418,15 @@ async def test_progress_outlives_a_stale_lease_save(receiver):
         assert await delivery._progress(sub.id) is not None
 
 
-async def test_a_non_ascii_echo_fails_verification(receiver):
-    def echo_non_ascii(request: httpx2.Request) -> httpx2.Response:
+class NonAsciiEcho(Receiver):
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(200, json={"challenge": "é"})
 
-    delivery = MockedDelivery(receiver)
-    delivery.receiver = echo_non_ascii
-    server, _ = make_server(delivery)
+
+async def test_a_non_ascii_echo_fails_verification():
+    receiver = NonAsciiEcho()
+    receiver.secrets.append(new_webhook_secret())
+    server, _ = make_server(MockedDelivery(receiver))
     async with connect(server) as client:
         with pytest.raises(MCPError) as caught:
             await subscribe_webhook(
