@@ -1,6 +1,7 @@
 import contextlib
 import ssl
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
+from pathlib import Path
 from ssl import VerifyMode
 from typing import Any, cast
 from unittest.mock import Mock
@@ -9,12 +10,14 @@ import httpx2
 import pytest
 from mcp.shared._httpx_utils import McpHttpClientFactory
 
-from fastmcp import Client
+from fastmcp import Client, FastMCP
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.transports import (
     ClientTransport,
     MCPConfigTransport,
+    PythonStdioTransport,
     SSETransport,
+    StdioTransport,
     StreamableHttpTransport,
 )
 
@@ -429,3 +432,45 @@ def test_multi_server_config_transport_has_no_session_id():
     )
 
     assert transport.get_session_id() is None
+
+
+class TestClientKeepAlive:
+    def test_client_passes_keep_alive_to_inferred_stdio_transport(self, tmp_path: Path):
+        script = tmp_path / "server.py"
+        script.write_text("")
+
+        client = Client(script, keep_alive=False)
+
+        assert isinstance(client.transport, PythonStdioTransport)
+        assert client.transport.keep_alive is False
+
+    def test_client_keep_alive_overrides_transport_setting(self):
+        transport = StdioTransport(command="python", args=[""], keep_alive=False)
+
+        client = Client(transport, keep_alive=True)
+
+        assert client.transport.keep_alive is True
+
+    def test_client_keep_alive_none_leaves_transport_setting(self):
+        transport = StdioTransport(command="python", args=[""], keep_alive=False)
+
+        client = Client(transport)
+
+        assert client.transport.keep_alive is False
+
+    @pytest.mark.parametrize(
+        "make_transport",
+        [
+            lambda: "https://example.com/mcp",
+            lambda: "https://example.com/sse",
+            lambda: FastMCP("test"),
+            lambda: {"mcpServers": {"local": {"command": "python", "args": [""]}}},
+            BasicTransport,
+        ],
+        ids=["streamable_http", "sse", "in_memory", "mcp_config", "custom"],
+    )
+    def test_client_keep_alive_raises_for_non_stdio_transport(
+        self, make_transport: Callable[[], Any]
+    ):
+        with pytest.raises(ValueError, match="only supported for stdio transports"):
+            Client(make_transport(), keep_alive=False)

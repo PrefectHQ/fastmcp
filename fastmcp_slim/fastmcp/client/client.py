@@ -114,6 +114,7 @@ from .transports import (
     SDKServer,
     SessionKwargs,
     SSETransport,
+    StdioTransport,
     StreamableHttpTransport,
     infer_transport,
 )
@@ -359,6 +360,10 @@ class Client(
             extension's own claims. Rarely needed directly; prefer declaring claims on
             the extension itself. Claimed shapes are modern-only and inert on a legacy
             connection.
+        keep_alive: Whether a stdio transport keeps its subprocess running between
+            connections. Only stdio transports have this option, so passing it with
+            any other transport raises `ValueError`. `None` (the default) leaves the
+            transport's own setting in place, which is `True` for stdio.
 
     Examples:
         ```python
@@ -461,6 +466,7 @@ class Client(
         cache: CacheConfig | bool | None = None,
         extensions: Sequence[ClientExtension] | None = None,
         result_claims: Mapping[str, Sequence[ResultClaim[Any]]] | None = None,
+        keep_alive: bool | None = None,
     ) -> None:
         self.name = name or self.generate_name()
 
@@ -505,6 +511,14 @@ class Client(
             else:
                 raise ValueError(
                     "The 'verify' parameter is only supported for HTTP transports."
+                )
+
+        if keep_alive is not None:
+            if isinstance(self.transport, StdioTransport):
+                self.transport.keep_alive = keep_alive
+            else:
+                raise ValueError(
+                    "The 'keep_alive' parameter is only supported for stdio transports."
                 )
 
         if auth is not None:
