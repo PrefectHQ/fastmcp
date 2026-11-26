@@ -402,6 +402,35 @@ class TestResolveServerSpec:
         assert result.command == "fastmcp"
         assert result.args == ["run", str(py_file.resolve()), "--no-banner"]
 
+    def test_python_file_with_server_object(self, tmp_path: Path):
+        py_file = tmp_path / "server.py"
+        py_file.write_text("# empty")
+        result = resolve_server_spec(f"{py_file}:weather")
+        assert isinstance(result, StdioTransport)
+        assert result.command == "fastmcp"
+        assert result.args == ["run", f"{py_file.resolve()}:weather", "--no-banner"]
+
+    def test_relative_python_file_with_server_object(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        (tmp_path / "server.py").write_text("# empty")
+        monkeypatch.chdir(tmp_path)
+        result = resolve_server_spec("server.py:weather")
+        assert isinstance(result, StdioTransport)
+        assert result.args == [
+            "run",
+            f"{(tmp_path / 'server.py').resolve()}:weather",
+            "--no-banner",
+        ]
+
+    def test_source_qualified_name_still_resolves_by_name(self):
+        sentinel = "http://localhost:9000/mcp"
+        with patch.object(
+            client_module, "resolve_name", return_value=sentinel
+        ) as resolve:
+            assert resolve_server_spec("cursor:weather") == sentinel
+        resolve.assert_called_once_with("cursor:weather")
+
     def test_js_file_builds_client_without_deprecation_warning(self, tmp_path: Path):
         js_file = tmp_path / "server.js"
         js_file.write_text("// empty")

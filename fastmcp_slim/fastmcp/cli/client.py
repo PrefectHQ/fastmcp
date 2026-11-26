@@ -71,7 +71,8 @@ def resolve_server_spec(
        explicit transport is selected. In that case, the selected transport
        is constructed directly; SSE URLs are rewritten to end with ``/sse``
        while preserving their query and fragment.
-    2. Existing file paths, or strings ending in ``.py``/``.js``/``.json``.
+    2. Existing file paths, strings ending in ``.py``/``.js``/``.json``, or
+       ``file.py:object`` naming the server object in a Python file.
     3. Anything else — name-based resolution via ``resolve_name``.
 
     When ``command`` is provided, the string is shell-split into a
@@ -109,7 +110,16 @@ def resolve_server_spec(
             return StreamableHttpTransport(spec)
         return spec
 
-    # 2. File path (must be a file, not a directory)
+    # 2. File path (must be a file, not a directory). ``file.py:object`` names
+    # the server object; splitting at the last colon leaves a Windows drive
+    # colon in the path.
+    file_part, sep, obj = spec.rpartition(":")
+    if sep and obj.isidentifier() and file_part.endswith(".py"):
+        return StdioTransport(
+            command="fastmcp",
+            args=["run", f"{Path(file_part).resolve()}:{obj}", "--no-banner"],
+        )
+
     path = Path(spec)
     is_file = path.is_file() or (
         not path.is_dir() and spec.endswith((".py", ".js", ".json"))
