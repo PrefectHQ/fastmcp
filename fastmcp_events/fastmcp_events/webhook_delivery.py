@@ -35,6 +35,7 @@ from fastmcp_events._constants import (
     CALLBACK_ENDPOINT_ERROR,
     FORBIDDEN,
     NOT_FOUND,
+    RESOURCE_EXHAUSTED,
     UNSUPPORTED,
 )
 from fastmcp_events.extension import EventPoll
@@ -102,6 +103,10 @@ def _iso(moment: datetime | None) -> str | None:
     return moment.isoformat().replace("+00:00", "Z") if moment else None
 
 
+def _owner_key(principal: str) -> str:
+    return "owner-" + _digest(principal)[:32]
+
+
 def _digest(*parts: Any) -> str:
     canonical = json.dumps(parts, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
@@ -140,6 +145,12 @@ class WebhookDelivery:
         ssl_context: TLS settings for deliveries, for example to trust a
             private certificate authority.
         timeout: Seconds to wait for a receiver to answer one POST.
+        max_subscriptions: The most live subscriptions one client may hold;
+            past it, a new subscribe is refused with `ResourceExhausted`.
+            `None` for no limit.
+        challenges_per_host: The most verification challenges this process
+            sends to one host in a minute, so a client cannot use the server
+            to flood a host with challenges.
     """
 
     def __init__(
@@ -154,6 +165,8 @@ class WebhookDelivery:
         allow_private_addresses: bool = False,
         ssl_context: ssl.SSLContext | None = None,
         timeout: float = 5.0,
+        max_subscriptions: int | None = 100,
+        challenges_per_host: int = 10,
     ) -> None:
         if min_ttl > max_ttl:
             raise ValueError("min_ttl must not exceed max_ttl")
@@ -170,6 +183,9 @@ class WebhookDelivery:
         self.allow_private_addresses = allow_private_addresses
         self.ssl_context = ssl_context
         self.timeout = timeout
+        self.max_subscriptions = max_subscriptions
+        self.challenges_per_host = challenges_per_host
+        self._challenges: dict[str, list[float]] = {}
         self._wake = anyio.Event()
 
     # Storage ---------------------------------------------------------------
@@ -213,6 +229,12 @@ class WebhookDelivery:
     async def _set_index(self, name: str, entries: dict[str, float]) -> None:
         await self._put(f"index-{name}", entries, self.max_ttl.total_seconds())
 
+    async def _owned(self, principal: str) -> dict[str, float]:
+        """One client's live subscription IDs, with when each lapses."""
+        record = await self._get(_owner_key(principal)) or {}
+        now = _now().timestamp()
+        return {key: until for key, until in record.items() if until > now}
+
     # Requests --------------------------------------------------------------
 
     def _check_target(self, url: str, secret: str) -> None:
@@ -250,6 +272,17 @@ class WebhookDelivery:
             "sub_" + _digest(principal, target.url, registration.name, arguments)[:24]
         )
         existing = await self._subscription(subscription_id)
+        owned = await self._owned(principal)
+        if (
+            existing is None
+            and self.max_subscriptions is not None
+            and len(owned) >= self.max_subscriptions
+        ):
+            raise MCPError(
+                RESOURCE_EXHAUSTED,
+                "Too many webhook subscriptions",
+                data={"limit": "subscriptions", "max": self.max_subscriptions},
+            )
         progress = await self._progress(subscription_id) if existing else None
         truncated = False
         if progress is None:
@@ -274,6 +307,8 @@ class WebhookDelivery:
         index = await self._index(registration.name)
         index[subscription_id] = sub.refresh_before.timestamp()
         await self._set_index(registration.name, index)
+        owned[subscription_id] = sub.refresh_before.timestamp()
+        await self._put(_owner_key(principal), owned, self.max_ttl.total_seconds())
         status = None
         if existing is not None:
             status = DeliveryStatus(
@@ -340,14 +375,21 @@ class WebhookDelivery:
             raise MCPError(
                 NOT_FOUND, "No such subscription", data={"kind": "subscription"}
             )
-        await self._forget(registration.name, subscription_id)
+        await self._forget(registration.name, subscription_id, principal)
 
-    async def _forget(self, name: str, subscription_id: str) -> None:
+    async def _forget(
+        self, name: str, subscription_id: str, principal: str | None = None
+    ) -> None:
         await self._delete(f"sub-{subscription_id}")
         await self._delete(f"progress-{subscription_id}")
         index = await self._index(name)
         if index.pop(subscription_id, None) is not None:
             await self._set_index(name, index)
+        if principal is not None:
+            owned = await self._owned(principal)
+            if owned.pop(subscription_id, None) is not None:
+                ttl = self.max_ttl.total_seconds()
+                await self._put(_owner_key(principal), owned, ttl)
 
     async def _verify_endpoint(
         self, principal: str, subscription_id: str, target: Any
@@ -364,6 +406,7 @@ class WebhookDelivery:
         if await self._get(key) is not None:
             await self._put(key, {"verified": True}, ttl)
             return
+        self._count_challenge(target.url)
         challenge = secrets.token_urlsafe(24)
         body = {"type": "verification", "challenge": challenge}
         message_id = f"msg_verification_{secrets.token_hex(12)}"
@@ -385,13 +428,37 @@ class WebhookDelivery:
                 echoed = answer.get("challenge")
         except ValueError:
             pass
-        if not isinstance(echoed, str) or not hmac.compare_digest(echoed, challenge):
+        if not isinstance(echoed, str) or not hmac.compare_digest(
+            echoed.encode(), challenge.encode()
+        ):
             raise MCPError(
                 CALLBACK_ENDPOINT_ERROR,
                 "The callback endpoint did not echo the challenge",
                 data={"reason": "challenge_failed"},
             )
         await self._put(key, {"verified": True}, ttl)
+
+    def _count_challenge(self, url: str) -> None:
+        """Refuse a challenge past this process's per-host limit for the minute."""
+        host = urlsplit(url).hostname or ""
+        now = anyio.current_time()
+        recent = [t for t in self._challenges.get(host, []) if now - t < 60]
+        if len(recent) >= self.challenges_per_host:
+            self._challenges[host] = recent
+            raise MCPError(
+                RESOURCE_EXHAUSTED,
+                "Too many verification challenges to this host; try again later",
+                data={"limit": "challenges", "max": self.challenges_per_host},
+            )
+        recent.append(now)
+        self._challenges[host] = recent
+        if len(self._challenges) > 1024:
+            # Forget hosts with nothing in the last minute, so the map stays small.
+            self._challenges = {
+                h: times
+                for h, times in self._challenges.items()
+                if now - times[-1] < 60
+            }
 
     # Sending ---------------------------------------------------------------
 
@@ -637,7 +704,7 @@ class WebhookDelivery:
             "terminated",
             {"error": error.error.model_dump(exclude_none=True)},
         )
-        await self._forget(sub.name, sub.id)
+        await self._forget(sub.name, sub.id, sub.principal)
 
 
 def principal_of(claims: Mapping[str, Any], client_id: str | None) -> str | None:
