@@ -71,7 +71,7 @@ mark self-contained tokens (e.g. the ID-JAG issuer/marker) so
 #### `issue_refresh_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/jwt_issuer.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-issue_refresh_token(self, client_id: str, scopes: list[str], jti: str, expires_in: int, upstream_claims: dict[str, Any] | None = None) -> str
+issue_refresh_token(self, client_id: str, scopes: list[str], jti: str, expires_in: int, upstream_claims: dict[str, Any] | None = None, grant_id: str | None = None) -> str
 ```
 
 Issue a minimal FastMCP refresh token.
@@ -86,12 +86,15 @@ token which contains actual user identity and authorization data.
 - `jti`: Unique token identifier (maps to upstream token)
 - `expires_in`: Token lifetime in seconds (should match upstream refresh expiry)
 - `upstream_claims`: Optional claims from upstream IdP token to include
+- `grant_id`: The grant this token belongs to, which stays the same
+across rotations, so revocation can end the grant without
+looking the token up in storage
 
 **Returns:**
 - Signed JWT token
 
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/jwt_issuer.py#L232" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/jwt_issuer.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str, expected_token_use: str = 'access') -> dict[str, Any]

@@ -31,6 +31,19 @@ Paginate a sequence of items.
 - `ValueError`: If the cursor is invalid.
 
 
+### `paginate_request` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/pagination.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+paginate_request(items: Sequence[T], cursor: str | None, page_size: int | None) -> tuple[list[T], str | None]
+```
+
+
+One page of `items` for a list request, or all of them when `page_size` is None.
+
+An invalid cursor raises an `MCPError` with `INVALID_PARAMS`, so a handler
+can let it reach the client as is.
+
+
 ## Classes
 
 ### `CursorState` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/pagination.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>

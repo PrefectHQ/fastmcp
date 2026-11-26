@@ -44,7 +44,20 @@ SDK's own `OpenTelemetryMiddleware` sets — FastMCP drops that middleware to
 avoid a duplicate SERVER span, so this restores them on FastMCP's span.
 
 
-### `record_span_exception` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/telemetry.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_network_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/telemetry.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_network_span_attributes() -> dict[str, str]
+```
+
+
+Get the `network.*` attributes for the current request's transport.
+
+HTTP requests report `tcp` plus the HTTP version; stdio reports `pipe`.
+In-memory requests have no network transport, so they get none.
+
+
+### `record_span_exception` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/telemetry.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 record_span_exception(span: Span, e: Exception) -> None
@@ -54,7 +67,7 @@ record_span_exception(span: Span, e: Exception) -> None
 Record an exception and error status on a span.
 
 
-### `seam_span` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/telemetry.py#L186" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `seam_span` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/telemetry.py#L209" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 seam_span(method: str, server_name: str) -> Generator[Span, None, None]
@@ -78,7 +91,7 @@ that has to know the difference, because the seam is where the incoming
 `_meta` parent context is applied for the whole request.
 
 
-### `server_span` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/telemetry.py#L255" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `server_span` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/telemetry.py#L278" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 server_span(name: str, method: str, server_name: str, component_type: str, component_key: str, resource_uri: str | None = None, tool_name: str | None = None, prompt_name: str | None = None) -> Generator[Span, None, None]
@@ -107,7 +120,7 @@ doing it again here is a no-op, and covers the in-process callers that
 bypass the dispatcher and so never reach the seam at all.
 
 
-### `delegate_span` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/telemetry.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `delegate_span` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/telemetry.py#L390" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 delegate_span(name: str, provider_type: str, component_key: str, method: str | None = None) -> Generator[Span, None, None]
