@@ -276,6 +276,11 @@ async def test_a_model_without_for_subscription_takes_no_arguments():
         start = await poll_events_mcp(c, "deploy.finished")
         await events.emit(DeployFinished(service="api"), event_id="d1")
         result = await poll_events_mcp(c, "deploy.finished", cursor=start.cursor)
+        # An argument it has no use for is refused, not silently ignored.
+        with pytest.raises(MCPError) as caught:
+            await poll_events_mcp(c, "deploy.finished", {"service": "api"})
+    assert caught.value.error.code == INVALID_PARAMS
+    assert "takes no arguments" in caught.value.error.message
     assert event_type.input_schema is None
     assert event_type.description == "A deploy finished"
     assert [e.event_id for e in result.events] == ["d1"]
