@@ -313,6 +313,12 @@ that can't wait until morning). context.queue holds the open issues labeled
 needs:triage, each with its title, labels, age and the next step triage recorded.
 context.runs summarizes the last day of intake runs, including issues triage gave up
 on and why. context.recent holds the messages already posted, so you don't repeat them.
+context.closed_contributions lists contributors' PRs that the issue-link gate closed
+because nobody assigned them the issue the PR fixes, grouped by contributor, most
+promising first (the issue reproduced, the contributor vouched for). Nothing else asks
+him about these: each waits until he assigns the contributor to the issue, which
+reopens the PR, or declines. Name the contributor, the PR and the issue, and say
+whether the issue reproduced; one line per contributor.
 
 Decide what actually matters today, then say it in plain, short sentences:
 - Lead with what he should do, most important first. Name each item by its linked
@@ -328,8 +334,8 @@ Decide what actually matters today, then say it in plain, short sentences:
 - Never paste raw error text, run ids or internal terms (bins, routes, artifacts).
 
 In "check" mode post only for something that shouldn't wait for the morning: a
-security report, a contributor blocked on assignment, or triage broken across the
-board. Otherwise return post false.
+security report, a contributor blocked on assignment (a closed contribution to a
+reproduced issue counts), or triage broken across the board. Otherwise return post false.
 
 Use Slack mrkdwn. Keep it under about 12 lines. Return post false with an empty text
 when there is nothing worth his attention, and say in why what you decided.""",
