@@ -1,0 +1,162 @@
+---
+title: Codex CLI 🤝 FastMCP
+sidebarTitle: Codex CLI
+description: Install and use FastMCP servers in Codex CLI
+icon: message-smile
+---
+
+import { LocalFocusTip } from "/snippets/local-focus.mdx"
+
+<LocalFocusTip />
+
+[Codex CLI](https://learn.chatgpt.com/docs/codex/cli) supports MCP servers over STDIO and Streamable HTTP, allowing you to extend Codex with custom tools from your FastMCP servers.
+
+## Requirements
+
+This integration uses STDIO transport to run your FastMCP server locally. For remote deployments, you can run your FastMCP server with HTTP transport and configure it directly using Codex CLI's built-in MCP management commands.
+
+## Create a Server
+
+The examples in this guide will use the following simple dice-rolling server, saved as `server.py`.
+
+```python server.py
+import random
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="Dice Roller")
+
+@mcp.tool
+def roll_dice(n_dice: int) -> list[int]:
+    """Roll `n_dice` 6-sided dice and return the results."""
+    return [random.randint(1, 6) for _ in range(n_dice)]
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+## Install the Server
+
+### FastMCP CLI
+
+The easiest way to install a FastMCP server in Codex CLI is using the `fastmcp install codex-cli` command. This automatically handles the configuration, dependency management, and calls Codex CLI's built-in MCP management system.
+
+```bash
+fastmcp install codex-cli server.py
+```
+
+The install command supports the same `file.py:object` notation as the `run` command. If no object is specified, it will automatically look for a FastMCP server object named `mcp`, `server`, or `app` in your file:
+
+```bash
+# These are equivalent if your server object is named 'mcp'
+fastmcp install codex-cli server.py
+fastmcp install codex-cli server.py:mcp
+
+# Use explicit object name if your server has a different name
+fastmcp install codex-cli server.py:my_custom_server
+```
+
+The command registers the server with Codex CLI's `codex mcp add` command, which replaces any server that already has the same name. Codex doesn't accept spaces in server names, so they become hyphens: this server is added as `Dice-Roller`.
+
+#### Dependencies
+
+Use the `--with` flag to specify packages your server needs. You can use this flag multiple times:
+
+```bash
+fastmcp install codex-cli server.py --with pandas --with requests
+```
+
+Use `--with-requirements` to install from a requirements file, or `--with-editable` for a local package under development:
+
+```bash
+fastmcp install codex-cli server.py --with-requirements requirements.txt
+fastmcp install codex-cli server.py --with-editable ./my-local-package
+```
+
+Alternatively, you can use a `fastmcp.json` configuration file (recommended):
+
+```json fastmcp.json
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "path": "server.py",
+    "entrypoint": "mcp"
+  },
+  "environment": {
+    "dependencies": ["pandas", "requests"]
+  }
+}
+```
+
+Pass the configuration file to the install command in place of the server file:
+
+```bash
+fastmcp install codex-cli fastmcp.json
+```
+
+#### Python Version and Project Configuration
+
+Use `--python` to specify which Python version your server requires:
+
+```bash
+fastmcp install codex-cli server.py --python 3.11
+```
+
+Use `--project` to select the directory containing your MCP server's `pyproject.toml`:
+
+```bash
+fastmcp install codex-cli /path/to/mcp-server/server.py --project /path/to/mcp-server
+```
+
+`--project` selects the Python environment without changing the server's working directory. If your server reads local files, use absolute paths or resolve them relative to the server file.
+
+#### Environment Variables
+
+If your server needs environment variables (like API keys), you must include them:
+
+```bash
+fastmcp install codex-cli server.py --name weather-server \
+  --env API_KEY=your-api-key \
+  --env DEBUG=true
+```
+
+Or load them from a `.env` file:
+
+```bash
+fastmcp install codex-cli server.py --name weather-server --env-file .env
+```
+
+<Warning>
+**Codex CLI must be installed**. The integration looks for the `codex` executable on your `PATH` and uses the `codex mcp add` command to register servers.
+</Warning>
+
+### Manual Configuration
+
+For more control over the configuration, you can manually use Codex CLI's built-in MCP management commands. This gives you direct control over how your server is launched:
+
+```bash
+# Add a server with custom configuration
+codex mcp add dice-roller -- uv run --with fastmcp fastmcp run /path/to/server.py
+
+# Add with environment variables
+codex mcp add weather-server --env API_KEY=secret --env DEBUG=true -- uv run --with fastmcp fastmcp run /path/to/server.py
+```
+
+You can also manually specify Python versions and project directories in your Codex CLI commands:
+
+```bash
+# With specific Python version
+codex mcp add ml-server -- uv run --python 3.11 --with fastmcp fastmcp run /path/to/server.py
+
+# Within a project directory
+codex mcp add project-server -- uv run --project /path/to/project --with fastmcp fastmcp run /path/to/server.py
+```
+
+## Using the Server
+
+Once your server is installed, you can start using your FastMCP server with Codex CLI. Run `/mcp` in a Codex session to see your active servers.
+
+Try asking Codex something like:
+
+> "Roll some dice for me"
+
+Codex will automatically detect your `roll_dice` tool and use it to fulfill your request.
