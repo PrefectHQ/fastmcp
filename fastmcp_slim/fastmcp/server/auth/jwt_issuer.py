@@ -179,6 +179,7 @@ class JWTIssuer:
         jti: str,
         expires_in: int,
         upstream_claims: dict[str, Any] | None = None,
+        grant_id: str | None = None,
     ) -> str:
         """Issue a minimal FastMCP refresh token.
 
@@ -192,6 +193,9 @@ class JWTIssuer:
             jti: Unique token identifier (maps to upstream token)
             expires_in: Token lifetime in seconds (should match upstream refresh expiry)
             upstream_claims: Optional claims from upstream IdP token to include
+            grant_id: The grant this token belongs to, which stays the same
+                across rotations, so revocation can end the grant without
+                looking the token up in storage
 
         Returns:
             Signed JWT token
@@ -209,6 +213,8 @@ class JWTIssuer:
             "jti": jti,
             "token_use": "refresh",
         }
+        if grant_id:
+            payload["grant"] = grant_id
 
         if upstream_claims:
             payload["upstream_claims"] = upstream_claims

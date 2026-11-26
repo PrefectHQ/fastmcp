@@ -122,8 +122,25 @@ class RevocationProvider:
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> RefreshToken | None:
-        return await self._proxy._load_refresh_token_for_revocation(
-            client, refresh_token
+        # The signed token is enough to prove what it is and whose it is.
+        # Its storage record may already be gone to a concurrent rotation or
+        # a revocation that failed part-way, and either way the grant must
+        # still end.
+        try:
+            payload = self._proxy.jwt_issuer.verify_token(
+                refresh_token, expected_token_use="refresh"
+            )
+        except (JoseError, ValueError, KeyError):
+            return None
+        if payload.get("client_id") != client.client_id:
+            return None
+        scope = payload.get("scope")
+        exp = payload.get("exp")
+        return RefreshToken(
+            token=refresh_token,
+            client_id=client.client_id,
+            scopes=scope.split() if isinstance(scope, str) else [],
+            expires_at=int(exp) if isinstance(exp, (int, float)) else None,
         )
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:

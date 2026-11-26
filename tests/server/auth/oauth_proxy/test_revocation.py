@@ -342,8 +342,14 @@ async def test_owner_revokes_upstream_refresh_token(
     assert await proxy._refresh_token_store.get(key=_hash_token(token)) is None
 
 
-async def _issue_refresh_token(proxy: OAuthProxy, user: str) -> str:
-    """A refresh token on `user`'s grant, with its own jti like a real exchange."""
+async def _issue_refresh_token(
+    proxy: OAuthProxy, user: str, *, names_grant: bool = True
+) -> str:
+    """A refresh token on `user`'s grant, with its own jti like a real exchange.
+
+    `names_grant=False` mints one without the `grant` claim, as tokens issued
+    before the claim existed are.
+    """
     upstream = await proxy._upstream_token_store.get(key=user)
     assert upstream is not None
     await proxy._upstream_token_store.put(
@@ -358,7 +364,11 @@ async def _issue_refresh_token(proxy: OAuthProxy, user: str) -> str:
         ttl=3600,
     )
     token = proxy.jwt_issuer.issue_refresh_token(
-        client_id="dcr-client", scopes=["read"], jti=jti, expires_in=3600
+        client_id="dcr-client",
+        scopes=["read"],
+        jti=jti,
+        expires_in=3600,
+        grant_id=user if names_grant else None,
     )
     await proxy._refresh_token_store.put(
         key=_hash_token(token),
@@ -396,6 +406,27 @@ async def test_revoking_refresh_token_ends_its_access_tokens(
     assert parse_qs(request.content.decode()) == {"token": ["upstream-refresh-alice"]}
     assert await proxy.verify_token(alice) is None
     assert await proxy.verify_token(bob) is not None
+
+
+async def test_revoking_refresh_token_without_grant_claim_ends_its_grant(
+    proxy: OAuthProxy,
+    issue_token: Callable[[str], Awaitable[str]],
+    httpx_mock: HTTPXMock,
+) -> None:
+    """A token issued before the `grant` claim is resolved by its JTI mapping."""
+    alice = await issue_token("alice")
+    refresh = await _issue_refresh_token(proxy, "alice", names_grant=False)
+    httpx_mock.add_response(url="https://idp.example.com/revoke", method="POST")
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=Starlette(routes=proxy.get_routes("/mcp"))),
+        base_url="https://proxy.example.com",
+    ) as client:
+        response = await client.post(
+            "/revoke",
+            data={"token": refresh, "client_id": "dcr-client", "client_secret": ""},
+        )
+    assert response.status_code == 200
+    assert await proxy.verify_token(alice) is None
 
 
 async def test_revoking_refresh_token_ends_grant_without_upstream_endpoint(
