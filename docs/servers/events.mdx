@@ -282,22 +282,17 @@ Webhook subscriptions require an authenticated client. The server challenges a U
 
 ### Running more than one replica
 
-Give every replica the same `store`, any [py-key-value](https://github.com/strawgate/py-key-value) store, along with the shared event log from [the replicas section above](#sharing-events-across-replicas-with-docket):
+Give every replica the same `store`, which can be any [py-key-value](https://github.com/strawgate/py-key-value) store:
 
 ```python
 from key_value.aio.stores.redis import RedisStore
 
-from fastmcp_events import EventsExtension, WebhookDelivery
-from fastmcp_events.docket_log import DocketEventLog
+from fastmcp_events import WebhookDelivery
 
-redis_url = "redis://localhost:6379/0"
-events = EventsExtension(
-    log=DocketEventLog(redis_url),
-    webhooks=WebhookDelivery(store=RedisStore(url=redis_url)),
-)
+webhooks = WebhookDelivery(store=RedisStore(url="redis://localhost:6379/0"))
 ```
 
-Any replica can then accept a subscribe or send a delivery. A delivery has the same `webhook-id` whichever replica sends it, so receivers can drop duplicates. On hosts that can't run background work, such as Lambda, set `sender=False` and call `await events.deliver_webhooks()` on a schedule.
+The replicas also need a shared event log, as described [above](#sharing-events-across-replicas-with-docket). Any replica can then accept a subscribe or send a delivery. A delivery has the same `webhook-id` whichever replica sends it, so receivers can drop duplicates. On hosts that can't run background work, such as Lambda, set `sender=False` and call `await events.deliver_webhooks()` on a schedule.
 
 ## Subscribing from a client
 
