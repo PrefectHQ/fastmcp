@@ -980,22 +980,28 @@ class TestMalformedURITemplates:
         ) == {"year": "2024"}
         assert builds == first_build
 
-    def test_build_regex_returns_none_for_duplicate_group_names(self):
-        assert build_regex("test://{a}/{a}/path") is None
+    def test_build_regex_supports_duplicate_group_names(self):
+        """A repeated parameter captures each occurrence separately (#6603)."""
+        regex = build_regex("test://{a}/{a}/path")
+        assert regex is not None
+        assert regex.match("test://foo/foo/path") is not None
+        # Each occurrence has its own capture group, so the regex itself
+        # matches unequal values; equality is enforced by
+        # `match_uri_template` after decoding.
+        assert regex.match("test://foo/bar/path") is not None
+        assert match_uri_template("test://foo/bar/path", "test://{a}/{a}/path") is None
 
-    @pytest.mark.parametrize(
-        "template",
-        [
-            "test://{a}/{a}/path",
-        ],
-        ids=[
-            "duplicate_groups",
-        ],
-    )
-    def test_match_uri_template_returns_none_for_malformed_templates(
-        self, template: str
-    ):
-        assert match_uri_template("test://anything/path", template) is None
+    def test_build_regex_returns_none_for_normalized_name_collisions(self):
+        """Distinct names that sanitize to the same group are not repeats."""
+        assert build_regex("test://{x.y}/{x_y}") is None
+        assert build_regex("test://{user-id}/{user_id}") is None
+
+    def test_match_uri_template_returns_none_for_unequal_repeated_values(self):
+        """A repeated parameter matches only when every occurrence agrees."""
+        assert match_uri_template("test://foo/bar/path", "test://{a}/{a}/path") is None
+        assert match_uri_template("test://foo/foo/path", "test://{a}/{a}/path") == {
+            "a": "foo"
+        }
 
     def test_match_uri_template_sanitizes_leading_digit_names(self):
         """`{1leading}` used to disable the whole template; it now matches
@@ -2054,3 +2060,270 @@ class TestExpandNonIdentifierNames:
     def test_forward_uri_keeps_literal_when_unresolved(self):
         result = forward_uri("resource://dollar/{$top}", {}, "resource://dollar/x")
         assert result == "resource://dollar/{$top}"
+
+
+class TestRepeatedTemplateParameters:
+    """Templates that repeat the same parameter must still match (#6603)."""
+
+    def test_repeated_path_parameter(self):
+        assert match_uri_template("data://acme/acme", "data://{tenant}/{tenant}") == {
+            "tenant": "acme"
+        }
+        assert (
+            match_uri_template("data://acme/other", "data://{tenant}/{tenant}") is None
+        )
+
+    def test_repeated_wildcard_and_simple_parameter(self):
+        assert match_uri_template("data://acme/acme", "data://{tenant*}/{tenant}") == {
+            "tenant": "acme"
+        }
+        assert (
+            match_uri_template("data://acme/other", "data://{tenant*}/{tenant}") is None
+        )
+
+    def test_repeated_wildcard_multi_segment_value_round_trips(self):
+        """A wildcard and a simple occurrence spell `/` differently on the
+        wire, so equality is checked after decoding, not on raw text."""
+        uri = expand_uri_template("data://{tenant*}/{tenant}", {"tenant": "acme/other"})
+        assert uri == "data://acme/other/acme%2Fother"
+        assert match_uri_template(uri, "data://{tenant*}/{tenant}") == {
+            "tenant": "acme/other"
+        }
+
+    def test_repeated_value_containing_delimiter_round_trips(self):
+        """Greedy captures must backtrack to the equal split when the value
+        itself contains the delimiter between occurrences."""
+        for template, value in [
+            ("data://{x}-{x}", "a-b"),
+            ("data://{x}{x}", "ab"),
+            ("data://{x*}/{x*}", "a/b"),
+            ("data://{x*}-{x}", "a-b"),
+            ("data://{x}-{x*}", "a-b"),
+            ("data://{x*}{x}", "ab"),
+            ("data://{x*}-{x}", "a-b/c-d"),
+            ("data://{x}-{x*}", "a-b/c-d"),
+            ("data://{x*}{x}", "a/b"),
+            ("data://{x*}-{x}-{x}", "a-b"),
+            ("data://{x*}-{x}-{x}", "a/b"),
+            ("data://{x*}-{x}-{x}", "a-b/c-d"),
+            ("data://{x}-{x*}-{x}", "a-b"),
+            ("data://{x}-{x*}-{x}", "a/b"),
+            ("data://{x}-{x*}-{x}", "a-b/c-d"),
+        ]:
+            uri = expand_uri_template(template, {"x": value})
+            assert match_uri_template(uri, template) == {"x": value}
+
+    def test_inconsistent_repeated_occurrences_rejected(self):
+        """No equal split exists for these occurrences, so there is no match."""
+        assert (
+            match_uri_template("data://a-b-a-b-a-b-a", "data://{x*}-{x}-{x*}") is None
+        )
+
+    def test_repeated_parameter_with_intervening_parameter(self):
+        """A re-split also re-chooses an intervening parameter's capture:
+        the greedy match reads `y='a'` here, but the only consistent split
+        is `x='a-b'`, `y='z'`."""
+        assert match_uri_template("data://a-b-z-a-b", "data://{x*}-{y}-{x}") == {
+            "x": "a-b",
+            "y": "z",
+        }
+
+    def test_repeated_parameter_compares_decoded_values(self):
+        """Occurrences that decode to the same value match even when their
+        percent-hex case differs: `%2F` and `%2f` are the same character."""
+        assert match_uri_template("data://a%2Fb/a%2fb", "data://{x}/{x}") == {
+            "x": "a/b"
+        }
+
+    @pytest.mark.parametrize(
+        "template, params",
+        [
+            ("data://{x}-{x}-{y}", {"x": "a", "y": "a-b"}),
+            ("data://{x}-{y}-{y}-{x}", {"x": "a", "y": "a-b"}),
+            ("data://{y}-{x}-{x}", {"y": "a", "x": "a-b"}),
+        ],
+    )
+    def test_repeated_parameter_beside_neighbor_round_trip(
+        self, template: str, params: dict[str, str]
+    ):
+        """A repeated parameter next to another parameter round-trips even
+        when the greedy match lets the repeat swallow part of the neighbor:
+        the re-split widens the span to cover it."""
+        uri = expand_uri_template(template, params)
+        assert match_uri_template(uri, template) == params
+
+    def test_ambiguous_neighboring_repeats_match_consistently(self):
+        """`{x}-{y}-{x}-{y}` with `x='a'`, `y='a-a'` is genuinely
+        ambiguous — `x='a-a'`, `y='a'` expands to the same URI — so the
+        matcher only has to return a consistent assignment, not the
+        original one."""
+        template = "data://{x}-{y}-{x}-{y}"
+        uri = expand_uri_template(template, {"x": "a", "y": "a-a"})
+        result = match_uri_template(uri, template)
+        assert result is not None
+        assert expand_uri_template(template, result) == uri
+
+    @pytest.mark.parametrize(
+        "uri",
+        [
+            "data://a%7cb%7Ca%7cb",
+            "data://a%7Cb%7ca%7Cb",
+        ],
+    )
+    def test_repeated_parameter_with_mixed_case_literal_spelling(self, uri: str):
+        """A literal between repeats may be spelled differently at each
+        occurrence (`%7c` vs `%7C`): the re-split accepts every spelling
+        of the template literal, not just the one the greedy match chose."""
+        assert match_uri_template(uri, "data://{x}|{x}") == {"x": "a|b"}
+
+    def test_repeated_parameter_with_percent_literal(self):
+        """A `%` literal between repeats matches both its spellings: the
+        search tries every spelling length at each position, so `%25`
+        is found even though `%` alone matches first."""
+        assert match_uri_template("data://a%2Fb%25a%2Fb", "data://{x}%{x}") == {
+            "x": "a/b"
+        }
+
+    def test_repeated_parameter_with_unicode_literal(self):
+        """A non-ASCII literal matches raw or percent-encoded: `é` is
+        two UTF-8 bytes, so its encoded spelling is 6 characters."""
+        assert match_uri_template("data://caf%C3%A9/a/a", "data://café/{x}/{x}") == {
+            "x": "a"
+        }
+        assert match_uri_template("data://a%C3%A9a", "data://{x}é{x}") == {"x": "a"}
+
+    def test_long_repeated_value_matches(self):
+        """A long repeated value matches: the search iterates delimiter
+        matches rather than every position, so linear scanning does not
+        consume the step budget."""
+        value = "a" * 4000
+        assert match_uri_template(f"data://{value}/{value}", "data://{x}/{x}") == {
+            "x": value
+        }
+
+    def test_long_adjacent_repeated_value_matches(self):
+        """Adjacent repeats with a long value match: the decoded-length
+        check prunes every split except the decoded midpoint, so the
+        search does not enumerate every position."""
+        value = "a" * 4000
+        assert match_uri_template(f"data://{value}{value}", "data://{x}{x}") == {
+            "x": value
+        }
+
+    def test_long_adjacent_repeated_multibyte_value_matches(self):
+        """Adjacent repeats with a long multi-byte value match: a split
+        inside a `%XX` triple, or after the first byte of a multi-byte
+        character, decodes to a different string of the same length, so
+        only the split on a decoded boundary is accepted — and a
+        ten-thousand-character value still fits the step budget."""
+        value = "é" * 600
+        assert match_uri_template(f"data://{value}{value}", "data://{x}{x}") == {
+            "x": value
+        }
+        value = "a" * 10000
+        assert match_uri_template(f"data://{value}{value}", "data://{x}{x}") == {
+            "x": value
+        }
+
+    def test_repeated_parameter_with_percent_literal_next_to_hex_value(self):
+        assert match_uri_template("data://41%41", "data://{x}%{x}") == {"x": "41"}
+        assert match_uri_template("data://41%42", "data://{x}%{x}") is None
+
+    def test_repeated_parameter_with_hex_literal(self):
+        """A literal starting with two hex digits can be the tail of a
+        triple the previous piece's trailing `%` starts, so the span is
+        resolved without the decoded-length prunes and the value still
+        matches."""
+        assert match_uri_template("data://%25ab%25", "data://{x}ab{x}") == {"x": "%"}
+
+    def test_long_intervening_parameter_before_repeat_matches(self):
+        """A long parameter before a repeat still matches: once the
+        repeat's value is set, it must appear in the decoded remainder,
+        so wrong splits of the intervening parameter are pruned without
+        re-enumerating the repeat's subtree for each of them."""
+        for count in (10, 50, 100, 200, 300, 500, 600, 800):
+            numbers = [str(i) for i in range(count)]
+            uri = "data://" + "-".join(numbers) + "-X-X-c"
+            assert match_uri_template(uri, "data://{a}-{b}-{x}-{x}-{c}") == {
+                "a": "0",
+                "b": "-".join(numbers[1:]),
+                "x": "X",
+                "c": "c",
+            }
+        uri = "data://" + "-".join(str(i) for i in range(100)) + "-X-Y-c"
+        assert match_uri_template(uri, "data://{a}-{b}-{x}-{x}-{c}") is None
+
+    def test_repeated_parameter_with_hex_literal_delimiter(self):
+        """A single-hex-digit delimiter does not disable the prunes when
+        the span holds no triple for a match to land inside: the span
+        itself guarantees decoded boundaries, so a long round-trip with
+        that delimiter still resolves."""
+        for reps in (10, 50, 100):
+            x, y = "za" * reps, "ya" * reps
+            template = "data://{x}a{y}a{x}"
+            assert match_uri_template(
+                expand_uri_template(template, {"x": x, "y": y}), template
+            ) == {"x": x, "y": y}
+
+    def test_repeated_parameter_with_hex_literal_delimiter_and_encoded_values(self):
+        """The same delimiter with percent-encoded values still
+        resolves: the prunes apply whenever no delimiter match in the
+        span actually lands inside a triple, even though the span
+        contains triples and the literal alone would disable them."""
+        for reps in (10, 50, 100):
+            x, y = "zaé" * reps, "yaé" * reps
+            template = "data://{x}a{y}a{x}"
+            assert match_uri_template(
+                expand_uri_template(template, {"x": x, "y": y}), template
+            ) == {"x": x, "y": y}
+
+    def test_long_nonmatching_uri_returns_quickly(self):
+        """The re-split search is bounded: a long URI that cannot match
+        must not spend seconds enumerating delimiter placements."""
+        uri = "data://" + "a-" * 1000 + "b"
+        assert match_uri_template(uri, "data://{x}-{y}-{x}") is None
+
+    def test_many_repeats_nonmatching_uri_returns_quickly(self):
+        """A template with many repeats of one parameter must not make
+        the matcher backtrack combinatorially on a non-matching URI:
+        repeated templates never run the compiled regex."""
+        uri = "data://" + "a-" * 80 + "b"
+        assert match_uri_template(uri, "data://{x}-{x}-{x}-{x}-{x}-{x}/end") is None
+
+    def test_repeated_simple_occurrence_cannot_span_a_segment(self):
+        """A non-wildcard occurrence stays single-segment even when the
+        wildcard occurrence holds a slash: the retry must not accept
+        `a/b-c` for `{x}`."""
+        assert match_uri_template("data://a/b-c-a/b-c", "data://{x*}-{x}") is None
+
+    def test_two_repeated_parameters_round_trip(self):
+        """One repeat needing backtracking and another needing decoded
+        comparison must both resolve in the same URI."""
+        template = "data://{x*}-{x}/{y*}/{y}"
+        uri = expand_uri_template(template, {"x": "a-b", "y": "c/d"})
+        assert uri == "data://a-b-a-b/c/d/c%2Fd"
+        assert match_uri_template(uri, template) == {"x": "a-b", "y": "c/d"}
+
+    def test_repeated_literal_query_parameter(self):
+        assert match_uri_template(
+            "data://x?a=acme&b=acme", "data://x?a={tenant}&b={tenant}"
+        ) == {"tenant": "acme"}
+        assert (
+            match_uri_template(
+                "data://x?a=acme&b=other", "data://x?a={tenant}&b={tenant}"
+            )
+            is None
+        )
+
+    async def test_read_resource_with_repeated_parameter(self):
+        mcp = FastMCP("repeated-param")
+
+        @mcp.resource("data://{tenant}/{tenant}")
+        def item(tenant: str) -> str:
+            return tenant
+
+        async with Client(mcp) as client:
+            [contents] = await client.read_resource("data://acme/acme")
+
+        assert isinstance(contents, TextResourceContents)
+        assert contents.text == "acme"
