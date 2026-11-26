@@ -260,9 +260,7 @@ The extension serves the event types of the server it is added to. A server moun
 
 ## Webhook delivery
 
-Poll and push both need the client to stay connected. A hosted client, such as an agent platform that serves many users, would rather hand your server a URL and be called when something happens. That is webhook delivery: the client calls `events/subscribe` with an `https` URL and a signing secret, and your server POSTs each event there, signed with the [Standard Webhooks](https://www.standardwebhooks.com/) scheme, until a lease runs out. The client keeps the subscription by subscribing again before the lease ends, and a client that disappears stops costing anything once its lease lapses.
-
-Turn it on by passing a `WebhookDelivery` to the extension. Event types then list `webhook` alongside `poll` and `push`, and nothing about how you declare or emit events changes.
+With webhooks, the client hands your server an `https` URL and a secret, and your server POSTs each event there, signed with [Standard Webhooks](https://www.standardwebhooks.com/). The client doesn't have to stay connected; it renews a lease by subscribing again. Pass a `WebhookDelivery` to turn it on:
 
 ```python
 from fastmcp import FastMCP
@@ -272,17 +270,19 @@ mcp = FastMCP("Alerts", auth=...)
 mcp.add_extension(EventsExtension(webhooks=WebhookDelivery()))
 ```
 
-Webhook subscriptions need an authenticated client, because a subscription is identified by who asked for it, the URL, the event name and the arguments. Without a principal anyone who guessed those could cancel another client's subscription, so an unauthenticated request is refused with `Forbidden`.
+Webhook subscriptions require an authenticated client. The server challenges a URL before its first delivery, refuses private and loopback addresses (`allow_private_addresses=True` for local development), and never follows redirects.
 
-Before the first delivery to a URL, the server POSTs a signed `verification` message with a one-time challenge, and the subscribe call succeeds only if the receiver echoes it back. That stops a client from pointing your server at a URL that never asked for traffic. The server also refuses callback URLs that resolve to loopback, private or link-local addresses, checks the address again on every delivery and connects to the address it checked, and never follows redirects, so a subscription cannot reach your own network. Pass `allow_private_addresses=True` only for local development.
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `min_ttl`, `max_ttl` | 1 minute, 1 hour | Range of lease lengths granted |
+| `retry_window` | 10 minutes | How long a failing event is retried before it's skipped |
+| `interval` | 5 seconds | Time between sender passes (an emit in the same process wakes it at once) |
+| `sender` | `True` | Whether this process sends deliveries |
+| `store` | memory | Where subscriptions are kept |
 
-### Leases, retries and progress
+### Running more than one replica
 
-`WebhookDelivery` grants each subscription a lease between `min_ttl` and `max_ttl` (one minute and one hour by default), close to what the client asks for. Events for one subscription are sent in order, one at a time. A receiver that fails is retried with growing waits for up to `retry_window` (ten minutes), after which that event is given up and delivery moves on; a receiver that answers `410` or `413` gives the event up at once. Each delivery keeps its `webhook-id` across retries, and its body carries a `cursor` the receiver should store. A client that resubscribes with that cursor after its lease lapsed, or after the server lost its subscriptions, gets the events it missed replayed.
-
-### Sharing subscriptions across replicas
-
-Subscriptions, their progress and their delivery status live in `WebhookDelivery(store=...)`, a [py-key-value](https://github.com/strawgate/py-key-value) store. The default keeps them in memory, so only one process sees them. With several replicas, give every replica the same store and the same shared event log, and any replica can take a subscribe, a refresh or an unsubscribe:
+Give every replica the same `store`, any [py-key-value](https://github.com/strawgate/py-key-value) store, along with the shared event log from [the replicas section above](#sharing-events-across-replicas-with-docket):
 
 ```python
 from key_value.aio.stores.redis import RedisStore
@@ -297,9 +297,7 @@ events = EventsExtension(
 )
 ```
 
-Every replica runs a sender with the server, which wakes at once when its own process emits and otherwise every `interval` seconds. Two replicas can send the same delivery; it carries the same `webhook-id` from either, so a receiver that drops repeated IDs sees it once. To send from one place only, pass `sender=False` to the other replicas. A host that runs no work between requests cannot run a sender at all: there, call `await events.deliver_webhooks()` from something that runs on a schedule, and each call sends what every subscription is owed.
-
-A reader serves webhook subscriptions too: the sender runs it from each subscription's cursor, outside any client request.
+Any replica can then accept a subscribe or send a delivery. A delivery has the same `webhook-id` whichever replica sends it, so receivers can drop duplicates. On hosts that can't run background work, such as Lambda, set `sender=False` and call `await events.deliver_webhooks()` on a schedule.
 
 ## Subscribing from a client
 
@@ -338,7 +336,7 @@ A push subscription can also end with an error that is not retried. When the ser
 
 ### Receiving webhooks
 
-`subscribe_webhook()` creates or refreshes a webhook subscription. Generate the secret with `new_webhook_secret()`, give it to your receiver, and subscribe with the receiver's URL. The result carries the subscription's `id`, which arrives in the `X-MCP-Subscription-Id` header of every delivery, the `refresh_before` time to subscribe again by, and a `cursor` to store.
+Generate a secret, give it to your receiver, and subscribe with the receiver's URL. Subscribe again before `refresh_before` to keep the subscription.
 
 ```python
 from fastmcp import Client
@@ -357,7 +355,7 @@ async def start(client: Client) -> None:
     print(subscription.id, subscription.refresh_before)
 ```
 
-Your receiver checks each POST with `verify_webhook()`, which takes the secret, the request headers and the raw body, and returns the parsed body or raises `WebhookVerificationError`. A body with a `type` field is a control message: answer a `verification` message with `{"challenge": ...}` from it, store the cursor of a `gap` message, and stop on a `terminated` one. Any other body is one event. Answer `2xx` only once you have stored it, and drop deliveries whose `webhook-id` you have already seen.
+The receiver checks each POST with `verify_webhook()` and echoes the challenge on the first one. Answer `2xx` once the event is stored.
 
 ```python
 from starlette.requests import Request
@@ -380,7 +378,7 @@ async def receive(request: Request) -> Response:
     return Response(status_code=204)
 ```
 
-`unsubscribe_webhook()` ends a subscription at once. It is optional, since a subscription you stop refreshing lapses at the end of its lease.
+`unsubscribe_webhook()` ends a subscription right away; otherwise it lapses when you stop refreshing.
 
 To try a server from the terminal, `fastmcp experimental events watch` does the same thing and prints each event; see [the CLI](/cli/client#watching-events).
 
