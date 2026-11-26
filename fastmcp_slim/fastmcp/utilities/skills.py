@@ -68,10 +68,22 @@ async def list_skills(client: Client) -> list[SkillSummary]:
 
     Returns:
         List of SkillSummary objects with name, description, and URI
+
+    Example:
+        ```python
+        from fastmcp import Client
+        from fastmcp.utilities.skills import list_skills
+
+        async with Client("http://skills-server/mcp") as client:
+            skills = await list_skills(client)
+            for skill in skills:
+                print(f"{skill.name}: {skill.description}")
+        ```
     """
     _deprecated(
         "list_skills",
-        "Enable `SkillsClientExtension()` and use `await client.list_skills()`.",
+        "Use `await client.list_skill_resources()`, or `await client.list_skills()` "
+        "for servers with the Skills extension.",
     )
     return await _list_skills(client)
 
@@ -110,8 +122,10 @@ async def get_skill_manifest(client: Client, skill_name: str) -> SkillManifest:
     """
     _deprecated(
         "get_skill_manifest",
-        "Enable `SkillsClientExtension()` and use "
-        "`await client.get_skill('skill://<name>/SKILL.md')`.",
+        "Use `await client.read_resource('skill://<name>/_manifest')` to read "
+        "manifest JSON without the Skills extension, or "
+        "`await client.get_skill('skill://<name>/SKILL.md')` for "
+        "Skills-extension entries with file digests and sizes.",
     )
     return await _get_skill_manifest(client, skill_name)
 
@@ -168,11 +182,25 @@ async def download_skill(
     Raises:
         ValueError: If skill cannot be found or downloaded
         FileExistsError: If skill directory exists and overwrite=False
+
+    Example:
+        ```python
+        from fastmcp import Client
+        from fastmcp.utilities.skills import download_skill
+
+        async with Client("http://skills-server/mcp") as client:
+            skill_path = await download_skill(
+                client,
+                "pdf-processing",
+                "~/.claude/skills"
+            )
+            print(f"Downloaded to: {skill_path}")
+        ```
     """
     _deprecated(
         "download_skill",
-        "Enable `SkillsClientExtension()`, call `await client.read_skill(uri)` "
-        "with the skill's SKILL.md URI, then call `skill.to_directory()`.",
+        "Use `(await client.read_skill('skill://<name>/SKILL.md'))"
+        ".to_directory(target_dir / '<name>')`.",
     )
     return await _download_skill(client, skill_name, target_dir, overwrite=overwrite)
 
@@ -248,11 +276,21 @@ async def sync_skills(
 
     Returns:
         List of paths to downloaded skill directories
+
+    Example:
+        ```python
+        from fastmcp import Client
+        from fastmcp.utilities.skills import sync_skills
+
+        async with Client("http://skills-server/mcp") as client:
+            paths = await sync_skills(client, "~/.claude/skills")
+            print(f"Downloaded {len(paths)} skills")
+        ```
     """
     _deprecated(
         "sync_skills",
-        "Enable `SkillsClientExtension()` and loop over `await client.list_skills()`. "
-        "Call `await client.read_skill(entry.uri)` and `skill.to_directory()` for each entry.",
+        "Loop over `await client.list_skill_resources()` and call "
+        "`(await client.read_skill(str(resource.uri))).to_directory(target_dir / name)`.",
     )
     skills = await _list_skills(client)
     downloaded = []
