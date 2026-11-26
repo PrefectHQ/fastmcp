@@ -514,7 +514,8 @@ class TestBuildStdioFromCommand:
         assert transport.command == "uvx"
         assert transport.args == ["my-server"]
 
-    def test_quoted_args(self):
+    def test_quoted_args(self, monkeypatch):
+        monkeypatch.setattr(client_module.sys, "platform", "linux")
         transport = _build_stdio_from_command("npx -y '@scope/server'")
         assert transport.command == "npx"
         assert transport.args == ["-y", "@scope/server"]
@@ -523,7 +524,8 @@ class TestBuildStdioFromCommand:
         with pytest.raises(SystemExit):
             _build_stdio_from_command("")
 
-    def test_invalid_shell_syntax_exits(self):
+    def test_invalid_shell_syntax_exits(self, monkeypatch):
+        monkeypatch.setattr(client_module.sys, "platform", "linux")
         with pytest.raises(SystemExit):
             _build_stdio_from_command("npx 'unterminated")
 

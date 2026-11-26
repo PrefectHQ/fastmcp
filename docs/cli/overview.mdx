@@ -62,6 +62,19 @@ fastmcp list mcp-config.json
 fastmcp list --command 'npx -y @modelcontextprotocol/server-github'
 ```
 
+On Windows, the command string uses native Windows argument quoting. Use double
+quotes around paths or argument values containing spaces, including attached
+options such as `--config="C:\Program Files\mcp.json"`. Backslashes in paths are
+preserved. Single quotes inside the command string are literal characters.
+On other platforms, the string uses POSIX shell quoting. The command is launched
+directly; shell operators and variable expansion require an explicit shell.
+
+For example, in PowerShell:
+
+```powershell
+fastmcp list --command '"C:\Program Files\Python\python.exe" "C:\my project\server.py"'
+```
+
 ### Name-Based Resolution
 
 If your servers are already configured in an editor or tool, you can refer to them by name. FastMCP scans configs from Claude Desktop, Claude Code, Cursor, Gemini CLI, Goose, and a project-level `mcp.json`:
