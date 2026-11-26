@@ -20,6 +20,7 @@ without it the flow does nothing.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -39,8 +40,8 @@ from prefect.context import FlowRunContext
 from prefect.events import emit_event
 from prefect.variables import Variable
 
-from flows.agentic_backlog import MAINTAINER_ASSOCIATIONS, referenced_issues
-from flows.agentic_github import GitHub
+from flows.agentic_backlog import MAINTAINER_ASSOCIATIONS
+from flows.agentic_github import GitHub, can_write
 from flows.agentic_intake import directly_addresses
 from flows.agentic_labels import CONFIG_VARIABLE, TRIAGE_LABEL
 from flows.agentic_stack_runtime import AgentPlan, judge, secret_sync
@@ -59,6 +60,8 @@ GATE_PAGES = 5
 GATE_SENDERS = 10
 GATE_PER_SENDER = 5
 STANDING_ORDER = {"vouched": 0, "denounced": 2}
+# Every number written as an issue reference, in any form `directly_addresses` reads.
+ISSUE_NUMBER = re.compile(r"(?:#|/issues/)(\d+)")
 
 
 def next_key(number: int) -> str:
@@ -142,19 +145,36 @@ def gate_closed_pulls(read: Callable[[str], object], since: datetime) -> list[di
     return found
 
 
-def maintainer_answered(read: Callable[[str], object], pull: dict) -> bool:
+def maintainer_answered(
+    read: Callable[[str], object], pull: dict, writers: dict[str, bool]
+) -> bool:
     """Whether a maintainer commented on the PR after the gate closed it.
 
-    That is a decision (usually a decline), so the PR stops waiting on one.
+    That is a decision (usually a decline), so the PR stops waiting on one. A
+    maintainer whose org membership is private shows up as a plain contributor,
+    so anyone else's comment is checked against write access (`writers` caches it).
     """
     comments = read(f"repos/{REPOSITORY}/issues/{pull['number']}/comments?per_page=100")
+    if not isinstance(comments, list):
+        return False
     closed = _when(pull["closed_at"])
-    return isinstance(comments, list) and any(
-        comment.get("author_association") in MAINTAINER_ASSOCIATIONS
-        and (comment.get("user") or {}).get("type") == "User"
-        and _when(comment["created_at"]) > closed
-        for comment in comments
-    )
+    for comment in comments:
+        user = comment.get("user") or {}
+        if user.get("type") != "User" or _when(comment["created_at"]) <= closed:
+            continue
+        if comment.get("author_association") in MAINTAINER_ASSOCIATIONS:
+            return True
+        login = user.get("login")
+        if not login or login == (pull.get("user") or {}).get("login"):
+            continue
+        if login not in writers:
+            try:
+                writers[login] = can_write(read, login)
+            except ValueError:
+                writers[login] = False
+        if writers[login]:
+            return True
+    return False
 
 
 def gate_closed(
@@ -172,9 +192,11 @@ def gate_closed(
     """
     groups: dict[str, list[dict]] = {}
     issues: dict[int, dict | None] = {}
+    writers: dict[str, bool] = {}
     for pull in gate_closed_pulls(read, now - GATE_WINDOW):
         body = pull.get("body") or ""
-        numbers = [n for n in referenced_issues(body) if directly_addresses(body, n)]
+        mentioned = sorted({int(n) for n in ISSUE_NUMBER.findall(body)})
+        numbers = [n for n in mentioned if directly_addresses(body, n)]
         waiting_on = []
         for number in numbers:
             if number not in issues:
@@ -188,7 +210,7 @@ def gate_closed(
                 and not issue.get("assignees")
             ):
                 waiting_on.append(issue)
-        if not waiting_on or maintainer_answered(read, pull):
+        if not waiting_on or maintainer_answered(read, pull, writers):
             continue
         sender = pull["user"]["login"]
         for issue in waiting_on:

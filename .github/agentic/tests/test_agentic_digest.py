@@ -110,12 +110,15 @@ def _issue(number, **extra):
     }
 
 
-def _reader(pulls, issues, comments=None):
+def _reader(pulls, issues, comments=None, writers=()):
     comments = comments or {}
 
     def read(path):
         if path.startswith("repos/PrefectHQ/fastmcp/pulls?state=closed"):
             return pulls if path.endswith("page=1") else []
+        if path.endswith("/permission"):
+            login = path.split("/")[-2]
+            return {"permission": "write" if login in writers else "read"}
         if "/comments" in path:
             return comments.get(int(path.split("/")[-2]), [])
         return issues.get(int(path.rsplit("/", 1)[1]))
@@ -160,6 +163,19 @@ def test_gate_closed_contribution_to_an_unassigned_issue_waits_on_a_maintainer(s
 
 
 @pytest.mark.parametrize(
+    "body",
+    [
+        "Fixes #6820",
+        "Fixes PrefectHQ/fastmcp#6820",
+        "closes: https://github.com/PrefectHQ/fastmcp/issues/6820",
+    ],
+)
+def test_gate_closed_reads_every_closing_reference_form(steps, body):
+    read = _reader([_pull(6821, "Pipe5linger", body)], {6820: _issue(6820)})
+    assert [e["prs"][0]["issue"] for e in digest.gate_closed(read, None, NOW)] == [6820]
+
+
+@pytest.mark.parametrize(
     "pull, issue",
     [
         # assigning anyone decides it: the author's PR reopens, anyone else's stays closed
@@ -188,6 +204,18 @@ def test_a_maintainer_answer_after_the_close_counts_as_a_decision(steps):
     issues = {10: _issue(10)}
     assert digest.gate_closed(_reader([pull], issues, {1: [before, bot]}), None, NOW)
     assert digest.gate_closed(_reader([pull], issues, {1: [after]}), None, NOW) == []
+    # a maintainer with private org membership comments as a plain contributor
+    private = {
+        **after,
+        "author_association": "CONTRIBUTOR",
+        "user": {"type": "User", "login": "m"},
+    }
+    stranger = {**private, "user": {"type": "User", "login": "s"}}
+    answered = _reader([pull], issues, {1: [private]}, writers={"m"})
+    assert digest.gate_closed(answered, None, NOW) == []
+    assert digest.gate_closed(
+        _reader([pull], issues, {1: [stranger]}, writers={"m"}), None, NOW
+    )
 
 
 def test_gate_closed_ranks_reproduced_then_vouched_then_recent(steps):
