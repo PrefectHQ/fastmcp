@@ -59,10 +59,12 @@ printf '[]\n' > "$scratch/searches.json"
 printf '[]\n' > "$scratch/matches.json"
 while IFS= read -r query; do
   api -X GET search/issues -f q="$query" -f per_page=100 > "$scratch/search.json"
-  jq -e '.incomplete_results == false and .total_count <= 100' "$scratch/search.json" >/dev/null || {
-    echo "PR search incomplete: $query" >&2; exit 1;
-  }
-  jq --arg query "$query" --slurpfile result "$scratch/search.json" '. + [{query:$query,total_count:$result[0].total_count,complete:true}]' "$scratch/searches.json" > "$scratch/next.json"
+  complete=$(jq '.incomplete_results == false and .total_count <= 100' "$scratch/search.json")
+  # Only the issue-number search finds links; a broad title search just has more leads.
+  if [[ $complete != true && $query == *" is:pr $issue in:body" ]]; then
+    echo "PR search incomplete: $query" >&2; exit 1
+  fi
+  jq --arg query "$query" --argjson complete "$complete" --slurpfile result "$scratch/search.json" '. + [{query:$query,total_count:$result[0].total_count,complete:$complete}]' "$scratch/searches.json" > "$scratch/next.json"
   mv "$scratch/next.json" "$scratch/searches.json"
   jq -s --arg number "$issue" --argjson by_number "$([[ $query == *" is:pr $issue in:body" ]] && echo true || echo false)" '
     .[0] + [.[1].items[] | select(($by_number | not) or ((.body // "") | test("(#|/issues/|/pull/)" + $number + "(?![0-9])")))]
@@ -77,12 +79,17 @@ jq -nr --slurpfile timeline "$scratch/timeline.json" '
 ' > "$scratch/numbers"
 jq -r --arg number "$issue" '.[] | select((.body // "") | test("(#|/issues/|/pull/)" + $number + "(?![0-9])")) | .number' "$scratch/matches.json" >> "$scratch/numbers"
 sort -nu "$scratch/numbers" > "$scratch/linked"
-jq -r '.[].number' "$scratch/matches.json" >> "$scratch/numbers"
-sort -nu "$scratch/numbers" > "$scratch/unique-numbers"
-if (($(wc -l < "$scratch/unique-numbers") > 30)); then
-  echo 'More than 30 PR candidates; bounded matching requires narrower investigation' >&2
+if (($(wc -l < "$scratch/linked") > 30)); then
+  echo 'More than 30 linked PRs; bounded matching requires narrower investigation' >&2
   exit 1
 fi
+# Title-keyword matches are leads, not links: keep the best-ranked ones that fit
+# the 30 PR bound and say how many were left out, instead of failing the issue.
+jq -r '.[].number' "$scratch/matches.json" | grep -vxFf "$scratch/linked" | awk '!seen[$0]++' > "$scratch/leads" || true
+room=$((30 - $(wc -l < "$scratch/linked")))
+head -n "$room" "$scratch/leads" > "$scratch/kept-leads"
+omitted_leads=$(($(wc -l < "$scratch/leads") - $(wc -l < "$scratch/kept-leads")))
+cat "$scratch/linked" "$scratch/kept-leads" | sort -nu > "$scratch/unique-numbers"
 printf '[]\n' > "$scratch/prs.json"
 collect_prs() {
   local number
@@ -159,9 +166,10 @@ jq -n --slurpfile issue "$scratch/issue.json" --slurpfile comments "$scratch/com
   --slurpfile timeline "$scratch/timeline.json" --slurpfile searches "$scratch/searches.json" --slurpfile prs "$scratch/prs.json" \
   --slurpfile labels "$scratch/labels.json" --slurpfile reactions "$scratch/reactions.json" \
   --slurpfile stacks "$scratch/stacks.json" --arg base_sha "$(cat "$scratch/base-sha")" \
+  --argjson omitted_leads "$omitted_leads" \
   '{schema_version:2,collected_at:(now|todateiso8601),complete:true,base_sha:$base_sha,
     repository_labels:$labels[0],issue:$issue[0],comments:$comments[0],timeline:$timeline[0],
-    reactions:$reactions[0],searches:$searches[0],prs:$prs[0],
+    reactions:$reactions[0],searches:$searches[0],omitted_search_matches:$omitted_leads,prs:$prs[0],
     stacks:[$stacks[0][]|select(any(.pull_requests[]; .number as $n|any($prs[0][];.number==$n)))]}' > "$scratch/evidence.json"
 if (($(wc -c < "$scratch/evidence.json") > 250000)); then
   echo 'Evidence exceeds the 250 KB intake bound' >&2

@@ -141,3 +141,71 @@ def test_route_evidence_links_referencing_prs_and_summarizes_keyword_matches(tmp
     fresh = json.loads(publication.stdout)
     assert fresh["prs"] == evidence["prs"]
     assert fresh["searches"] == evidence["searches"]
+
+
+def test_too_many_keyword_matches_are_bounded_instead_of_failing(tmp_path):
+    repo = "repos/PrefectHQ/fastmcp"
+    leads = list(range(200, 240))
+    routes = {
+        f"{repo}/issues/2026": {
+            "number": 2026,
+            "title": "server name list call",
+            "body": "",
+            "state": "open",
+            "html_url": "https://github.com/PrefectHQ/fastmcp/issues/2026",
+            "updated_at": "2026-10-21T00:00:00Z",
+            "author_association": "NONE",
+            "user": {"id": 2, "login": "reporter", "type": "User"},
+            "assignees": [],
+            "labels": [],
+            "pull_request": None,
+        },
+        f"{repo}/issues/2026/comments": [],
+        f"{repo}/issues/2026/timeline": [],
+        f"{repo}/labels": [],
+        f"{repo}/stacks": [],
+        f"{repo}/commits/main": {"sha": "b" * 40},
+        "search:repo:PrefectHQ/fastmcp is:pr 2026 in:body": {
+            "total_count": 1,
+            "incomplete_results": False,
+            "items": [{"number": 9001, "body": "Related to #2026"}],
+        },
+        'search:repo:PrefectHQ/fastmcp is:pr "server" "call" "list" "name"': {
+            "total_count": len(leads),
+            "incomplete_results": False,
+            "items": [{"number": n, "body": "unrelated"} for n in leads],
+        },
+        f"{repo}/pulls/9001": pr(9001, "Related to #2026"),
+        f"{repo}/issues/9001/comments": [],
+        f"{repo}/issues/9001/timeline": [],
+        f"{repo}/pulls/9001/reviews": [],
+        f"{repo}/pulls/9001/comments": [],
+        f"{repo}/commits/{'c' * 40}/check-runs": {"check_runs": []},
+        f"{repo}/commits/{'c' * 40}/statuses": [],
+        **{f"{repo}/pulls/{n}": pr(n, "unrelated") for n in leads},
+    }
+    (tmp_path / "routes.json").write_text(json.dumps(routes))
+    (tmp_path / "fake_gh.py").write_text(FAKE_GH)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text(
+        f'#!/bin/sh\nexec "{sys.executable}" "{tmp_path / "fake_gh.py"}" '
+        f'"{tmp_path / "routes.json"}" "$@"\n'
+    )
+    gh.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/collect_fastmcp_stack_evidence.sh"), "2026"],
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin"},
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr
+    evidence = json.loads(result.stdout)
+    numbers = [p["number"] for p in evidence["prs"]]
+    assert 9001 in numbers and len(numbers) == 30
+    assert numbers[:29] == leads[:29]
+    assert evidence["omitted_search_matches"] == len(leads) - 29

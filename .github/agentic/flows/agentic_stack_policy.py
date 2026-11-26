@@ -62,7 +62,12 @@ def publication_revision(evidence: dict) -> str:
         raise ValueError("Publication needs complete evidence")
     value = revision_evidence(evidence)
     value["stacks"] = [stack for stack in value["stacks"] if stack["pull_requests"]]
-    for key in ("collected_at", "searches", "repository_labels"):
+    for key in (
+        "collected_at",
+        "searches",
+        "omitted_search_matches",
+        "repository_labels",
+    ):
         value.pop(key, None)
     value["issue"].pop("updated_at", None)
     return digest(value)
