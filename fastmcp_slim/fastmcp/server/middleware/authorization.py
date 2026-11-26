@@ -24,14 +24,14 @@ Example:
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from typing import Any, TypeVar
 
 import mcp_types as mt
 
 from fastmcp.exceptions import AuthorizationError, InsufficientScopeError
 from fastmcp.prompts.base import Prompt, PromptResult
-from fastmcp.resources.base import Resource
+from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import (
@@ -48,7 +48,8 @@ from fastmcp.utilities.authorization import (
     run_auth_checks_with_shortfall,
     scope_requirements,
 )
-from fastmcp.utilities.versions import VersionSpec
+from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,174 @@ def _requested_version(meta: Mapping[str, Any] | None) -> VersionSpec | None:
         return VersionSpec(gte=gte, lt=lt, eq=eq)
 
     return None
+
+
+ComponentT = TypeVar("ComponentT", bound=FastMCPComponent)
+
+
+def _pinned_version_context(
+    context: MiddlewareContext[Any], version: str
+) -> MiddlewareContext[Any]:
+    """Copy `context` with the request pinned to `version`.
+
+    The pin is written into the request meta (`{"fastmcp": {"version": ...}}`,
+    the shape `_version_request_meta` builds), so core routing resolves the
+    pinned version instead of the highest. Any other meta the request already
+    carries is preserved.
+    """
+    meta = dict(context.message.meta or {})
+    fastmcp_meta = meta.get("fastmcp")
+    if isinstance(fastmcp_meta, dict):
+        fastmcp_meta = {**fastmcp_meta, "version": version}
+    else:
+        fastmcp_meta = {"version": version}
+    meta["fastmcp"] = fastmcp_meta
+    return context.copy(message=context.message.model_copy(update={"meta": meta}))
+
+
+def _has_custom_typed_hook(server: Any, hook: str) -> bool:
+    """Whether any non-AuthMiddleware layer customizes the typed hook `hook`.
+
+    A fallback executes a different version than the one other middleware
+    authorized: they resolve the component by name, so they saw the highest
+    version, and the fallback would run a lower one they never approved.
+    AuthMiddleware layers are exempt — their call policy is exactly `.auth`,
+    which the filtered listing and the re-authorization of the resolved
+    component already enforce — as is the base pass-through hook. Any other
+    layer customizing the hook may have made a version-dependent decision the
+    fallback would bypass, so the original denial stands. Request-level
+    `on_request` policies authorize the request, not a version, and are not
+    covered by this gate.
+    """
+    middleware = getattr(server, "middleware", None)
+    if not isinstance(middleware, list):
+        return False
+    base = getattr(Middleware, hook, None)
+    auth_hook = getattr(AuthMiddleware, hook, None)
+    for mw in middleware:
+        effective = getattr(type(mw), hook, None)
+        if effective is base or effective is auth_hook:
+            continue
+        return True
+    return False
+
+
+async def _all_auth_layers_allow(
+    server: Any, component: FastMCPComponent, token: Any
+) -> bool:
+    """Whether every AuthMiddleware layer on `server` allows `component`.
+
+    This re-authorizes the component a lookup actually returned, not the
+    listing candidate it was chosen for: when providers share a name and
+    version, the lookup can return a different component than the listing
+    showed (a mounted twin versus a local one), and only the returned one is
+    what would execute.
+    """
+    middleware = getattr(server, "middleware", None)
+    if not isinstance(middleware, list):
+        return True
+    for mw in middleware:
+        if not isinstance(mw, AuthMiddleware):
+            continue
+        ctx = AuthContext(token=token, component=component)
+        try:
+            if not await run_auth_checks(mw.auth, ctx):
+                return False
+        except AuthorizationError:
+            return False
+    return True
+
+
+async def _fallback_version(
+    server: Any,
+    denied: ComponentT,
+    candidates: Sequence[ComponentT],
+    resolve: Callable[[str], Awaitable[ComponentT | None]],
+) -> str | None:
+    """Highest version below the denied one, from the middleware-filtered listing.
+
+    Candidates come from the listing the caller actually sees, so every
+    layer's list policy — AuthMiddleware's `.auth` and any custom
+    middleware's `on_list_*` filter — has already allowed them. Each candidate
+    is still re-resolved by its exact version string and re-authorized:
+    `VersionSpec(eq=...)` matches PEP 440-equivalent spellings (`"1"` resolves
+    `"1.0"`), and providers sharing a name and version can make the lookup
+    return a different component than the listing showed, so a candidate
+    whose re-resolution returns a differently-spelled version, or a component
+    any AuthMiddleware layer refuses, is rejected rather than running a
+    component the caller was denied. Unversioned candidates have no version
+    to pin, so they are skipped — the same limitation as the component-level
+    fallback in `_highest_available_version`.
+    """
+    if denied.version is None:
+        return None
+    token = get_access_token()
+    for candidate in sorted(candidates, key=version_sort_key, reverse=True):
+        if candidate.version is None:
+            continue
+        if version_sort_key(candidate) >= version_sort_key(denied):
+            continue
+        resolved = await resolve(candidate.version)
+        if resolved is None or resolved.version != candidate.version:
+            continue
+        if not await _all_auth_layers_allow(server, resolved, token):
+            continue
+        return candidate.version
+    return None
+
+
+async def _filtered_list(
+    server: Any,
+    message: Any,
+    method: str,
+    core_list: Callable[[], Awaitable[Sequence[ComponentT]]],
+) -> Sequence[ComponentT]:
+    """Run a listing's typed hooks (only) as an interior dispatch.
+
+    The fallback discovers candidates by listing, but that listing is not a
+    client request: running the whole chain would replay request-level
+    admission middleware — a rate limiter would charge it as another request,
+    and a denial there would mask the original authorization denial. The
+    `"typed"` phase runs only the per-method list hooks, the policies that
+    decide what the listing shows, and skips `on_request`/`on_message`.
+    """
+    from fastmcp.server.context import Context
+
+    async with Context(fastmcp=server) as ctx:
+        mw_context = MiddlewareContext(
+            message=message,
+            source="client",
+            type="request",
+            method=method,
+            fastmcp_context=ctx,
+        )
+        return await server._run_middleware(
+            mw_context,
+            lambda context: core_list(),
+            phase="typed",
+        )
+
+
+async def _resolve_resource_component(
+    server: Any, uri: str, version: VersionSpec | None
+) -> Resource | ResourceTemplate | None:
+    """Resolve a resource URI to its concrete resource or template, if any.
+
+    Prefab renderer resources are synthesized on demand by core `read_resource`
+    rather than stored on a provider, so neither lookup can see them; mirror
+    that path so the global checks run against the component core would read.
+    """
+    component = await server.get_resource(uri, version=version)
+    if component is not None:
+        return component
+    component = await server.get_resource_template(uri, version=version)
+    if component is not None:
+        return component
+    from fastmcp.server.providers.prefab_synthesis import (
+        synthesize_prefab_resource_by_uri,
+    )
+
+    return await synthesize_prefab_resource_by_uri(server, uri)
 
 
 class AuthMiddleware(Middleware):
@@ -266,6 +435,7 @@ class AuthMiddleware(Middleware):
         # indistinguishable here. Keep the message ambiguous to avoid
         # disclosing existence of tools the caller is not authorized to see.
         version = _requested_version(context.message.meta)
+        hashed = False
         tool = await fastmcp.fastmcp.get_tool(tool_name, version=version)
         if tool is None:
             # Core routing retries a failed display-name lookup as a hashed
@@ -275,21 +445,42 @@ class AuthMiddleware(Middleware):
             # component however it was addressed. `get_tool_by_hash` applies
             # the transforms, visibility, enabled state, and component auth
             # a name lookup applies, so a refused tool still resolves to None.
-            hashed = parse_hashed_backend_name(tool_name)
-            if hashed is not None:
-                digest, local_name = hashed
+            parsed = parse_hashed_backend_name(tool_name)
+            if parsed is not None:
+                digest, local_name = parsed
                 tool = await fastmcp.fastmcp.get_tool_by_hash(digest, local_name)
+                hashed = tool is not None
         if tool is None:
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': "
                 "not found or not authorized"
             )
 
-        # Global auth check
+        # Global auth check. A denial — raised by a check or returned with a
+        # shortfall — falls back to the highest lower version the
+        # middleware-filtered listing shows, so an unversioned call runs the
+        # version the listing shows instead of the denied highest one. Without
+        # a usable lower version the original denial stands, shortfall intact.
         token = get_access_token()
         ctx = AuthContext(token=token, component=tool)
-        authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
+        denied: AuthorizationError | None = None
+        try:
+            authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
+        except AuthorizationError as exc:
+            authorized, missing, denied = False, [], exc
         if not authorized:
+            # Only an unversioned call falls back: a caller who asked for a
+            # specific version and was denied gets the denial, not a silent
+            # switch to another version.
+            pinned = None
+            if version is None:
+                pinned = await self._fallback_tool_version(
+                    fastmcp.fastmcp, tool, tool_name, hashed=hashed
+                )
+            if pinned is not None:
+                return await call_next(_pinned_version_context(context, pinned))
+            if denied is not None:
+                raise denied
             if missing:
                 missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)
                 raise InsufficientScopeError(
@@ -304,6 +495,39 @@ class AuthMiddleware(Middleware):
             )
 
         return await call_next(context)
+
+    async def _fallback_tool_version(
+        self, server: Any, tool: Tool, tool_name: str, *, hashed: bool
+    ) -> str | None:
+        """Highest version below the denied tool, from the middleware-filtered listing.
+
+        Hashed backend addresses are never fallen back: the core hashed-name
+        path drops the version constraint, so a pinned fallback would still
+        run the denied top version. An unversioned tool has no lower version
+        to fall back to, so it returns before listing anything.
+        """
+        if hashed or tool.version is None:
+            return None
+        if _has_custom_typed_hook(server, "on_call_tool"):
+            return None
+        candidates = [
+            t
+            for t in await _filtered_list(
+                server,
+                mt.ListToolsRequest(method="tools/list"),
+                "tools/list",
+                lambda: server.list_tools(run_middleware=False),
+            )
+            if t.name == tool.name
+        ]
+
+        async def resolve(version: str) -> Tool | None:
+            resolved = await server.get_tool(tool_name, VersionSpec(eq=version))
+            if resolved is None or resolved.version != version:
+                return None
+            return resolved
+
+        return await _fallback_version(server, tool, candidates, resolve)
 
     async def on_list_resources(
         self,
@@ -359,26 +583,9 @@ class AuthMiddleware(Middleware):
         # cases are indistinguishable here. Keep the message ambiguous to avoid
         # disclosing existence of resources the caller is not authorized to see.
         version = _requested_version(context.message.meta)
-        component = await fastmcp.fastmcp.get_resource(str(uri), version=version)
-        if component is None:
-            component = await fastmcp.fastmcp.get_resource_template(
-                str(uri),
-                version=version,
-            )
-        if component is None:
-            # Prefab renderer resources (`ui://prefab/renderer/<sha256>/
-            # renderer.html`, plus legacy per-tool hashed URIs) are synthesized
-            # on demand by core `read_resource` rather than stored on a
-            # provider, so neither lookup above can see them. Mirror that path
-            # so the global checks below run against the component core would
-            # actually read.
-            from fastmcp.server.providers.prefab_synthesis import (
-                synthesize_prefab_resource_by_uri,
-            )
-
-            component = await synthesize_prefab_resource_by_uri(
-                fastmcp.fastmcp, str(uri)
-            )
+        component = await _resolve_resource_component(
+            fastmcp.fastmcp, str(uri), version
+        )
         if component is None:
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': "
@@ -402,6 +609,143 @@ class AuthMiddleware(Middleware):
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': insufficient permissions"
             )
+
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[mt.ReadResourceRequestParams],
+        call_next: CallNext[mt.ReadResourceRequestParams, ResourceResult],
+    ) -> ResourceResult:
+        """Authorize a resource read, falling back to the highest lower version
+        the middleware-filtered listing shows when the unversioned call is
+        denied for the version the listing shows. The overridable
+        `check_resource_access` hook still decides: it runs against the pinned
+        context too, so subclass policy is enforced on the fallback as well.
+        """
+        try:
+            await self.check_resource_access(context)
+        except AuthorizationError as exc:
+            pinned = await self._fallback_resource_context(context)
+            if pinned is None:
+                raise
+            try:
+                await self._recheck_resource_access(pinned)
+            except AuthorizationError:
+                # The fallback is denied too; report the denial for the
+                # version the caller asked for, not the fallback's.
+                raise exc from None
+            return await call_next(pinned)
+        return await call_next(context)
+
+    async def _recheck_resource_access(
+        self, context: MiddlewareContext[mt.ReadResourceRequestParams]
+    ) -> None:
+        """Re-run the resource-access hooks that will not see the pinned request again.
+
+        Every layer up to and including this one already approved the unpinned
+        version, but any of them may forbid the fallback — without this, the
+        fallback would run a version an earlier hook explicitly denied.
+        Layers after this one see the pinned context through `call_next`, so
+        they are not re-run here.
+        """
+        fastmcp = context.fastmcp_context
+        server = fastmcp.fastmcp if fastmcp is not None else None
+        middleware = getattr(server, "middleware", None)
+        if not isinstance(middleware, list):
+            await self.check_resource_access(context)
+            return
+        position = next(
+            (i for i, mw in enumerate(middleware) if mw is self),
+            None,
+        )
+        if position is None:
+            await self.check_resource_access(context)
+            return
+        for mw in middleware[: position + 1]:
+            await mw.check_resource_access(context)
+
+    async def _fallback_resource_context(
+        self, context: MiddlewareContext[mt.ReadResourceRequestParams]
+    ) -> MiddlewareContext[mt.ReadResourceRequestParams] | None:
+        """Pin the request to the highest lower resource version the
+        middleware-filtered listing shows, or None when there is none.
+
+        A denied concrete resource only falls back to concrete resources at
+        the same URI, and a denied template only to templates with the same
+        `uri_template` — never to a template that merely happens to match the
+        URI, since core `read_resource` lets concrete resources shadow
+        templates.
+        """
+        fastmcp = context.fastmcp_context
+        if fastmcp is None:
+            return None
+        server = fastmcp.fastmcp
+        uri = str(context.message.uri)
+        version = _requested_version(context.message.meta)
+        # Only an unversioned call falls back: a caller who asked for a
+        # specific version and was denied gets the denial, not a silent
+        # switch to another version.
+        if version is not None:
+            return None
+        if _has_custom_typed_hook(server, "on_read_resource"):
+            return None
+        denied = await _resolve_resource_component(server, uri, version)
+        if denied is None or denied.version is None:
+            return None
+        if isinstance(denied, ResourceTemplate):
+            candidates = [
+                t
+                for t in await _filtered_list(
+                    server,
+                    mt.ListResourceTemplatesRequest(method="resources/templates/list"),
+                    "resources/templates/list",
+                    lambda: server.list_resource_templates(run_middleware=False),
+                )
+                if t.uri_template == denied.uri_template
+            ]
+
+            async def resolve_template(version: str) -> ResourceTemplate | None:
+                resolved = await server.get_resource_template(
+                    uri, VersionSpec(eq=version)
+                )
+                if (
+                    resolved is None
+                    or resolved.version != version
+                    or resolved.uri_template != denied.uri_template
+                ):
+                    return None
+                return resolved
+
+            pinned = await _fallback_version(
+                server, denied, candidates, resolve_template
+            )
+        else:
+            candidates = [
+                r
+                for r in await _filtered_list(
+                    server,
+                    mt.ListResourcesRequest(method="resources/list"),
+                    "resources/list",
+                    lambda: server.list_resources(run_middleware=False),
+                )
+                if str(r.uri) == uri
+            ]
+
+            async def resolve_resource(version: str) -> Resource | None:
+                resolved = await server.get_resource(uri, VersionSpec(eq=version))
+                if (
+                    resolved is None
+                    or resolved.version != version
+                    or str(resolved.uri) != uri
+                ):
+                    return None
+                return resolved
+
+            pinned = await _fallback_version(
+                server, denied, candidates, resolve_resource
+            )
+        if pinned is None:
+            return None
+        return _pinned_version_context(context, pinned)
 
     async def on_list_resource_templates(
         self,
@@ -495,11 +839,29 @@ class AuthMiddleware(Middleware):
                 "not found or not authorized"
             )
 
-        # Global auth check
+        # Global auth check. A denial — raised by a check or returned with a
+        # shortfall — falls back to the highest lower version the
+        # middleware-filtered listing shows, so an unversioned call runs the
+        # version the listing shows instead of the denied highest one. Without
+        # a usable lower version the original denial stands, shortfall intact.
         token = get_access_token()
         ctx = AuthContext(token=token, component=prompt)
-        authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
+        denied: AuthorizationError | None = None
+        try:
+            authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
+        except AuthorizationError as exc:
+            authorized, missing, denied = False, [], exc
         if not authorized:
+            # Only an unversioned call falls back: a caller who asked for a
+            # specific version and was denied gets the denial, not a silent
+            # switch to another version.
+            pinned = None
+            if version is None:
+                pinned = await self._fallback_prompt_version(fastmcp.fastmcp, prompt)
+            if pinned is not None:
+                return await call_next(_pinned_version_context(context, pinned))
+            if denied is not None:
+                raise denied
             if missing:
                 missing = self._chain_shortfall(missing, ctx, fastmcp.fastmcp)
                 raise InsufficientScopeError(
@@ -514,3 +876,32 @@ class AuthMiddleware(Middleware):
             )
 
         return await call_next(context)
+
+    async def _fallback_prompt_version(self, server: Any, prompt: Prompt) -> str | None:
+        """Highest version below the denied prompt, from the middleware-filtered listing.
+
+        An unversioned prompt has no lower version to fall back to, so it
+        returns before listing anything.
+        """
+        if prompt.version is None:
+            return None
+        if _has_custom_typed_hook(server, "on_get_prompt"):
+            return None
+        candidates = [
+            p
+            for p in await _filtered_list(
+                server,
+                mt.ListPromptsRequest(method="prompts/list"),
+                "prompts/list",
+                lambda: server.list_prompts(run_middleware=False),
+            )
+            if p.name == prompt.name
+        ]
+
+        async def resolve(version: str) -> Prompt | None:
+            resolved = await server.get_prompt(prompt.name, VersionSpec(eq=version))
+            if resolved is None or resolved.version != version:
+                return None
+            return resolved
+
+        return await _fallback_version(server, prompt, candidates, resolve)

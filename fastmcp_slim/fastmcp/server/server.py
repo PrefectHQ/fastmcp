@@ -91,6 +91,7 @@ from fastmcp.server.extensions import _extension_tool_call_scope
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.server.middleware.authorization import _requested_version
 from fastmcp.server.middleware.middleware import (
     MiddlewarePhase,
     _dispatch_phase,
@@ -185,6 +186,27 @@ def _version_request_meta(
 
     # RequestParamsMeta does not declare application-specific extension keys.
     return {"fastmcp": {"version": version_value}}
+
+
+def _version_for_request(
+    version: VersionSpec | None,
+    context: MiddlewareContext[Any],
+) -> VersionSpec | None:
+    """The version a request resolves to: the caller's explicit spec, or the
+    one middleware pinned into the request meta (see `_requested_version`).
+    Core routing otherwise ignores a pinned version, so an unversioned call a
+    middleware fell back to a lower version for would still run the highest.
+
+    An empty spec carries no constraint (and `_version_request_meta`
+    serializes it as no meta), so it is unversioned: the pinned version wins.
+    Returning the empty spec instead would discard the pin and resolve the
+    denied highest version.
+    """
+    if version is None or (
+        version.gte is None and version.lt is None and version.eq is None
+    ):
+        return _requested_version(context.message.meta)
+    return version
 
 
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
@@ -1676,7 +1698,7 @@ class FastMCP(
                             lambda context: self.call_tool(
                                 context.message.name,
                                 context.message.arguments or {},
-                                version=version,
+                                version=_version_for_request(version, context),
                                 run_middleware=False,
                             )
                         ),
@@ -1833,7 +1855,7 @@ class FastMCP(
                     context=mw_context,
                     call_next=lambda context: self.read_resource(
                         str(context.message.uri),
-                        version=version,
+                        version=_version_for_request(version, context),
                         run_middleware=False,
                     ),
                 )
@@ -2010,7 +2032,7 @@ class FastMCP(
                     call_next=lambda context: self.render_prompt(
                         context.message.name,
                         context.message.arguments,
-                        version=version,
+                        version=_version_for_request(version, context),
                         run_middleware=False,
                     ),
                 )

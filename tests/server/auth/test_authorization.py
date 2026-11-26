@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from unittest.mock import Mock
 
+import mcp_types as mt
 import pytest
 from mcp import MCPError
 from mcp.server.auth.middleware.auth_context import auth_context_var
@@ -23,7 +24,13 @@ from fastmcp.server.auth import (
     restrict_tag,
     run_auth_checks,
 )
-from fastmcp.server.middleware import AuthMiddleware
+from fastmcp.server.middleware import (
+    AuthMiddleware,
+    CallNext,
+    Middleware,
+    MiddlewareContext,
+)
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
 from fastmcp.server.providers.addressing import (
     hashed_backend_name,
 )
@@ -1097,6 +1104,524 @@ class TestAuthMiddlewareVersionedRequests:
             async with Client(mcp, mode="legacy") as client:
                 with pytest.raises(Exception, match="authorization|insufficient"):
                     await client.get_prompt("greet", version="1.0")
+        finally:
+            auth_context_var.reset(tok)
+
+
+class TestAuthMiddlewareVersionFallback:
+    """An unversioned call runs the version the listing shows (#6691).
+
+    When the highest version is denied by AuthMiddleware and a lower one is
+    allowed, the listing shows the lower version — but the unversioned call
+    was authorized against the highest version and refused. The middleware
+    now falls back to the highest lower version every AuthMiddleware layer
+    allows, pinning it into the request so core routing runs that version.
+    """
+
+    async def test_middleware_falls_back_to_allowed_lower_version_on_unversioned_calls(
+        self,
+    ):
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(name="calc", version="1")
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2", tags={"admin"})
+        def calc_v2() -> str:
+            return "v2"
+
+        @mcp.resource("data://info", version="1")
+        def info_v1() -> str:
+            return "v1"
+
+        @mcp.resource("data://info", version="2", tags={"admin"})
+        def info_v2() -> str:
+            return "v2"
+
+        @mcp.resource("data://items/{item_id}", version="1")
+        def item_v1(item_id: str) -> str:
+            return f"v1 {item_id}"
+
+        @mcp.resource("data://items/{item_id}", version="2", tags={"admin"})
+        def item_v2(item_id: str) -> str:
+            return f"v2 {item_id}"
+
+        @mcp.prompt(name="greet", version="1")
+        def greet_v1() -> str:
+            return "v1"
+
+        @mcp.prompt(name="greet", version="2", tags={"admin"})
+        def greet_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+                assert [
+                    (t.name, (t.meta or {}).get("fastmcp", {}).get("version"))
+                    for t in tools
+                ] == [("calc", "1")]
+                assert (await client.call_tool("calc", {})).data == "v1"
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.call_tool("calc", {}, version="2")
+
+            async with Client(mcp, mode="legacy") as client:
+                resources = await client.list_resources()
+                assert [
+                    (str(r.uri), (r.meta or {}).get("fastmcp", {}).get("version"))
+                    for r in resources
+                ] == [("data://info", "1")]
+                assert (await client.read_resource("data://info"))[0].text == "v1"
+                assert (await client.read_resource("data://items/123"))[0].text == (
+                    "v1 123"
+                )
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.read_resource("data://info", version="2")
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.read_resource("data://items/123", version="2")
+
+                prompts = await client.list_prompts()
+                assert [
+                    (p.name, (p.meta or {}).get("fastmcp", {}).get("version"))
+                    for p in prompts
+                ] == [("greet", "1")]
+                assert (await client.get_prompt("greet")).messages[
+                    0
+                ].content.text == "v1"
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.get_prompt("greet", version="2")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_does_not_fall_back_when_no_lower_version_is_allowed(
+        self,
+    ):
+        """With every version denied, the original denial stands — shortfall intact."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(name="calc", version="1", tags={"admin"})
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2", tags={"admin"})
+        def calc_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert [t.version for t in await mcp.list_tools()] == []
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("calc", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["admin"]
+
+    async def test_middleware_fallback_only_runs_versions_the_listing_shows(self):
+        """A version hidden from the listing by an earlier middleware's list
+        filter is not a fallback candidate, even if AuthMiddleware would allow it."""
+
+        class _HideV1Tools(Middleware):
+            async def on_list_tools(
+                self,
+                context: MiddlewareContext[mt.ListToolsRequest],
+                call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]],
+            ) -> Sequence[Tool]:
+                tools = await call_next(context)
+                return [t for t in tools if t.version != "1"]
+
+        mcp = FastMCP(
+            middleware=[
+                _HideV1Tools(),
+                AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"])),
+            ]
+        )
+
+        @mcp.tool(name="calc", version="1")
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2", tags={"admin"})
+        def calc_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError):
+                await mcp.call_tool("calc", {})
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_fallback_honors_pin_for_empty_version_spec(self):
+        """An empty `VersionSpec()` is unversioned: the pinned fallback wins,
+        not the empty spec (which would resolve the denied highest version)."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(name="calc", version="1")
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2", tags={"admin"})
+        def calc_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert (await mcp.call_tool("calc", {}, version=VersionSpec())).content[
+                0
+            ].text == "v1"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_fallback_listing_does_not_consume_rate_limit_tokens(
+        self,
+    ):
+        """The interior listing runs only the typed list hooks, so a burst-1
+        rate limiter still admits the outer request that needs a fallback."""
+        mcp = FastMCP(
+            middleware=[
+                RateLimitingMiddleware(
+                    max_requests_per_second=1, burst_capacity=1, global_limit=True
+                ),
+                AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"])),
+            ]
+        )
+
+        @mcp.tool(name="calc", version="1")
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2", tags={"admin"})
+        def calc_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert (await mcp.call_tool("calc", {})).content[0].text == "v1"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_fallback_does_not_run_a_denied_mounted_twin(self):
+        """When providers share a name and version, the lookup can return a
+        different component than the listing showed — a denied local twin
+        behind an allowed mounted one. The resolved component is re-authorized,
+        so the denied twin never executes; the call is denied instead. The
+        mounted twin itself is unreachable through `get_tool` (it returns the
+        local twin first), so failing closed is the correct outcome here."""
+        calls: list[str] = []
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(name="calc", version="2", tags={"admin"})
+        def calc_v2() -> str:
+            calls.append("local v2")
+            return "local v2"
+
+        @mcp.tool(name="calc", version="1", tags={"admin"})
+        def calc_v1_local() -> str:
+            calls.append("local v1")
+            return "local v1"
+
+        mounted = FastMCP("mounted")
+
+        @mounted.tool(name="calc", version="1")
+        def calc_v1_mounted() -> str:
+            calls.append("mounted v1")
+            return "mounted v1"
+
+        mcp.mount(mounted)
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert [t.version for t in await mcp.list_tools()] == ["1"]
+            with pytest.raises(InsufficientScopeError):
+                await mcp.call_tool("calc", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert calls == []
+
+    async def test_middleware_fallback_does_not_run_a_denied_mounted_prompt_twin(
+        self,
+    ):
+        """Same twin hazard as tools, for prompts."""
+        calls: list[str] = []
+        mcp = make_restricted_tag_server()
+
+        @mcp.prompt(name="greet", version="2", tags={"admin"})
+        def greet_v2() -> str:
+            calls.append("local v2")
+            return "local v2"
+
+        @mcp.prompt(name="greet", version="1", tags={"admin"})
+        def greet_v1_local() -> str:
+            calls.append("local v1")
+            return "local v1"
+
+        mounted = FastMCP("mounted")
+
+        @mounted.prompt(name="greet", version="1")
+        def greet_v1_mounted() -> str:
+            calls.append("mounted v1")
+            return "mounted v1"
+
+        mcp.mount(mounted)
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError):
+                await mcp.render_prompt("greet")
+        finally:
+            auth_context_var.reset(tok)
+
+        assert calls == []
+
+    async def test_middleware_fallback_does_not_bypass_an_earlier_custom_tool_policy(
+        self,
+    ):
+        """A custom `on_call_tool` policy that rejects `private` components
+        resolves by name, so it saw the highest version (v2) and approved it.
+        The fallback must not execute the `private` v1 it never approved —
+        the call is denied instead."""
+        from fastmcp.exceptions import ToolError
+
+        class _RejectPrivateTools(Middleware):
+            async def on_call_tool(self, context, call_next):
+                if context.fastmcp_context:
+                    tool = await context.fastmcp_context.fastmcp.get_tool(
+                        context.message.name
+                    )
+                    if tool is not None and "private" in tool.tags:
+                        raise ToolError("Tool not found")
+                return await call_next(context)
+
+        calls: list[str] = []
+        mcp = FastMCP(
+            middleware=[
+                _RejectPrivateTools(),
+                AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"])),
+            ]
+        )
+
+        @mcp.tool(name="calc", version="2", tags={"admin"})
+        def calc_v2() -> str:
+            calls.append("v2")
+            return "v2"
+
+        @mcp.tool(name="calc", version="1", tags={"private"})
+        def calc_v1() -> str:
+            calls.append("v1")
+            return "v1"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError):
+                await mcp.call_tool("calc", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert calls == []
+
+    async def test_middleware_fallback_does_not_bypass_an_earlier_custom_prompt_policy(
+        self,
+    ):
+        """Same custom-policy hazard as tools, for prompts."""
+        from fastmcp.exceptions import PromptError
+
+        class _RejectPrivatePrompts(Middleware):
+            async def on_get_prompt(self, context, call_next):
+                if context.fastmcp_context:
+                    prompt = await context.fastmcp_context.fastmcp.get_prompt(
+                        context.message.name
+                    )
+                    if prompt is not None and "private" in prompt.tags:
+                        raise PromptError("Prompt not found")
+                return await call_next(context)
+
+        calls: list[str] = []
+        mcp = FastMCP(
+            middleware=[
+                _RejectPrivatePrompts(),
+                AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"])),
+            ]
+        )
+
+        @mcp.prompt(name="greet", version="2", tags={"admin"})
+        def greet_v2() -> str:
+            calls.append("v2")
+            return "v2"
+
+        @mcp.prompt(name="greet", version="1", tags={"private"})
+        def greet_v1() -> str:
+            calls.append("v1")
+            return "v1"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError):
+                await mcp.render_prompt("greet")
+        finally:
+            auth_context_var.reset(tok)
+
+        assert calls == []
+
+    async def test_middleware_falls_back_to_highest_version_all_layers_allow(self):
+        """Two layers: the fallback must clear both, not just the denying one."""
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"])),
+                AuthMiddleware(auth=restrict_tag("beta", scopes=["beta"])),
+            ]
+        )
+
+        @mcp.tool(name="calc", version="1")
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2", tags={"beta"})
+        def calc_v2() -> str:
+            return "v2"
+
+        @mcp.tool(name="calc", version="3", tags={"admin"})
+        def calc_v3() -> str:
+            return "v3"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert [t.version for t in await mcp.list_tools()] == ["1"]
+            assert (await mcp.call_tool("calc", {})).content[0].text == "v1"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
+        finally:
+            auth_context_var.reset(tok)
+
+        tok = set_token(make_token(scopes=["read", "beta"]))
+        try:
+            # list_tools returns every allowed version; the wire listing
+            # dedups to the highest, which the call below must run.
+            assert sorted(t.version or "" for t in await mcp.list_tools()) == ["1", "2"]
+            assert (await mcp.call_tool("calc", {})).content[0].text == "v2"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_does_not_fall_back_to_pep440_equivalent_spelling(self):
+        """`eq="1"` resolves `"1.0"`, so a fallback to `"1"` would run the
+        denied `"1.0"` component. Fail closed instead of running it."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(name="calc", version="1")
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="1.0", tags={"admin"})
+        def calc_v10() -> str:
+            return "v1.0"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert [t.version for t in await mcp.list_tools()] == ["1"]
+            with pytest.raises(InsufficientScopeError):
+                await mcp.call_tool("calc", {})
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_does_not_fall_back_from_a_resource_to_a_template(self):
+        """A denied concrete resource never falls back to a template that
+        merely matches the URI — core lets concrete resources shadow templates."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.resource("secret://data", version="2", tags={"admin"})
+        def secret_v2() -> str:
+            return "secret v2"
+
+        @mcp.resource("secret://{name}", version="1")
+        def secret_template(name: str) -> str:
+            return f"public {name}"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError):
+                await mcp.read_resource("secret://data")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_fallback_rechecks_earlier_resource_access_hooks(self):
+        """An earlier hook that forbids the fallback version still forbids it:
+        it approved the unpinned version before the pin existed, so the
+        fallback must be validated against it before dispatching."""
+
+        class _RejectV1Resources(Middleware):
+            async def check_resource_access(
+                self, context: MiddlewareContext[mt.ReadResourceRequestParams]
+            ) -> None:
+                meta = context.message.meta or {}
+                fastmcp_meta = meta.get("fastmcp") if isinstance(meta, dict) else None
+                if (
+                    isinstance(fastmcp_meta, dict)
+                    and fastmcp_meta.get("version") == "1"
+                ):
+                    raise AuthorizationError("version 1 is forbidden by policy")
+
+        mcp = FastMCP(
+            middleware=[
+                _RejectV1Resources(),
+                AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"])),
+            ]
+        )
+
+        @mcp.resource("data://info", version="1")
+        def info_v1() -> str:
+            return "v1"
+
+        @mcp.resource("data://info", version="2", tags={"admin"})
+        def info_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.read_resource("data://info")
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["admin"]
+
+    async def test_middleware_falls_back_after_a_raised_denial(self):
+        """A check that raises (rather than returning False) still falls back,
+        and the original raised denial stands when no lower version is usable."""
+
+        def refuse_admin(ctx: AuthContext) -> bool:
+            if "admin" in ctx.component.tags:
+                raise AuthorizationError("admin components are refused")
+            return True
+
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=refuse_admin)])
+
+        @mcp.tool(name="calc", version="1")
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2", tags={"admin"})
+        def calc_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            assert (await mcp.call_tool("calc", {})).content[0].text == "v1"  # type: ignore[union-attr]  # ty:ignore[missing-union-attribute]
+        finally:
+            auth_context_var.reset(tok)
+
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=refuse_admin)])
+
+        @mcp.tool(name="calc", version="2", tags={"admin"})
+        def calc_v2_only() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(
+                AuthorizationError, match="admin components are refused"
+            ):
+                await mcp.call_tool("calc", {})
         finally:
             auth_context_var.reset(tok)
 
