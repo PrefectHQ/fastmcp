@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
@@ -23,7 +24,12 @@ from fastmcp.tools.base import (
     ToolResult,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _strip_input_required
-from fastmcp.tools.function_tool import FunctionTool, _ToolBodyError, _wrap_body_errors
+from fastmcp.tools.function_tool import (
+    FunctionTool,
+    _strict_input_validation,
+    _validate_input,
+    _wrap_body_errors,
+)
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -397,6 +403,63 @@ def _apply_meta_override(
     return merged
 
 
+def _with_arg_type_overrides(
+    fn: Callable[..., Any],
+    transform_args: dict[str, ArgTransform] | None,
+) -> Callable[..., Any]:
+    """Return a wrapper whose parameter annotations reflect ArgTransform(type=...) overrides."""
+    if not transform_args:
+        return fn
+
+    overrides: dict[str, Any] = {}
+    for orig_name, transform in transform_args.items():
+        if transform.hide or transform.type is NotSet:
+            continue
+        param_name = (
+            transform.name
+            if transform.name is not NotSet and transform.name is not None
+            else orig_name
+        )
+        overrides[param_name] = transform.type
+
+    if not overrides:
+        return fn
+
+    sig = inspect.signature(fn)
+    if not any(name in sig.parameters for name in overrides):
+        return fn
+
+    if is_coroutine_function(fn):
+
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            return await fn(*args, **kwargs)
+    else:
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            return fn(*args, **kwargs)
+
+    new_params = [
+        param.replace(annotation=overrides[name]) if name in overrides else param
+        for name, param in sig.parameters.items()
+    ]
+    new_annotations = {
+        **getattr(fn, "__annotations__", {}),
+        **{
+            name: param_type
+            for name, param_type in overrides.items()
+            if name in sig.parameters
+        },
+    }
+
+    wrapper.__signature__ = sig.replace(parameters=new_params)  # type: ignore[attr-defined]  # ty: ignore[invalid-assignment]
+    wrapper.__annotations__ = new_annotations
+    wrapper.__name__ = getattr(fn, "__name__", "wrapper")
+    wrapper.__doc__ = getattr(fn, "__doc__", None)
+    wrapper.__module__ = getattr(fn, "__module__", wrapper.__module__)
+    wrapper.__qualname__ = getattr(fn, "__qualname__", wrapper.__qualname__)
+    return wrapper
+
+
 class TransformedTool(Tool):
     """A tool that is transformed from another tool.
 
@@ -481,17 +544,27 @@ class TransformedTool(Tool):
             from fastmcp.server.dependencies import without_injected_parameters
 
             body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
-            fn = without_injected_parameters(body_fn)
+            wrapper_fn = without_injected_parameters(body_fn)
+            # Tag pydantic errors raised by the body so they can be distinguished
+            # from argument-validation errors (which pydantic raises first).
+            exec_fn = _wrap_body_errors(wrapper_fn)
+            validated_fn = _with_arg_type_overrides(exec_fn, self.transform_args)
+            type_adapter = get_cached_typeadapter(validated_fn)
+            exec_is_async = is_coroutine_function(wrapper_fn)
+            strict = _strict_input_validation()
+
             try:
-                if is_coroutine_function(fn):
-                    result = await fn(**arguments)
+                if exec_is_async:
+                    result = _validate_input(type_adapter, arguments, strict=strict)
                 else:
-                    result = await call_sync_fn_in_threadpool(fn, **arguments)
-                    if inspect.isawaitable(result):
-                        result = await result
+                    result = await call_sync_fn_in_threadpool(
+                        _validate_input, type_adapter, arguments, strict=strict
+                    )
+                if inspect.isawaitable(result):
+                    result = await result
                 result = await FunctionTool._materialize_generator(result)
             except PydanticValidationError as exc:
-                raise _ToolBodyError(str(exc)) from exc
+                raise ValidationError(str(exc), log_level=logging.WARNING) from exc
 
             # A multi-round-trip ask (SEP-2322) is not output data: it must
             # reach the wire handler intact, never reshaped by output_schema

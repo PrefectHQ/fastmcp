@@ -1228,3 +1228,88 @@ async def test_transform_fn_generators_with_context_injection():
         assert async_res.structured_content == {"result": [10, 15]}
         assert isinstance(async_res.content[0], TextContent)
         assert async_res.content[0].text == "[10,15]"
+
+
+async def test_transform_fn_receives_coerced_types():
+    """Regression test for #6796: transform_fn receives values coerced to its type hints."""
+    import datetime
+
+    class Point(BaseModel):
+        x: int
+        y: int
+
+    def base(when: datetime.date, p: Point) -> str:
+        return f"{when.isoformat()}:{p.x},{p.y}"
+
+    async def custom_async(when: datetime.date, p: Point) -> str:
+        return f"when={type(when).__name__} p={type(p).__name__}"
+
+    def custom_sync(when: datetime.date, p: Point) -> str:
+        return f"when={type(when).__name__} p={type(p).__name__}"
+
+    async def guard(when: datetime.date, p: Point) -> str:
+        if p.x < 0:
+            raise ValueError("x must be non-negative")
+        result = await forward(when=when, p=p)
+        assert isinstance(result.content[0], TextContent)
+        return result.content[0].text
+
+    mcp = FastMCP()
+    parent = Tool.from_function(base)
+    mcp.add_tool(Tool.from_tool(parent, name="async_fn", transform_fn=custom_async))
+    mcp.add_tool(Tool.from_tool(parent, name="sync_fn", transform_fn=custom_sync))
+    mcp.add_tool(Tool.from_tool(parent, name="guarded", transform_fn=guard))
+
+    args = {"when": "2024-03-01", "p": {"x": 1, "y": 2}}
+    async with Client(mcp) as client:
+        for name in ("async_fn", "sync_fn"):
+            res = await client.call_tool(name, args)
+            assert isinstance(res.content[0], TextContent)
+            assert res.content[0].text == "when=date p=Point"
+
+        guarded_res = await client.call_tool("guarded", args)
+        assert isinstance(guarded_res.content[0], TextContent)
+        assert guarded_res.content[0].text == "2024-03-01:1,2"
+
+        bad_res = await client.call_tool(
+            "guarded",
+            {"when": "not-a-date", "p": {"x": 1, "y": 2}},
+            raise_on_error=False,
+        )
+        assert bad_res.is_error
+
+
+async def test_transform_fn_respects_strict_input_validation():
+    """transform_fn validates arguments with strict_input_validation when enabled."""
+    import datetime
+
+    class Point(BaseModel):
+        x: int
+        y: int
+
+    def base(when: datetime.date, p: Point) -> str:
+        return "ok"
+
+    async def custom(when: datetime.date, p: Point) -> str:
+        return f"{when.isoformat()}:{p.x}"
+
+    mcp = FastMCP(strict_input_validation=True)
+    mcp.add_tool(
+        Tool.from_tool(
+            Tool.from_function(base), name="transformed", transform_fn=custom
+        )
+    )
+
+    async with Client(mcp) as client:
+        ok = await client.call_tool(
+            "transformed", {"when": "2024-03-01", "p": {"x": 1, "y": 2}}
+        )
+        assert isinstance(ok.content[0], TextContent)
+        assert ok.content[0].text == "2024-03-01:1"
+
+        bad = await client.call_tool(
+            "transformed",
+            {"when": "2024-03-01", "p": {"x": "1", "y": 2}},
+            raise_on_error=False,
+        )
+        assert bad.is_error
