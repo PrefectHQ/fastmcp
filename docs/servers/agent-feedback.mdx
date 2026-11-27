@@ -4,6 +4,10 @@ description: Give agents a tool to report missing capabilities, workarounds, and
 icon: comment
 ---
 
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="unreleased" />
+
 Suppose an agent finds an order by paging through your entire catalog. Every call succeeds, and the user gets the right order. From your server logs, you might never learn that the agent needed a way to look up an order by tracking number.
 
 The `submit_feedback` tool gives the agent a way to tell you. When it encounters a problem worth reporting, it can make a separate tool call describing the task and what happened. It can report a missing tool as easily as a problem with one you already provide.
