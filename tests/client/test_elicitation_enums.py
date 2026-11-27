@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 import pytest
 from pydantic import BaseModel, Field, ValidationError
@@ -636,3 +637,95 @@ def test_scalar_elicitation_schema_omits_wrapper_title() -> None:
 
     assert "title" not in schema
     assert schema["properties"]["value"]["enum"] == ["yes", "no"]
+
+
+class TestIntegerEnumElicitation:
+    """Integer Literal and Enum choices must emit string enums per MCP 2025-11-25."""
+
+    def test_single_select_literal_and_enum_schema(self) -> None:
+        class Rating(Enum):
+            LOW = 1
+            HIGH = 2
+
+        lit_schema = parse_elicit_response_type(Literal[1, 2]).schema["properties"][
+            "value"
+        ]
+        assert lit_schema["type"] == "string"
+        assert lit_schema["enum"] == ["1", "2"]
+
+        enum_schema = parse_elicit_response_type(Rating).schema["properties"]["value"]
+        assert enum_schema["type"] == "string"
+        assert enum_schema["enum"] == ["1", "2"]
+
+    def test_multi_select_literal_and_enum_schema(self) -> None:
+        class Rating(Enum):
+            LOW = 1
+            HIGH = 2
+
+        lit_schema = parse_elicit_response_type(list[Literal[1, 2]]).schema[
+            "properties"
+        ]["value"]
+        assert lit_schema["type"] == "array"
+        assert lit_schema["items"]["type"] == "string"
+        assert lit_schema["items"]["enum"] == ["1", "2"]
+
+        enum_schema = parse_elicit_response_type(list[Rating]).schema["properties"][
+            "value"
+        ]
+        assert enum_schema["type"] == "array"
+        assert enum_schema["items"]["type"] == "string"
+        assert enum_schema["items"]["enum"] == ["1", "2"]
+
+    def test_model_with_int_enum_defaults(self) -> None:
+        class Rating(Enum):
+            LOW = 1
+            HIGH = 2
+
+        class FormModel(BaseModel):
+            choice: Literal[1, 2] = 1
+            rating: Rating = Rating.HIGH
+            tags: list[Literal[1, 2]] = [1]
+            optional_rating: Rating | None = None
+
+        schema = get_elicitation_schema(FormModel)
+        props = schema["properties"]
+        assert props["choice"]["type"] == "string"
+        assert props["choice"]["enum"] == ["1", "2"]
+        assert props["choice"]["default"] == "1"
+        assert props["rating"]["type"] == "string"
+        assert props["rating"]["enum"] == ["1", "2"]
+        assert props["rating"]["default"] == "2"
+        assert props["tags"]["items"]["type"] == "string"
+        assert props["tags"]["items"]["enum"] == ["1", "2"]
+        assert props["tags"]["default"] == ["1"]
+        assert props["optional_rating"]["type"] == "string"
+        assert props["optional_rating"]["enum"] == ["1", "2"]
+
+    def test_accept_coerces_stringified_and_int_responses(self) -> None:
+        class Rating(Enum):
+            LOW = 1
+            HIGH = 2
+
+        lit_cfg = parse_elicit_response_type(Literal[1, 2])
+        assert handle_elicit_accept(lit_cfg, {"value": "1"}).data == 1
+        assert handle_elicit_accept(lit_cfg, {"value": 2}).data == 2
+
+        enum_cfg = parse_elicit_response_type(Rating)
+        assert handle_elicit_accept(enum_cfg, {"value": "1"}).data is Rating.LOW
+        assert handle_elicit_accept(enum_cfg, {"value": 2}).data is Rating.HIGH
+
+        multi_lit_cfg = parse_elicit_response_type(list[Literal[1, 2]])
+        assert handle_elicit_accept(multi_lit_cfg, {"value": ["1", "2"]}).data == [1, 2]
+
+        multi_enum_cfg = parse_elicit_response_type(list[Rating])
+        assert handle_elicit_accept(multi_enum_cfg, {"value": ["1", "2"]}).data == [
+            Rating.LOW,
+            Rating.HIGH,
+        ]
+
+        with pytest.raises(ValidationError):
+            handle_elicit_accept(lit_cfg, {"value": "3"})
+        with pytest.raises(ValidationError):
+            handle_elicit_accept(enum_cfg, {"value": "3"})
+        with pytest.raises(ValidationError):
+            handle_elicit_accept(multi_lit_cfg, {"value": ["1", "3"]})

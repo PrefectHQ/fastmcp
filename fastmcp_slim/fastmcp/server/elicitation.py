@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Generic, Literal, get_origin
 
@@ -169,6 +169,9 @@ class ElicitConfig:
     schema: dict[str, Any]
     response_type: type | None
     is_raw: bool
+    int_enum_fields: dict[str, tuple[bool, dict[str, int]]] = field(
+        default_factory=dict
+    )
 
 
 #: Raised when a response type is missing. The empty-object schema this used to
@@ -231,10 +234,12 @@ def parse_elicit_response_type(
                 "shorthand forms. For BaseModel or dataclass response types, use "
                 "Field(title=..., description=...) on the individual fields."
             )
+        schema, int_enum_fields = _build_elicitation_schema(response_type)
         return ElicitConfig(
-            schema=get_elicitation_schema(response_type),
+            schema=schema,
             response_type=response_type,
             is_raw=False,
+            int_enum_fields=int_enum_fields,
         )
 
     if has_response_metadata:
@@ -341,20 +346,24 @@ def _parse_list_syntax(lst: list[Any]) -> ElicitConfig:
 def _parse_generic_list(response_type: Any) -> ElicitConfig:
     """Parse list[X] type annotation -> multi-select."""
     wrapped = ScalarElicitationType[response_type]
+    schema, int_enum_fields = _build_elicitation_schema(wrapped)
     return ElicitConfig(
-        schema=get_elicitation_schema(wrapped),
+        schema=schema,
         response_type=wrapped,
         is_raw=False,
+        int_enum_fields=int_enum_fields,
     )
 
 
 def _parse_scalar_type(response_type: Any) -> ElicitConfig:
     """Parse scalar types (bool, int, float, str, Literal, Enum)."""
     wrapped = ScalarElicitationType[response_type]
+    schema, int_enum_fields = _build_elicitation_schema(wrapped)
     return ElicitConfig(
-        schema=get_elicitation_schema(wrapped),
+        schema=schema,
         response_type=wrapped,
         is_raw=False,
+        int_enum_fields=int_enum_fields,
     )
 
 
@@ -380,10 +389,11 @@ def handle_elicit_accept(
             value = type_adapter.validate_python(value)
         return AcceptedElicitation[Any](data=value)
 
-    # For typed schemas, validate with Pydantic
+    # For typed schemas, coerce stringified int enum choices and validate with Pydantic
     if config.response_type is not None:
+        coerced = _coerce_int_enum_content(content, config.int_enum_fields)
         type_adapter = get_cached_typeadapter(config.response_type)
-        validated_data = type_adapter.validate_python(content)
+        validated_data = type_adapter.validate_python(coerced)
         if isinstance(validated_data, ScalarElicitationType):
             return AcceptedElicitation[Any](data=validated_data.value)
         return AcceptedElicitation[Any](data=validated_data)
@@ -421,13 +431,91 @@ def _dict_to_enum_schema(
     return result
 
 
-def get_elicitation_schema(response_type: type[T]) -> dict[str, Any]:
-    """Get the schema for an elicitation response.
+def _is_int_enum_schema(subschema: dict[str, Any]) -> bool:
+    """Return True if subschema is an integer enum schema."""
+    if subschema.get("type") != "integer" or "enum" not in subschema:
+        return False
+    values = subschema["enum"]
+    return (
+        isinstance(values, list)
+        and bool(values)
+        and all(isinstance(v, int) and not isinstance(v, bool) for v in values)
+    )
 
-    Args:
-        response_type: The type of the response
-    """
 
+def _coerce_int_enums_in_schema(
+    schema: dict[str, Any],
+) -> dict[str, tuple[bool, dict[str, int]]]:
+    """Convert integer enum properties to string enums per MCP 2025-11-25."""
+    int_enum_fields: dict[str, tuple[bool, dict[str, int]]] = {}
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return int_enum_fields
+
+    for prop_name, prop_schema in properties.items():
+        if not isinstance(prop_schema, dict):
+            continue
+        if _is_int_enum_schema(prop_schema):
+            str_to_int = {str(v): v for v in prop_schema["enum"]}
+            prop_schema["type"] = "string"
+            prop_schema["enum"] = [str(v) for v in prop_schema["enum"]]
+            default = prop_schema.get("default")
+            if isinstance(default, int) and not isinstance(default, bool):
+                prop_schema["default"] = str(default)
+            int_enum_fields[prop_name] = (False, str_to_int)
+        elif prop_schema.get("type") == "array":
+            items = prop_schema.get("items")
+            if isinstance(items, dict) and _is_int_enum_schema(items):
+                str_to_int = {str(v): v for v in items["enum"]}
+                items["type"] = "string"
+                items["enum"] = [str(v) for v in items["enum"]]
+                default = prop_schema.get("default")
+                if isinstance(default, list):
+                    prop_schema["default"] = [
+                        str(v) if isinstance(v, int) and not isinstance(v, bool) else v
+                        for v in default
+                    ]
+                int_enum_fields[prop_name] = (True, str_to_int)
+
+    return int_enum_fields
+
+
+def _coerce_int_enum_content(
+    content: Any, int_enum_fields: dict[str, tuple[bool, dict[str, int]]]
+) -> Any:
+    """Convert stringified integer enum choices in client responses back to ints."""
+    if not int_enum_fields or not isinstance(content, dict):
+        return content
+
+    updated: dict[str, Any] | None = None
+    for prop_name, (is_multi, str_to_int) in int_enum_fields.items():
+        if prop_name not in content:
+            continue
+        val = content[prop_name]
+        if is_multi:
+            if isinstance(val, list) and any(
+                isinstance(item, str) and item in str_to_int for item in val
+            ):
+                if updated is None:
+                    updated = dict(content)
+                updated[prop_name] = [
+                    str_to_int[item]
+                    if isinstance(item, str) and item in str_to_int
+                    else item
+                    for item in val
+                ]
+        elif isinstance(val, str) and val in str_to_int:
+            if updated is None:
+                updated = dict(content)
+            updated[prop_name] = str_to_int[val]
+
+    return updated if updated is not None else content
+
+
+def _build_elicitation_schema(
+    response_type: type[T],
+) -> tuple[dict[str, Any], dict[str, tuple[bool, dict[str, int]]]]:
+    """Build the elicitation schema and track integer enum fields coerced to strings."""
     # Use custom schema generator that inlines enums for MCP compatibility
     schema = get_cached_typeadapter(response_type).json_schema(
         schema_generator=ElicitationJsonSchema
@@ -441,9 +529,21 @@ def get_elicitation_schema(response_type: type[T]) -> dict[str, Any]:
     if origin is ScalarElicitationType or response_type is ScalarElicitationType:
         schema.pop("title", None)
 
+    int_enum_fields = _coerce_int_enums_in_schema(schema)
+
     # Validate the schema to ensure it follows MCP elicitation requirements
     validate_elicitation_json_schema(schema)
 
+    return schema, int_enum_fields
+
+
+def get_elicitation_schema(response_type: type[T]) -> dict[str, Any]:
+    """Get the schema for an elicitation response.
+
+    Args:
+        response_type: The type of the response
+    """
+    schema, _ = _build_elicitation_schema(response_type)
     return schema
 
 
