@@ -167,6 +167,7 @@ class WebhookDelivery:
         self.ssl_context = ssl_context
         self.timeout = timeout
         self._wake = anyio.Event()
+        self._sender_id = secrets.token_hex(8)
 
     # Storage ---------------------------------------------------------------
 
@@ -496,11 +497,42 @@ class WebhookDelivery:
                         subscription_id: str = subscription_id,
                     ) -> None:
                         async with limiter:
-                            await self._deliver_one(
-                                client, registration, subscription_id
-                            )
+                            if not await self._claim(subscription_id):
+                                return
+                            try:
+                                await self._deliver_one(
+                                    client, registration, subscription_id
+                                )
+                            finally:
+                                await self._release(subscription_id)
 
                     tg.start_soon(one)
+
+    async def _claim(self, subscription_id: str) -> bool:
+        """Take this subscription's sending turn unless another sender holds it.
+
+        The store has no compare-and-swap, so two senders racing for the same
+        turn can both win; their deliveries carry the same webhook-id and the
+        receiver drops the copy. Reading the claim back after writing it makes
+        that window small.
+        """
+        held = await self._get(f"sending-{subscription_id}")
+        if held and held.get("by") != self._sender_id:
+            return False
+        await self._hold(subscription_id)
+        held = await self._get(f"sending-{subscription_id}")
+        return held is not None and held.get("by") == self._sender_id
+
+    async def _hold(self, subscription_id: str) -> None:
+        # Outlives one POST and its retry wait, so a sender that dies mid-pass
+        # hands the subscription on within seconds.
+        ttl = 3 * self.timeout + self.interval
+        await self._put(f"sending-{subscription_id}", {"by": self._sender_id}, ttl)
+
+    async def _release(self, subscription_id: str) -> None:
+        held = await self._get(f"sending-{subscription_id}")
+        if held and held.get("by") == self._sender_id:
+            await self._delete(f"sending-{subscription_id}")
 
     async def _deliver_one(
         self,
@@ -520,6 +552,7 @@ class WebhookDelivery:
         sent = 0
         while sent < _EVENTS_PER_PASS:
             if sent:
+                await self._hold(subscription_id)
                 # Cancelled or lapsed mid-backlog: stop now, not next pass.
                 current = await self._load(_Subscription, f"sub-{subscription_id}")
                 if current is None:

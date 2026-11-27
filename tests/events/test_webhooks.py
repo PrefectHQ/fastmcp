@@ -22,6 +22,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from fastmcp.utilities.tests import asgi_client
 from fastmcp_events import (
+    Event,
     EventBatch,
     EventPoll,
     EventsClientExtension,
@@ -301,6 +302,46 @@ async def test_a_resent_gap_keeps_its_webhook_id(receiver):
     assert len(gaps) == 2
     assert gaps[0].headers["webhook-id"] == gaps[1].headers["webhook-id"]
     assert [e["eventId"] for e in receiver.events] == ["b", "b"]
+
+
+async def test_two_replicas_send_each_event_once(receiver):
+    from key_value.aio.stores.memory import MemoryStore
+
+    store = MemoryStore()
+    log: list[dict] = []
+
+    def replica() -> tuple[FastMCP, EventsExtension]:
+        server = FastMCP("alerts", auth=tokens())
+        delivery = MockedDelivery(receiver, store=store, interval=0)
+        events = EventsExtension(webhooks=delivery)
+        server.add_extension(events)
+        events.event("alert.fired")(AlertFired)
+
+        @events.reader(AlertFired)
+        async def read(poll: EventPoll) -> EventBatch:
+            if poll.cursor is None:
+                return EventBatch(cursor=str(len(log)))
+            await anyio.sleep(0.001)  # let the two senders interleave
+            start = int(poll.cursor)
+            fired = [Event(data=e, event_id=e["key"]) for e in log[start : start + 1]]
+            return EventBatch(
+                events=fired,
+                cursor=str(start + len(fired)),
+                has_more=start + len(fired) < len(log),
+            )
+
+        return server, events
+
+    (server_a, events_a), (_, events_b) = replica(), replica()
+    async with connect(server_a) as client:
+        await subscribe_webhook(
+            client, "alert.fired", url=HOOK, secret=receiver.secrets[0]
+        )
+    log.extend({"key": f"e{i}", "severity": "P1"} for i in range(10))
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(events_a.deliver_webhooks)
+        tg.start_soon(events_b.deliver_webhooks)
+    assert [e["eventId"] for e in receiver.events] == [f"e{i}" for i in range(10)]
 
 
 async def test_gone_gives_the_event_up_and_moves_on(receiver):

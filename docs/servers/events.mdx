@@ -366,7 +366,7 @@ from fastmcp_events import WebhookDelivery
 webhooks = WebhookDelivery(store=RedisStore(url="redis://localhost:6379/0"))
 ```
 
-The replicas also need a shared event log, as described [above](#sharing-events-across-replicas-with-docket). Any replica can then accept a subscribe, a refresh or an unsubscribe. Every replica that runs the sender POSTs every delivery, with the same `webhook-id`, so receivers drop the copies; to send each delivery once, set `sender=False` on all replicas but one. On hosts that can't run background work, such as Lambda, set `sender=False` and call `await events.deliver_webhooks()` on a schedule.
+The replicas also need a shared event log, as described [above](#sharing-events-across-replicas-with-docket). Any replica can then accept a subscribe, a refresh or an unsubscribe. One replica at a time sends each subscription's deliveries, and a delivery has the same `webhook-id` whichever replica sends it, so receivers can drop the rare duplicate. On hosts that can't run background work, such as Lambda, set `sender=False` and call `await events.deliver_webhooks()` on a schedule.
 
 ## Subscribing from a client
 
