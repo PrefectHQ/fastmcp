@@ -236,25 +236,4 @@ mcp.add_tool(create_user_tool(current_user_id))
 
 This pattern is useful for multi-tenant servers where each connection gets tools pre-configured with their identity, or for wrapping generic tools with environment-specific defaults.
 
-## Capture tool-call intent
-
-Add `ToolCallIntent()` when you want agents to explain what they hope to accomplish with a tool call. The transform adds an optional `intent` argument to the tool schema. During execution, your tool can read the explanation from `ctx.tool_call_intent`.
-
-```python
-from fastmcp import Context, FastMCP
-from fastmcp.server.transforms import ToolCallIntent
-
-mcp = FastMCP("Reports")
-mcp.add_transform(ToolCallIntent())
-
-
-@mcp.tool
-async def generate_report(month: str, ctx: Context) -> str:
-    if ctx.tool_call_intent:
-        await ctx.info(f"Report requested for: {ctx.tool_call_intent}")
-    return f"Report for {month}"
-```
-
-A caller might pass `{"month": "October", "intent": "Compare returns before the holiday season"}`. FastMCP consumes the added argument before calling the underlying function. If the caller omits it, `ctx.tool_call_intent` is `None`. A tool that already declares an `intent` parameter keeps its own schema and receives the value directly.
-
-The explanation is caller-supplied text. You decide whether to display or record it. Apply the transform to a provider to request intent for just that provider's tools.
+To ask why an agent chose a tool, apply the built-in [Tool-Call Intent](/servers/transforms/tool-call-intent) transform.

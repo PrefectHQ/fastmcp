@@ -121,6 +121,7 @@
                     "pages": [
                       "servers/transforms/transforms",
                       "servers/transforms/tool-transformation",
+                      "servers/transforms/tool-call-intent",
                       "servers/transforms/code-mode",
                       "servers/transforms/tool-search",
                       "servers/transforms/namespace",
