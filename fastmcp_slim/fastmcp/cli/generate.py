@@ -316,6 +316,8 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
     json_params: list[tuple[str, str]] = []  # (prop_name, decoder)
     seen_names: dict[str, str] = {}  # safe_name -> original prop_name
 
+    base_names = {_to_python_identifier(p) for p in properties}
+
     for prop_name, prop_schema in properties.items():
         py_type, needs_json = _schema_to_python_type(prop_schema)
         help_text = prop_schema.get("description", "")
@@ -326,12 +328,18 @@ def _tool_function_source(tool: mcp_types.Tool) -> str:
             # shadow them. Cyclopts drops the trailing underscore from the flag.
             safe_name = f"{safe_name}_"
 
-        # Check for name collisions after sanitization
-        if safe_name in seen_names:
-            raise ValueError(
-                f"Parameter name collision: '{prop_name}' and '{seen_names[safe_name]}' "
-                f"both sanitize to '{safe_name}'"
-            )
+        # Disambiguate properties that sanitize to the same Python identifier
+        # (a-b/a_b, user.name/user_name) instead of aborting the whole script.
+        # A suffix must also not shadow a *different* property's base name
+        # (a-b, a_b, a_b_2 -> a_b, a_b_3, a_b_2), or cyclopts would expect a
+        # flag spelling that SKILL.md never mentions.
+        base = safe_name
+        suffix = 2
+        while safe_name in seen_names or (
+            safe_name != base and safe_name in base_names
+        ):
+            safe_name = f"{base}_{suffix}"
+            suffix += 1
         seen_names[safe_name] = prop_name
 
         # For complex types, add schema to help text. An optional string takes
