@@ -206,40 +206,47 @@ class LifespanMixin:
                         self._lifespan_result = None
             return
 
-        # Use an explicit AsyncExitStack so we can shield teardown from
-        # cancellation. Without this, Ctrl-C causes CancelledError to
-        # propagate into lifespan finally blocks, preventing any async
-        # cleanup (e.g. closing DB connections, flushing buffers).
-        stack = AsyncExitStack()
-        try:
-            user_lifespan_result = await stack.enter_async_context(self._lifespan(self))
-            await stack.enter_async_context(self._shared_context_lifespan())
-            await stack.enter_async_context(self._extensions_lifespan())
-
-            self._lifespan_result = user_lifespan_result
-            self._lifespan_result_set = True
-
-            # Start lifespans for all providers. An earlier provider's lifespan
-            # can add bundled providers to a later one, so reconcile against
-            # each provider immediately before it starts.
-            for provider in self.providers:
-                self._register_provider_extensions(provider)
-                await stack.enter_async_context(provider.lifespan())
-
-            await self._validate_task_extension_registered()
-
-            self._started.set()
+        # Shield teardown from cancellation so Ctrl-C doesn't abort async
+        # cleanup in lifespan finally blocks (closing DB connections,
+        # flushing buffers). The scope is opened before anything is entered
+        # and only flipped to shielded at teardown: a fresh shielded scope
+        # around `stack.aclose()` would sit on top of any cancel scope a
+        # lifespan holds across its yield (e.g. an anyio task group), and
+        # exiting that inner scope would then fail with "Attempted to exit a
+        # cancel scope that isn't the current task's current cancel scope".
+        with anyio.CancelScope() as teardown_scope:
+            stack = AsyncExitStack()
             try:
-                yield
+                user_lifespan_result = await stack.enter_async_context(
+                    self._lifespan(self)
+                )
+                await stack.enter_async_context(self._shared_context_lifespan())
+                await stack.enter_async_context(self._extensions_lifespan())
+
+                self._lifespan_result = user_lifespan_result
+                self._lifespan_result_set = True
+
+                # Start lifespans for all providers. An earlier provider's lifespan
+                # can add bundled providers to a later one, so reconcile against
+                # each provider immediately before it starts.
+                for provider in self.providers:
+                    self._register_provider_extensions(provider)
+                    await stack.enter_async_context(provider.lifespan())
+
+                await self._validate_task_extension_registered()
+
+                self._started.set()
+                try:
+                    yield
+                finally:
+                    self._started.clear()
             finally:
-                self._started.clear()
-        finally:
-            try:
-                with anyio.CancelScope(shield=True):
+                teardown_scope.shield = True
+                try:
                     await stack.aclose()
-            finally:
-                async with self._lifespan_lock:
-                    self._lifespan_ref_count -= 1
-                    if self._lifespan_ref_count == 0:
-                        self._lifespan_result_set = False
-                        self._lifespan_result = None
+                finally:
+                    async with self._lifespan_lock:
+                        self._lifespan_ref_count -= 1
+                        if self._lifespan_ref_count == 0:
+                            self._lifespan_result_set = False
+                            self._lifespan_result = None
