@@ -362,8 +362,9 @@ class TestToolFunctionSource:
         assert "isinstance(_arguments['options'], str)" in source
         compile(source, "<test>", "exec")
 
-    def test_name_collision_detection(self):
-        """Test that parameter name collisions are detected."""
+    def test_name_collision_disambiguation(self):
+        """Properties that sanitize to the same parameter name are disambiguated
+        like colliding flags are, instead of aborting the whole script."""
         tool = mcp_types.Tool(
             name="test",
             input_schema={
@@ -373,9 +374,13 @@ class TestToolFunctionSource:
                 },
             },
         )
-        # Should raise ValueError for collision
-        with pytest.raises(ValueError, match="both sanitize to 'content_type'"):
-            _tool_function_source(tool)
+        source = _tool_function_source(tool)
+        # Both properties survive under distinct parameter names, and the
+        # call dict keeps the original schema names.
+        assert "content_type_2" in source
+        assert "'content-type':" in source
+        assert "'content_type':" in source
+        compile(source, "<test>", "exec")
 
 
 # ---------------------------------------------------------------------------
