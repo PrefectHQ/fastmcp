@@ -19,7 +19,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from typing import Any, get_type_hints
+from typing import Any, Literal, get_type_hints
 
 import anyio
 from mcp.shared.exceptions import MCPError
@@ -90,11 +90,16 @@ class EventRegistration:
             self._arguments = validate_call(parameters)
             self._hook = hook
 
-    def descriptor(self, *, push: bool) -> EventType:
+    def descriptor(self, *, push: bool, webhook: bool) -> EventType:
+        delivery: list[Literal["poll", "push", "webhook"]] = ["poll"]
+        if push:
+            delivery.append("push")
+        if webhook:
+            delivery.append("webhook")
         return EventType(
             name=self.name,
             description=self.description,
-            delivery=["poll", "push"] if push else ["poll"],
+            delivery=delivery,
             input_schema=self.input_schema,
             payload_schema=self.payload_schema,
             meta=self.meta,

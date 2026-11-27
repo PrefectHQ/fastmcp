@@ -10,7 +10,7 @@ from collections import OrderedDict
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from itertools import count
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 import anyio
 import mcp_types
@@ -44,6 +44,14 @@ from fastmcp_events.models import (
     StreamEventsParams,
     StreamEventsRequest,
     StreamFrame,
+    SubscribeEventsParams,
+    SubscribeEventsRequest,
+    SubscribeEventsResult,
+    UnsubscribeEventsParams,
+    UnsubscribeEventsRequest,
+    UnsubscribeEventsResult,
+    WebhookAddress,
+    WebhookTarget,
 )
 
 if TYPE_CHECKING:
@@ -62,6 +70,7 @@ _MAX_RECONNECTS = 4
 _RECONNECT_BASE_DELAY = 1.0
 _HEALTHY_STREAM_SECONDS = 10.0
 _stream_ids = count(1)
+ResultT = TypeVar("ResultT", bound=mcp_types.Result)
 
 Delivery = Literal["poll", "push"]
 
@@ -574,14 +583,17 @@ async def poll_events_mcp(
                 client.session.send_request(request, PollEventsResult)
             )
         return await client._await_with_session_monitoring(
-            _send_with_headers(client, request, param_headers)
+            _send_with_headers(client, request, param_headers, PollEventsResult)
         )
 
 
 async def _send_with_headers(
-    client: Client, request: PollEventsRequest, extra_headers: dict[str, str]
-) -> PollEventsResult:
-    """Send a poll with `Mcp-Param-*` headers, which `send_request` cannot add."""
+    client: Client,
+    request: PollEventsRequest | SubscribeEventsRequest | UnsubscribeEventsRequest,
+    extra_headers: dict[str, str],
+    result_type: type[ResultT],
+) -> ResultT:
+    """Send a request with `Mcp-Param-*` headers, which `send_request` cannot add."""
     session = client.session
     data = request.model_dump(by_alias=True, mode="json", exclude_none=True)
     options: CallOptions = {}
@@ -594,7 +606,117 @@ async def _send_with_headers(
     raw = await session._dispatcher.send_raw_request(
         data["method"], data.get("params"), options
     )
-    return PollEventsResult.model_validate(raw)
+    return result_type.model_validate(raw)
+
+
+async def _send_named(
+    client: Client,
+    request: SubscribeEventsRequest | UnsubscribeEventsRequest,
+    result_type: type[ResultT],
+) -> ResultT:
+    name = request.params.name
+    param_headers = _event_param_headers(client, name, request.params.arguments)
+    if not param_headers:
+        return await client._await_with_session_monitoring(
+            client.session.send_request(request, result_type)
+        )
+    return await client._await_with_session_monitoring(
+        _send_with_headers(client, request, param_headers, result_type)
+    )
+
+
+async def subscribe_webhook(
+    client: Client,
+    name: str,
+    arguments: dict[str, Any] | None = None,
+    *,
+    url: str,
+    secret: str,
+    cursor: str | None = None,
+    max_age_ms: int | None = None,
+    ttl_ms: int | None = None,
+) -> SubscribeEventsResult:
+    """Send one `events/subscribe` request: create or refresh a webhook subscription.
+
+    The server POSTs events for `name` to `url`, signed with `secret`, until
+    the returned `refresh_before`. Call this again with the same `name`,
+    `arguments` and `url` before then to keep the subscription, passing the
+    last cursor your receiver saw; the result's `cursor` is safe to persist
+    too. Make the secret with `new_webhook_secret()` and give it to the
+    receiver, which checks every delivery with `verify_webhook()`.
+
+    Args:
+        name: Event type to subscribe to.
+        arguments: Subscription arguments matching the event's input schema.
+        url: The `https` URL the server POSTs to.
+        secret: The `whsec_` signing secret.
+        cursor: Position to resume from. `None` starts from now.
+        max_age_ms: Do not replay events older than this.
+        ttl_ms: Suggested lease. The server may grant less.
+
+    Raises:
+        RuntimeError: If the client is disconnected or Events was not negotiated.
+        MCPError: If the server rejects the request, including
+            `CallbackEndpointError` when the receiver does not answer the
+            verification challenge.
+    """
+    _require_events_extension(client)
+    if name not in _events_extension(client)._header_maps:
+        await list_events(client)
+    with client_span(
+        f"events/subscribe {name}",
+        "events/subscribe",
+        name,
+        session_id=client.transport.get_session_id(),
+    ):
+        request = SubscribeEventsRequest(
+            params=SubscribeEventsParams(
+                name=name,
+                arguments=arguments,
+                delivery=WebhookTarget(url=url, secret=secret),
+                cursor=cursor,
+                max_age_ms=max_age_ms,
+                ttl_ms=ttl_ms,
+                meta=_trace_meta(),
+            )
+        )
+        return await _send_named(client, request, SubscribeEventsResult)
+
+
+async def unsubscribe_webhook(
+    client: Client,
+    name: str,
+    arguments: dict[str, Any] | None = None,
+    *,
+    url: str,
+) -> None:
+    """Send one `events/unsubscribe` request: stop a webhook subscription now.
+
+    Not needed for correctness: a subscription that is not refreshed lapses
+    at the end of its lease.
+
+    Raises:
+        MCPError: `NotFound` if no subscription matches `name`, `arguments`
+            and `url`.
+    """
+    _require_events_extension(client)
+    if name not in _events_extension(client)._header_maps:
+        await list_events(client)
+    with client_span(
+        f"events/unsubscribe {name}",
+        "events/unsubscribe",
+        name,
+        session_id=client.transport.get_session_id(),
+    ):
+        request = UnsubscribeEventsRequest(
+            params=UnsubscribeEventsParams(
+                name=name,
+                arguments=arguments,
+                delivery=WebhookAddress(url=url),
+                meta=_trace_meta(),
+            )
+        )
+        await _send_named(client, request, UnsubscribeEventsResult)
 
 
 def subscribe_events(

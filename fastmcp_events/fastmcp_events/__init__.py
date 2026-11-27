@@ -27,7 +27,13 @@ __all__ = [
     "list_events",
     "list_events_mcp",
     "poll_events_mcp",
+    "WebhookDelivery",
+    "WebhookVerificationError",
+    "new_webhook_secret",
     "subscribe_events",
+    "subscribe_webhook",
+    "unsubscribe_webhook",
+    "verify_webhook",
 ]
 
 _LAZY = {
@@ -42,6 +48,12 @@ _LAZY = {
     "list_events_mcp": "fastmcp_events.subscription",
     "poll_events_mcp": "fastmcp_events.subscription",
     "subscribe_events": "fastmcp_events.subscription",
+    "subscribe_webhook": "fastmcp_events.subscription",
+    "unsubscribe_webhook": "fastmcp_events.subscription",
+    "WebhookDelivery": "fastmcp_events.webhook_delivery",
+    "WebhookVerificationError": "fastmcp_events.webhooks",
+    "new_webhook_secret": "fastmcp_events.webhooks",
+    "verify_webhook": "fastmcp_events.webhooks",
 }
 
 if TYPE_CHECKING:
@@ -68,6 +80,18 @@ if TYPE_CHECKING:
     from fastmcp_events.extension import EventBatch as EventBatch
     from fastmcp_events.extension import EventPoll as EventPoll
     from fastmcp_events.extension import EventsExtension as EventsExtension
+    from fastmcp_events.subscription import (
+        subscribe_webhook as subscribe_webhook,
+    )
+    from fastmcp_events.subscription import (
+        unsubscribe_webhook as unsubscribe_webhook,
+    )
+    from fastmcp_events.webhook_delivery import WebhookDelivery as WebhookDelivery
+    from fastmcp_events.webhooks import (
+        WebhookVerificationError as WebhookVerificationError,
+    )
+    from fastmcp_events.webhooks import new_webhook_secret as new_webhook_secret
+    from fastmcp_events.webhooks import verify_webhook as verify_webhook
 
 
 def __getattr__(name: str) -> object:
