@@ -90,7 +90,12 @@ from fastmcp.server.dependencies import _dispatching_tool_call
 from fastmcp.server.extensions import _extension_tool_call_scope
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
-from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.server.middleware import (
+    AuthMiddleware,
+    CallNext,
+    Middleware,
+    MiddlewareContext,
+)
 from fastmcp.server.middleware.middleware import (
     MiddlewarePhase,
     _dispatch_phase,
@@ -207,6 +212,7 @@ ComponentT = TypeVar("ComponentT", bound=FastMCPComponent)
 async def _highest_available_version(
     candidates: Sequence[FastMCPComponent],
     lookup: Callable[[VersionSpec], Awaitable[ComponentT | None]],
+    allow: Callable[[ComponentT], Awaitable[bool]] | None = None,
 ) -> ComponentT | None:
     """Look up each candidate version, highest first, until one is returned.
 
@@ -222,7 +228,7 @@ async def _highest_available_version(
             continue
         tried.add(candidate.version)
         found = await lookup(VersionSpec(eq=candidate.version))
-        if found is not None:
+        if found is not None and (allow is None or await allow(found)):
             return found
     return None
 
@@ -1104,6 +1110,48 @@ class FastMCP(
         # Component auth - return None if unauthorized (consistent with list filtering)
         return tool if await _component_auth_allows(tool) else None
 
+    async def _middleware_auth_allows(
+        self,
+        component: FastMCPComponent,
+    ) -> bool:
+        """Whether every AuthMiddleware on this server admits the component."""
+        auth_layers = [mw for mw in self.middleware if isinstance(mw, AuthMiddleware)]
+        if not auth_layers:
+            return True
+        skip_auth, token = _get_auth_context()
+        if skip_auth:
+            return True
+        ctx = AuthContext(token=token, component=component)
+        for mw in auth_layers:
+            try:
+                if not await run_auth_checks(mw.auth, ctx):
+                    return False
+            except AuthorizationError:
+                return False
+        return True
+
+    async def _fallback_version(
+        self,
+        candidates: Sequence[FastMCPComponent],
+        lookup: Callable[[VersionSpec], Awaitable[ComponentT | None]],
+        top: ComponentT | None = None,
+    ) -> ComponentT | None:
+        """Resolve the highest allowed version when `top` is hidden or denied by middleware.
+
+        Prefers a version admitted by every `AuthMiddleware`; if none is
+        admitted, falls back to `top` (or the highest enabled version) so
+        `AuthMiddleware` can report the denial against that version.
+        """
+        if any(isinstance(mw, AuthMiddleware) for mw in self.middleware):
+            found = await _highest_available_version(
+                candidates, lookup, allow=self._middleware_auth_allows
+            )
+            if found is not None:
+                return found
+        if top is not None:
+            return top
+        return await _highest_available_version(candidates, lookup)
+
     async def _check_hashed_target(self, tool: Tool) -> Tool | None:
         """Check auth on the found tool, as `_get_tool()` does for a name."""
         return tool if await _component_auth_allows(tool) else None
@@ -1145,6 +1193,7 @@ class FastMCP(
             return injected if await _component_auth_allows(injected) else None
 
         tool = await super().get_tool(name, version)
+        top: Tool | None = None
         if tool is not None:
             # Apply session transforms to single item
             tools = await apply_session_transforms([tool])
@@ -1155,7 +1204,9 @@ class FastMCP(
                 and is_enabled(tools[0])
                 and await _component_auth_allows(tools[0])
             ):
-                return tools[0]
+                if version is not None or await self._middleware_auth_allows(tools[0]):
+                    return tools[0]
+                top = tools[0]
 
         # The highest version is disabled or unauthorized (provider lookups
         # return None for an unauthorized tool). A mounted twin that is shown
@@ -1173,12 +1224,18 @@ class FastMCP(
         if found is not None:
             identity = tool_identity(found)
             candidates = [t for t in candidates if tool_identity(t) == identity]
-        if tool is not None and (twin := await _shown_twin(tool, candidates)):
-            return twin
+        if (
+            top is None
+            and tool is not None
+            and (twin := await _shown_twin(tool, candidates))
+        ):
+            if version is not None or await self._middleware_auth_allows(twin):
+                return twin
+            top = twin
         if version is not None:
             return None
-        return await _highest_available_version(
-            candidates, lambda spec: self.get_tool(name, spec)
+        return await self._fallback_version(
+            candidates, lambda spec: self.get_tool(name, spec), top=top
         )
 
     async def list_resources(
@@ -1300,6 +1357,7 @@ class FastMCP(
         reads can tell a hidden resource apart from a missing one.
         """
         hidden: Resource | None = None
+        top: Resource | None = None
         try:
             resource = await super().get_resource(uri, version)
         except AuthorizationError:
@@ -1317,20 +1375,30 @@ class FastMCP(
                 and is_enabled(resources[0])
                 and await _component_auth_allows(resources[0])
             ):
-                return resources[0], True
+                if version is not None or await self._middleware_auth_allows(
+                    resources[0]
+                ):
+                    return resources[0], True
+                top = resources[0]
 
         # An explicit request has nothing to fall back to unless the lookup
         # found a hidden component that may have a shown twin; skip listing.
         if version is not None and hidden is None:
             return None, True
         candidates = [r for r in await super().list_resources() if str(r.uri) == uri]
-        if hidden is not None and (twin := await _shown_twin(hidden, candidates)):
-            return twin, True
+        if (
+            top is None
+            and hidden is not None
+            and (twin := await _shown_twin(hidden, candidates))
+        ):
+            if version is not None or await self._middleware_auth_allows(twin):
+                return twin, True
+            top = twin
         if version is not None:
             return None, True
 
-        resource = await _highest_available_version(
-            candidates, lambda spec: self.get_resource(uri, spec)
+        resource = await self._fallback_version(
+            candidates, lambda spec: self.get_resource(uri, spec), top=top
         )
         return resource, True
 
@@ -1443,6 +1511,7 @@ class FastMCP(
             The template if found and enabled, None otherwise.
         """
         template = await super().get_resource_template(uri, version)
+        top: ResourceTemplate | None = None
         if template is not None:
             # Apply session transforms to single item
             templates = await apply_session_transforms([template])
@@ -1453,7 +1522,11 @@ class FastMCP(
                 and is_enabled(templates[0])
                 and await _component_auth_allows(templates[0])
             ):
-                return templates[0]
+                if version is not None or await self._middleware_auth_allows(
+                    templates[0]
+                ):
+                    return templates[0]
+                top = templates[0]
 
         # The highest version is disabled or unauthorized (provider lookups
         # return None for an unauthorized template).
@@ -1466,13 +1539,19 @@ class FastMCP(
             for t in await super().list_resource_templates()
             if t.matches(uri) is not None
         ]
-        if template is not None and (twin := await _shown_twin(template, candidates)):
-            return twin
+        if (
+            top is None
+            and template is not None
+            and (twin := await _shown_twin(template, candidates))
+        ):
+            if version is not None or await self._middleware_auth_allows(twin):
+                return twin
+            top = twin
         if version is not None:
             return None
 
-        return await _highest_available_version(
-            candidates, lambda spec: self.get_resource_template(uri, spec)
+        return await self._fallback_version(
+            candidates, lambda spec: self.get_resource_template(uri, spec), top=top
         )
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
@@ -1572,6 +1651,7 @@ class FastMCP(
             The prompt if found and enabled, None otherwise.
         """
         prompt = await super().get_prompt(name, version)
+        top: Prompt | None = None
         if prompt is not None:
             # Apply session transforms to single item
             prompts = await apply_session_transforms([prompt])
@@ -1582,7 +1662,11 @@ class FastMCP(
                 and is_enabled(prompts[0])
                 and await _component_auth_allows(prompts[0])
             ):
-                return prompts[0]
+                if version is not None or await self._middleware_auth_allows(
+                    prompts[0]
+                ):
+                    return prompts[0]
+                top = prompts[0]
 
         # The highest version is disabled or unauthorized (provider lookups
         # return None for an unauthorized prompt).
@@ -1591,13 +1675,19 @@ class FastMCP(
         if version is not None and prompt is None:
             return None
         candidates = [p for p in await super().list_prompts() if p.name == name]
-        if prompt is not None and (twin := await _shown_twin(prompt, candidates)):
-            return twin
+        if (
+            top is None
+            and prompt is not None
+            and (twin := await _shown_twin(prompt, candidates))
+        ):
+            if version is not None or await self._middleware_auth_allows(twin):
+                return twin
+            top = twin
         if version is not None:
             return None
 
-        return await _highest_available_version(
-            candidates, lambda spec: self.get_prompt(name, spec)
+        return await self._fallback_version(
+            candidates, lambda spec: self.get_prompt(name, spec), top=top
         )
 
     async def call_tool(

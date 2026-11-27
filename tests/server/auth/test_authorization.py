@@ -1100,6 +1100,153 @@ class TestAuthMiddlewareVersionedRequests:
         finally:
             auth_context_var.reset(tok)
 
+    async def test_unversioned_tool_falls_back_to_middleware_allowed_version(self):
+        """Unversioned tool calls resolve to the highest version AuthMiddleware allows."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(name="calc", version="1.0")
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2.0", tags={"admin"})
+        def calc_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp) as client:
+                listed = await client.list_tools()
+                assert [(t.name, t.meta["fastmcp"]["version"]) for t in listed] == [
+                    ("calc", "1.0")
+                ]
+                result = await client.call_tool("calc", {})
+                assert result.data == "v1"
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.call_tool("calc", {}, version="2.0")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_unversioned_resource_falls_back_to_middleware_allowed_version(self):
+        """Unversioned resource reads resolve to the highest version AuthMiddleware allows."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.resource("data://info", version="1.0")
+        def info_v1() -> str:
+            return "v1"
+
+        @mcp.resource("data://info", version="2.0", tags={"admin"})
+        def info_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp, mode="legacy") as client:
+                listed = await client.list_resources()
+                assert [(str(r.uri), r.meta["fastmcp"]["version"]) for r in listed] == [
+                    ("data://info", "1.0")
+                ]
+                contents = await client.read_resource("data://info")
+                assert contents[0].text == "v1"
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.read_resource("data://info", version="2.0")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_unversioned_template_falls_back_to_middleware_allowed_version(self):
+        """Unversioned template reads resolve to the highest version AuthMiddleware allows."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.resource("data://items/{item_id}", version="1.0")
+        def item_v1(item_id: str) -> str:
+            return f"v1:{item_id}"
+
+        @mcp.resource("data://items/{item_id}", version="2.0", tags={"admin"})
+        def item_v2(item_id: str) -> str:
+            return f"v2:{item_id}"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp, mode="legacy") as client:
+                contents = await client.read_resource("data://items/42")
+                assert contents[0].text == "v1:42"
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.read_resource("data://items/42", version="2.0")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_unversioned_prompt_falls_back_to_middleware_allowed_version(self):
+        """Unversioned prompt gets resolve to the highest version AuthMiddleware allows."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.prompt(name="greet", version="1.0")
+        def greet_v1() -> str:
+            return "v1"
+
+        @mcp.prompt(name="greet", version="2.0", tags={"admin"})
+        def greet_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp, mode="legacy") as client:
+                listed = await client.list_prompts()
+                assert [(p.name, p.meta["fastmcp"]["version"]) for p in listed] == [
+                    ("greet", "1.0")
+                ]
+                result = await client.get_prompt("greet")
+                assert result.messages[0].content.text == "v1"
+                with pytest.raises(Exception, match="authorization|insufficient"):
+                    await client.get_prompt("greet", version="2.0")
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_unversioned_call_falls_back_across_multiple_auth_middlewares(self):
+        """Fallback must satisfy every AuthMiddleware layer on the server."""
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=require_scopes("read")),
+                AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"])),
+            ]
+        )
+
+        @mcp.tool(name="calc", version="1.0")
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2.0", tags={"admin"})
+        def calc_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            async with Client(mcp) as client:
+                result = await client.call_tool("calc", {})
+                assert result.data == "v1"
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_unversioned_call_raises_insufficient_scope_when_all_versions_denied(
+        self,
+    ):
+        """When no version is allowed by AuthMiddleware, the shortfall is still reported."""
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(name="calc", version="1.0", tags={"admin"})
+        def calc_v1() -> str:
+            return "v1"
+
+        @mcp.tool(name="calc", version="2.0", tags={"admin"})
+        def calc_v2() -> str:
+            return "v2"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("calc", {})
+            assert exc_info.value.required_scopes == ["admin"]
+        finally:
+            auth_context_var.reset(tok)
+
 
 # =============================================================================
 # Tests for component-level auth denial messaging (issue #4054 bug 1)
