@@ -1,6 +1,6 @@
 {
  "schema": "fastmcp-pbt-coverage/1",
- "generated_at": "2026-11-26T20:42:31+00:00",
+ "generated_at": "2026-11-27T12:32:37+00:00",
  "source_commit": "a337640e424b98cb452ed58f5af408c3cdb4bbed",
  "suite": {
   "status": "passed",
