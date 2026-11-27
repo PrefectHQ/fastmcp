@@ -91,6 +91,9 @@ def _tool_result_content_to_anthropic(
             content_blocks.append(TextBlockParam(type="text", text=item.text))
         elif isinstance(item, ImageContent):
             content_blocks.append(_image_content_to_anthropic_block(item))
+        elif isinstance(item, AudioContent):
+            msg = f"Unsupported tool result content type: {type(item).__name__}"
+            raise ValueError(msg)
 
     if not content_blocks:
         return ""

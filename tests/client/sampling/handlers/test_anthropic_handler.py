@@ -583,3 +583,35 @@ async def test_handler_preserves_temperature_on_the_wire(temperature: float | No
         expected["temperature"] = temperature
     assert requests == [expected]
     assert result.content == TextContent(type="text", text="hi")
+
+
+@pytest.mark.parametrize("as_block_list", [False, True], ids=["single", "list"])
+@pytest.mark.parametrize(
+    "result_content",
+    [
+        pytest.param(
+            [AudioContent(type="audio", data="YWJj", mime_type="audio/wav")],
+            id="audio-only",
+        ),
+        pytest.param(
+            [
+                TextContent(type="text", text="caption"),
+                AudioContent(type="audio", data="YWJj", mime_type="audio/wav"),
+            ],
+            id="text-and-audio",
+        ),
+    ],
+)
+def test_convert_tool_result_rejects_unsupported_audio(
+    result_content: list[TextContent | AudioContent], as_block_list: bool
+):
+    """AudioContent inside a tool result must error, not be silently dropped."""
+    tool_result = ToolResultContent(
+        type="tool_result", tool_use_id="toolu_audio", content=result_content
+    )
+    message_content = [tool_result] if as_block_list else tool_result
+
+    with pytest.raises(ValueError, match="Unsupported tool result content type"):
+        AnthropicSamplingHandler._convert_to_anthropic_messages(
+            messages=[SamplingMessage(role="user", content=message_content)]
+        )

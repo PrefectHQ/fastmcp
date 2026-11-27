@@ -110,6 +110,9 @@ def _tool_result_content_to_openai_text(content: Sequence[Any]) -> str:
         if isinstance(item, ImageContent):
             msg = "ImageContent in tool results is not supported by OpenAI"
             raise ValueError(msg)
+        if isinstance(item, AudioContent):
+            msg = "AudioContent in tool results is not supported by OpenAI"
+            raise ValueError(msg)
         if isinstance(item, TextContent):
             result_texts.append(item.text)
     return "\n".join(result_texts)
