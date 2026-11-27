@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 import pytest
 from mcp_types import TextContent
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from typing_extensions import TypedDict
 
 from fastmcp import FastMCP
@@ -597,3 +597,54 @@ class TestRenamedArgValidationErrors:
         assert await call_tool_error(find_tool, arguments) == await call_tool_error(
             search_tool, arguments
         )
+
+
+async def test_from_tool_preserves_secret_str_default() -> None:
+    """TransformedTool.run must not shadow Python defaults with JSON schema defaults."""
+    mcp = FastMCP("demo")
+
+    @mcp.tool
+    def connect(token: SecretStr = SecretStr("s3cr3t")) -> str:
+        return f"using token {token.get_secret_value()}"
+
+    async def custom_connect(token: SecretStr = SecretStr("custom_s3cr3t")) -> str:
+        return f"custom token {token.get_secret_value()}"
+
+    mcp.add_tool(Tool.from_tool(connect, name="connect_renamed"))
+    mcp.add_tool(
+        Tool.from_tool(connect, name="connect_custom", transform_fn=custom_connect)
+    )
+    mcp.add_tool(
+        Tool.from_tool(
+            connect,
+            name="connect_override",
+            transform_args={
+                "token": ArgTransform(default=SecretStr("override_s3cr3t"))
+            },
+        )
+    )
+    mcp.add_tool(
+        Tool.from_tool(
+            connect,
+            name="connect_custom_override",
+            transform_fn=custom_connect,
+            transform_args={
+                "token": ArgTransform(default=SecretStr("override_s3cr3t"))
+            },
+        )
+    )
+
+    async with Client(mcp) as client:
+        assert (await client.call_tool("connect", {})).data == "using token s3cr3t"
+        assert (
+            await client.call_tool("connect_renamed", {})
+        ).data == "using token s3cr3t"
+        assert (
+            await client.call_tool("connect_custom", {})
+        ).data == "custom token custom_s3cr3t"
+        assert (
+            await client.call_tool("connect_override", {})
+        ).data == "using token override_s3cr3t"
+        assert (
+            await client.call_tool("connect_custom_override", {})
+        ).data == "custom token override_s3cr3t"
