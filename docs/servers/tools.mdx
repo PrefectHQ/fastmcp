@@ -1004,6 +1004,8 @@ FastMCP supports these standard annotations:
 
 Remember that annotations help make better user experiences but should be treated as advisory hints. They help client applications present appropriate UI elements and safety controls, but won't enforce security boundaries on their own. Always focus on making your annotations accurately represent what your tool actually does.
 
+You can use `readOnlyHint` on the server to offer a [read-only tool view](/servers/visibility#read-only-tool-views). Clients connecting to that view can discover and call only tools explicitly marked read-only.
+
 ### Using Annotation Hints
 
 MCP clients like Claude and ChatGPT use annotation hints to determine when to skip confirmation prompts and how to present tools to users. The most commonly used hint is `readOnlyHint`, which signals that a tool only reads data without making changes.
