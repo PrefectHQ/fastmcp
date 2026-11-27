@@ -709,6 +709,35 @@ def _inclusive_bound(
     return value
 
 
+def _coerce_integral_float(value: Any) -> Any:
+    """Convert finite integral floats to int for lax integer validation.
+
+    Pydantic rejects integral floats above ~2^63 with ``int_parsing_size``,
+    while JSON Schema treats any finite number with zero fractional part as an
+    integer.
+    """
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        return int(value)
+    return value
+
+
+class _LaxIntegralFloat:
+    """Allow finite integral floats of any magnitude in lax integer validation."""
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        inner = handler(source_type)
+        lax = core_schema.no_info_before_validator_function(
+            _coerce_integral_float, inner
+        )
+        return core_schema.lax_or_strict_schema(lax_schema=lax, strict_schema=inner)
+
+
+_LAX_INTEGRAL_FLOAT = _LaxIntegralFloat()
+
+
 def _create_numeric_type(
     base: type[int | float], schema: Mapping[str, Any]
 ) -> type | Annotated[Any, ...]:
@@ -727,6 +756,11 @@ def _create_numeric_type(
         }.items()
         if v is not None
     }
+
+    if base is int:
+        if constraints:
+            return Annotated[int, Field(**constraints), _LAX_INTEGRAL_FLOAT]  # type: ignore[return-value]
+        return Annotated[int, _LAX_INTEGRAL_FLOAT]  # type: ignore[return-value]
 
     return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]  # ty:ignore[invalid-type-form]
 

@@ -188,7 +188,9 @@ def _bound_kinds(schema: dict) -> set[str]:
     kinds: set[str] = set()
     for item in getattr(json_schema_to_type(schema), "__metadata__", ()):
         for constraint in getattr(item, "metadata", (item,)):
-            kinds.add(type(constraint).__name__)
+            name = type(constraint).__name__
+            if name != "_LaxIntegralFloat":
+                kinds.add(name)
     return kinds
 
 
@@ -344,3 +346,64 @@ class TestHugeCounts:
     def test_huge_minimum_still_rejects(self, schema, value):
         with pytest.raises(ValidationError):
             TypeAdapter(json_schema_to_type(schema)).validate_python(value)
+
+
+class TestLargeIntegralFloatIntegers:
+    """Integer schemas accept finite integral floats of any magnitude (#6695)."""
+
+    @pytest.mark.parametrize("value", [1.0, 1e18, 1e20, -1e20, 1e100])
+    def test_root_integer_accepts_integral_floats_in_lax_mode(self, value):
+        validator = TypeAdapter(json_schema_to_type({"type": "integer"}))
+        result = validator.validate_python(value)
+        assert result == int(value)
+        assert type(result) is int
+
+    @pytest.mark.parametrize("raw", ["1.0", "1e20", "-1e20"])
+    def test_root_integer_accepts_integral_floats_from_json(self, raw):
+        validator = TypeAdapter(json_schema_to_type({"type": "integer"}))
+        result = validator.validate_json(raw)
+        assert result == int(float(raw))
+        assert type(result) is int
+
+    @pytest.mark.parametrize("value", [1.5, float("inf"), float("-inf"), float("nan")])
+    def test_root_integer_rejects_non_integral_and_non_finite_floats(self, value):
+        validator = TypeAdapter(json_schema_to_type({"type": "integer"}))
+        with pytest.raises(ValidationError):
+            validator.validate_python(value)
+
+    @pytest.mark.parametrize("value", [1.0, 1e20])
+    def test_strict_mode_still_rejects_integral_floats(self, value):
+        validator = TypeAdapter(json_schema_to_type({"type": "integer"}))
+        with pytest.raises(ValidationError):
+            validator.validate_python(value, strict=True)
+        with pytest.raises(ValidationError):
+            validator.validate_json(str(value), strict=True)
+        assert validator.validate_python(2**70, strict=True) == 2**70
+
+    def test_object_and_array_integers_accept_large_integral_floats(self):
+        obj_validator = TypeAdapter(
+            json_schema_to_type(
+                {"type": "object", "properties": {"b": {"type": "integer"}}}
+            )
+        )
+        assert obj_validator.validate_python({"b": 1e20}).b == int(1e20)
+
+        arr_validator = TypeAdapter(
+            json_schema_to_type({"type": "array", "items": {"type": "integer"}})
+        )
+        assert arr_validator.validate_python([1e20, -1e20]) == [
+            int(1e20),
+            int(-1e20),
+        ]
+
+    def test_constrained_integer_enforces_bounds_and_preserves_json_schema(self):
+        schema = {"type": "integer", "minimum": 0, "multipleOf": 2}
+        validator = TypeAdapter(json_schema_to_type(schema))
+        assert validator.validate_python(1e20) == int(1e20)
+        with pytest.raises(ValidationError):
+            validator.validate_python(-1e20)
+        assert validator.json_schema() == {
+            "minimum": 0,
+            "multipleOf": 2,
+            "type": "integer",
+        }

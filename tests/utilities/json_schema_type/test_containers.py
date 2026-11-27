@@ -14,6 +14,8 @@ from fastmcp.utilities.json_schema_type import (
     json_schema_to_type,
 )
 
+_INT_TYPE: Any = json_schema_to_type({"type": "integer"})
+
 
 def get_dataclass_field(type: type, field_name: str) -> Field:
     return type.__dataclass_fields__[field_name]  # ty: ignore[missing-attribute]
@@ -284,9 +286,9 @@ class TestObjectTypes:
             (dict[str, Any], dict[str, Any]),
             # Simple typed dicts work correctly
             (dict[str, str], dict[str, str]),
-            (dict[str, int], dict[str, int]),
+            (dict[str, int], dict[str, _INT_TYPE]),
             # Union value types work
-            (dict[str, str | int], dict[str, str | int]),
+            (dict[str, str | int], dict[str, str | _INT_TYPE]),
             # Key types are constrained to str in JSON Schema
             (dict[int, list[str]], dict[str, list[str]]),
             # Union key types become str (JSON Schema limitation)
@@ -308,7 +310,7 @@ class TestObjectTypes:
             # list[dict[str, str]] preserves value type
             (list[dict[str, str]], list[dict[str, str]]),
             # list[dict[str, int]] preserves value type
-            (list[dict[str, int]], list[dict[str, int]]),
+            (list[dict[str, int]], list[dict[str, _INT_TYPE]]),
         ],
     )
     def test_list_of_dict_types_roundtrip(self, input_type, expected_type):
