@@ -510,3 +510,53 @@ mcp.add_transform(Visibility(False, names={"secret_tool"}))
 ```
 
 Server-level transforms override provider-level transforms. If a component is disabled at the provider level but enabled at the server level, the server-level `enable()` can re-enable it.
+
+## Serve a read-only tool view
+
+Add `ReadOnly()` to a server or provider to expose only tools whose annotations explicitly set `readOnlyHint=True`. The filter applies both to tool discovery and to calls by name. The tool author is responsible for the accuracy of the annotation.
+
+To offer two connection URLs, mount your tools on a second server and apply the transform there. This Starlette application serves the full catalog at `/mcp` and the read-only view at `/read-only/mcp`. Start both HTTP apps in the parent lifespan.
+
+```python
+from contextlib import asynccontextmanager
+
+from fastmcp import FastMCP
+from fastmcp.server.transforms import ReadOnly
+from starlette.applications import Starlette
+from starlette.routing import Mount
+
+notes = FastMCP("Notes")
+entries: list[str] = []
+
+
+@notes.tool(annotations={"readOnlyHint": True})
+def list_notes() -> list[str]:
+    return entries.copy()
+
+
+@notes.tool
+def add_note(text: str) -> None:
+    entries.append(text)
+
+
+reader = FastMCP("Browse notes")
+reader.mount(notes)
+reader.add_transform(ReadOnly())
+
+full_app = notes.http_app(path="/mcp")
+reader_app = reader.http_app(path="/mcp")
+
+
+@asynccontextmanager
+async def lifespan(app: Starlette):
+    async with full_app.lifespan(app), reader_app.lifespan(app):
+        yield
+
+
+app = Starlette(
+    routes=[Mount("/read-only", app=reader_app), Mount("/", app=full_app)],
+    lifespan=lifespan,
+)
+```
+
+Save the example as `server.py` and run `uvicorn server:app`. Both views use the same tools and data. Configure authentication and access to each HTTP endpoint according to who should be able to use it.
