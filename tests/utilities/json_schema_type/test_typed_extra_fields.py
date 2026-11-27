@@ -7,6 +7,22 @@ from pydantic import TypeAdapter, ValidationError
 from fastmcp.utilities.json_schema_type import json_schema_to_type
 
 
+@pytest.mark.parametrize("explicit_type", [True, False])
+@pytest.mark.parametrize("extra_schema", [True, {}])
+def test_unconstrained_extra_fields_without_declared_properties(
+    explicit_type: bool, extra_schema: bool | dict[str, Any]
+) -> None:
+    schema: dict[str, Any] = {"properties": {}, "additionalProperties": extra_schema}
+    if explicit_type:
+        schema["type"] = "object"
+    payload = {"name": "cache", "extra": {"hits": 12, "ready": True}}
+    result: Any = TypeAdapter(json_schema_to_type(schema)).validate_python(payload)
+    assert isinstance(result, dict)
+    assert result == payload
+    assert type(result["extra"]["hits"]) is int
+    assert type(result["extra"]["ready"]) is bool
+
+
 @pytest.mark.parametrize(
     ("extra_schema", "value", "expected"),
     [
@@ -16,18 +32,33 @@ from fastmcp.utilities.json_schema_type import json_schema_to_type
         ({}, {"arbitrary": [1, "two"]}, {"arbitrary": [1, "two"]}),
     ],
 )
+@pytest.mark.parametrize("explicit_type", [True, False])
+@pytest.mark.parametrize("nested", [True, False])
 def test_typed_extra_fields_are_preserved_and_hydrated(
-    extra_schema: dict[str, Any], value: Any, expected: Any
+    extra_schema: dict[str, Any],
+    value: Any,
+    expected: Any,
+    explicit_type: bool,
+    nested: bool,
 ) -> None:
-    schema = {
-        "type": "object",
+    schema: dict[str, Any] = {
         "properties": {"name": {"type": "string"}},
         "required": ["name"],
         "additionalProperties": extra_schema,
     }
-    result: Any = TypeAdapter(json_schema_to_type(schema)).validate_python(
-        {"name": "cache", "extra": value}
-    )
+    if explicit_type:
+        schema["type"] = "object"
+    payload = {"name": "cache", "extra": value}
+    if nested:
+        schema = {
+            "type": "object",
+            "properties": {"result": schema},
+            "required": ["result"],
+        }
+        payload = {"result": payload}
+    result: Any = TypeAdapter(json_schema_to_type(schema)).validate_python(payload)
+    if nested:
+        result = result.result
     assert result.name == "cache"
     assert result.extra == expected
     assert type(result.extra) is type(expected)

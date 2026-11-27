@@ -33,6 +33,41 @@ class CounterCollection(BaseModel):
     counters: list[Counters]
 
 
+@pytest.mark.parametrize("explicit_type", [True, False])
+@pytest.mark.parametrize("extra_schema", [True, {}])
+async def test_unconstrained_extras_survive_tool_result_hydration(
+    explicit_type: bool, extra_schema: bool | dict[str, Any]
+) -> None:
+    mcp = FastMCP()
+    details_schema: dict[str, Any] = {
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
+        "additionalProperties": extra_schema,
+    }
+    if explicit_type:
+        details_schema["type"] = "object"
+    payload = {"details": {"name": "cache", "extra": {"hits": 12, "ready": True}}}
+
+    @mcp.tool(
+        output_schema={
+            "type": "object",
+            "properties": {"details": details_schema},
+            "required": ["details"],
+        }
+    )
+    def counters() -> ToolResult:
+        return ToolResult(content=[], structured_content=payload)
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("counters")
+
+    assert result.structured_content == payload
+    assert result.data.details.name == "cache"
+    assert result.data.details.extra == {"hits": 12, "ready": True}
+    assert type(result.data.details.extra["hits"]) is int
+    assert type(result.data.details.extra["ready"]) is bool
+
+
 @pytest.mark.parametrize("shape", ["model", "list", "nested"])
 async def test_typed_extra_fields_survive_tool_result_hydration(shape: str) -> None:
     mcp = FastMCP()
