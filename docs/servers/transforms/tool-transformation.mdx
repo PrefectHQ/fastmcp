@@ -194,6 +194,8 @@ mcp = FastMCP("Server")
 mcp.add_tool(safe_division)
 ```
 
+The parameters a transform function declares are validated and converted to its type hints, like a plain tool function's: a Pydantic model parameter receives a model instance, a `datetime.date` receives a date, and invalid input is rejected before the function runs. Where `ArgTransform(type=...)` sets an argument's type, that type is the one validated. Arguments collected by `**kwargs` arrive unvalidated. Values you pass to `forward()` are therefore Python objects, so convert one first, for example with `p.model_dump()` or `when.isoformat()`, when the original tool expects a different type.
+
 The `forward()` function handles argument mapping automatically. Call it with the transformed argument names, and it maps them back to the original function's parameters.
 
 For direct access to the original function without mapping, use `forward_raw()` with the original parameter names.
