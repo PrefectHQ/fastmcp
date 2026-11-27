@@ -256,6 +256,49 @@ class TestStatefulProxyClient:
                 result2 = await client.call_tool("ask_name", {})
                 assert result2.data == "Hello, Alice!"
 
+    async def test_concurrent_progress_requests_no_mixing(self):
+        """Concurrent calls on one StatefulProxyClient route progress to their own handlers (fixes #6817)."""
+        backend = FastMCP("backend")
+        entered = 0
+        both_entered = asyncio.Event()
+        sessions: set[str] = set()
+        received: dict[str, list[str | None]] = {"first": [], "second": []}
+
+        @backend.tool
+        async def work(label: str, ctx: Context) -> str:
+            nonlocal entered
+            entered += 1
+            sessions.add(ctx.session_id)
+            if entered == 2:
+                both_entered.set()
+            await asyncio.wait_for(both_entered.wait(), timeout=2)
+            await ctx.report_progress(1, 1, label)
+            return label
+
+        stateful = StatefulProxyClient(backend)
+        proxy = FastMCPProxy(client_factory=stateful.new_stateful)
+
+        async with Client(proxy, mode="legacy") as client:
+
+            async def call(label: str) -> str:
+                async def progress(
+                    value: float, total: float | None, message: str | None
+                ) -> None:
+                    received[label].append(message)
+
+                result = await client.call_tool(
+                    "work", {"label": label}, progress_handler=progress
+                )
+                return result.data
+
+            results = await asyncio.wait_for(
+                asyncio.gather(call("first"), call("second")), timeout=3
+            )
+
+        assert len(sessions) == 1
+        assert results == ["first", "second"]
+        assert received == {"first": ["first"], "second": ["second"]}
+
 
 class TestRestoreRequestContextCurrentServer:
     """Regression tests for `_restore_request_context` (refs #4054, Bug 4).

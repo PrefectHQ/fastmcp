@@ -480,6 +480,20 @@ class ProxyTool(Tool):
                 # submission is a first-class params field rather than context
                 # state, so there is no separate task-metadata injection here.
                 meta = _forwardable_request_meta(ctx)
+                # Bind progress forwarding per call rather than reading the
+                # shared `client._proxy_rc_ref`: concurrent calls on a
+                # StatefulProxyClient overwrite `_proxy_rc_ref[0]`, which
+                # otherwise routes an earlier call's progress to a later
+                # call's handler.
+                progress_handler = (
+                    _make_restoring_handler(
+                        default_proxy_progress_handler,
+                        [(ctx.request_context, ctx._fastmcp)],
+                    )
+                    if isinstance(client, ProxyClient)
+                    and "progress_handler" in client._proxy_restoring_handler_keys
+                    else client._progress_handler
+                )
 
                 if client.protocol_version in MODERN_PROTOCOL_VERSIONS:
                     # Modern backend: call the session directly (not
@@ -517,7 +531,7 @@ class ProxyTool(Tool):
                                 # legacy `call_tool_mcp` path does — without this
                                 # handler a backend tool's `ctx.report_progress()`
                                 # is dropped on modern proxy calls.
-                                progress_callback=client._progress_handler,
+                                progress_callback=progress_handler,
                                 input_responses=input_responses,
                                 request_state=request_state,
                                 allow_input_required=True,
@@ -535,7 +549,10 @@ class ProxyTool(Tool):
                     # Legacy backend: the multi-round-trip result type does not
                     # exist there, so keep the original path.
                     tool_result = await client.call_tool_mcp(
-                        name=backend_name, arguments=arguments, meta=meta
+                        name=backend_name,
+                        arguments=arguments,
+                        progress_handler=progress_handler,
+                        meta=meta,
                     )
             # Pass an upstream error result through faithfully rather than
             # collapsing it into a raised ToolError — this preserves the
