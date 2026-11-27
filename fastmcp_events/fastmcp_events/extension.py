@@ -612,9 +612,8 @@ class EventsExtension(ServerExtension):
 
 def _principal() -> str | None:
     """Who is asking, as webhook subscriptions are keyed: the token's subject."""
-    from fastmcp_events.webhook_delivery import principal_of
-
     token = get_access_token()
     if token is None:
         return None
-    return principal_of(token.claims, token.client_id)
+    subject = token.claims.get("sub")
+    return str(subject) if subject else token.client_id

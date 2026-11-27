@@ -12,6 +12,7 @@ from fastmcp_events._constants import (
     NOT_FOUND,
     UNSUPPORTED,
 )
+from fastmcp_events.webhook_delivery import _Progress, _Subscription
 from fastmcp_events.webhooks import secret_bytes, sign
 from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
@@ -279,6 +280,29 @@ async def test_failed_delivery_is_retried_with_the_same_webhook_id(receiver):
     assert first.headers["webhook-id"] == second.headers["webhook-id"]
 
 
+async def test_a_resent_gap_keeps_its_webhook_id(receiver):
+    server = FastMCP("alerts", auth=tokens())
+    events = EventsExtension(
+        emit_buffer=1, webhooks=MockedDelivery(receiver, interval=0)
+    )
+    server.add_extension(events)
+    events.event("alert.fired")(AlertFired)
+    async with connect(server) as client:
+        await subscribe_webhook(
+            client, "alert.fired", url=HOOK, secret=receiver.secrets[0]
+        )
+        await events.emit(AlertFired(key="a", severity="P1"), event_id="a")
+        await events.emit(AlertFired(key="b", severity="P1"), event_id="b")
+        # The gap goes through; the event after it fails and is retried.
+        receiver.statuses = [204, 503]
+        await events.deliver_webhooks()
+        await events.deliver_webhooks()
+    gaps = [r for r, m in receiver.messages if m.get("type") == "gap"]
+    assert len(gaps) == 2
+    assert gaps[0].headers["webhook-id"] == gaps[1].headers["webhook-id"]
+    assert [e["eventId"] for e in receiver.events] == ["b", "b"]
+
+
 async def test_gone_gives_the_event_up_and_moves_on(receiver):
     server, events = make_server(MockedDelivery(receiver))
     async with connect(server) as client:
@@ -406,8 +430,8 @@ async def test_progress_outlives_a_stale_lease_save(receiver):
         sub = await subscribe_webhook(
             client, "alert.fired", url=HOOK, secret=receiver.secrets[0], ttl_ms=1
         )
-        stale = await delivery._subscription(sub.id)
-        progress = await delivery._progress(sub.id)
+        stale = await delivery._load(_Subscription, f"sub-{sub.id}")
+        progress = await delivery._load(_Progress, f"progress-{sub.id}")
         assert stale is not None and progress is not None
         # A refresh extends the lease; then a sender holding the old lease saves.
         await subscribe_webhook(
@@ -415,7 +439,7 @@ async def test_progress_outlives_a_stale_lease_save(receiver):
         )
         await delivery._save_progress(stale, progress)
         await anyio.sleep(0.3)
-        assert await delivery._progress(sub.id) is not None
+        assert await delivery._load(_Progress, f"progress-{sub.id}") is not None
 
 
 class NonAsciiEcho(Receiver):

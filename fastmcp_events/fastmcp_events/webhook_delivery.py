@@ -21,7 +21,7 @@ import socket
 import ssl
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 from urllib.parse import urlsplit, urlunsplit
 
 import anyio
@@ -54,6 +54,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 _COLLECTION = "fastmcp-events-webhooks"
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
 _TERMINAL_CODES = frozenset({NOT_FOUND, FORBIDDEN, UNSUPPORTED})
 # One pass delivers at most this many events per subscription, so one busy
 # subscription cannot hold a pass open forever.
@@ -116,14 +117,9 @@ class WebhookDelivery:
     Pass one to `EventsExtension(webhooks=...)`. Subscriptions require an
     authenticated client, since a subscription is keyed by who asked.
 
-    Every replica of a server should share one `store` (for example a
-    `RedisStore`), so a subscription made on one replica is refreshed,
-    delivered and cancelled on any of them. By default every replica also
-    sends; deliveries carry the same `webhook-id` whichever replica sends
-    them, so a receiver that drops repeated IDs sees each one once. Set
-    `sender=False` on replicas that should only answer requests, and call
-    `EventsExtension.deliver_webhooks()` on a schedule where no process
-    lives long enough to run the sender.
+    Replicas of one server share a `store`. Where no process lives long
+    enough to run the sender, set `sender=False` and call
+    `EventsExtension.deliver_webhooks()` on a schedule.
 
     Args:
         store: Where subscriptions and their progress are kept. Defaults to
@@ -184,13 +180,9 @@ class WebhookDelivery:
     async def _delete(self, key: str) -> None:
         await self.store.delete(key, collection=_COLLECTION)
 
-    async def _subscription(self, subscription_id: str) -> _Subscription | None:
-        record = await self._get(f"sub-{subscription_id}")
-        return _Subscription.model_validate(record) if record else None
-
-    async def _progress(self, subscription_id: str) -> _Progress | None:
-        record = await self._get(f"progress-{subscription_id}")
-        return _Progress.model_validate(record) if record else None
+    async def _load(self, model: type[_ModelT], key: str) -> _ModelT | None:
+        record = await self._get(key)
+        return model.model_validate(record) if record else None
 
     async def _save_progress(self, sub: _Subscription, progress: _Progress) -> None:
         # Kept for the longest lease rather than this one: a refresh can extend
@@ -249,8 +241,12 @@ class WebhookDelivery:
         subscription_id = (
             "sub_" + _digest(principal, target.url, registration.name, arguments)[:24]
         )
-        existing = await self._subscription(subscription_id)
-        progress = await self._progress(subscription_id) if existing else None
+        existing = await self._load(_Subscription, f"sub-{subscription_id}")
+        progress = (
+            await self._load(_Progress, f"progress-{subscription_id}")
+            if existing
+            else None
+        )
         truncated = False
         if progress is None:
             # New, or lost to a restart of a memory store: start where the
@@ -336,7 +332,7 @@ class WebhookDelivery:
         subscription_id = (
             "sub_" + _digest(principal, url, registration.name, arguments)[:24]
         )
-        if await self._subscription(subscription_id) is None:
+        if await self._load(_Subscription, f"sub-{subscription_id}") is None:
             raise MCPError(
                 NOT_FOUND, "No such subscription", data={"kind": "subscription"}
             )
@@ -512,18 +508,20 @@ class WebhookDelivery:
         registration: EventRegistration,
         subscription_id: str,
     ) -> None:
-        sub = await self._subscription(subscription_id)
+        sub = await self._load(_Subscription, f"sub-{subscription_id}")
         if sub is None:
             await self._forget(registration.name, subscription_id)
             return
-        progress = await self._progress(subscription_id) or _Progress()
+        progress = (
+            await self._load(_Progress, f"progress-{subscription_id}") or _Progress()
+        )
         if progress.next_attempt_at and _now() < progress.next_attempt_at:
             return
         sent = 0
         while sent < _EVENTS_PER_PASS:
             if sent:
                 # Cancelled or lapsed mid-backlog: stop now, not next pass.
-                current = await self._subscription(subscription_id)
+                current = await self._load(_Subscription, f"sub-{subscription_id}")
                 if current is None:
                     return
                 sub = current
@@ -557,6 +555,7 @@ class WebhookDelivery:
                     sub,
                     "gap",
                     {"cursor": start if batch.events else batch.cursor},
+                    at=start,
                 )
             for position, event in enumerate(batch.events):
                 last = position == len(batch.events) - 1
@@ -616,9 +615,15 @@ class WebhookDelivery:
         sub: _Subscription,
         kind: str,
         fields: Mapping[str, Any],
+        at: str | None = None,
     ) -> None:
-        """POST a `gap` or `terminated` envelope, once."""
-        message_id = f"msg_{kind}_{secrets.token_hex(12)}"
+        """POST a `gap` or `terminated` envelope, once.
+
+        Its ID comes from the subscription and the position it was sent at,
+        so a gap resent on a later pass (its first event failed and is being
+        retried) reaches the receiver with the same ID.
+        """
+        message_id = f"msg_{kind}_" + _digest(sub.id, at or "")[:24]
         try:
             await self._post(
                 client,
@@ -641,9 +646,3 @@ class WebhookDelivery:
             {"error": error.error.model_dump(exclude_none=True)},
         )
         await self._forget(sub.name, sub.id)
-
-
-def principal_of(claims: Mapping[str, Any], client_id: str | None) -> str | None:
-    """The canonical subject of an access token: its `sub`, else its client ID."""
-    subject = claims.get("sub")
-    return str(subject) if subject else client_id
