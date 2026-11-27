@@ -10,6 +10,7 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
+from fastmcp.server.extensions import ServerExtension
 from fastmcp.server.lifespan import ContextManagerLifespan, lifespan
 from fastmcp.server.providers import Provider
 from fastmcp.utilities.lifespan import combine_lifespans
@@ -666,3 +667,73 @@ class TestLifespanTeardownShielding:
             "server_teardown_start",
             "server_teardown_complete",
         ]
+
+
+class TestLifespanHoldingTaskGroup:
+    """Lifespans may hold an anyio task group open across their yield.
+
+    The shielded teardown must not sit on top of that task group's cancel
+    scope, or exiting it fails with "Attempted to exit a cancel scope that
+    isn't the current task's current cancel scope".
+    """
+
+    @staticmethod
+    def _server(holder: str, events: list[str]) -> FastMCP:
+        @asynccontextmanager
+        async def background() -> AsyncGenerator[None, None]:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(anyio.sleep_forever)
+                try:
+                    yield
+                finally:
+                    await asyncio.sleep(0)
+                    events.append("teardown_complete")
+                    tg.cancel_scope.cancel()
+
+        @asynccontextmanager
+        async def server_lifespan(mcp: FastMCP) -> AsyncGenerator[dict[str, Any], None]:
+            async with background():
+                yield {}
+
+        class BackgroundProvider(Provider):
+            def lifespan(self):
+                return background()
+
+        class BackgroundExtension(ServerExtension):
+            identifier = "com.example/background"
+
+            def lifespan(self):
+                return background()
+
+        if holder == "server":
+            return FastMCP("TestServer", lifespan=server_lifespan)
+        if holder == "provider":
+            return FastMCP("TestServer", providers=[BackgroundProvider()])
+        mcp = FastMCP("TestServer")
+        mcp.add_extension(BackgroundExtension())
+        return mcp
+
+    @pytest.mark.parametrize("holder", ["server", "provider", "extension"])
+    async def test_clean_shutdown(self, holder: str):
+        events: list[str] = []
+        mcp = self._server(holder, events)
+
+        async with Client(mcp) as client:
+            await client.list_tools()
+
+        assert events == ["teardown_complete"]
+
+    @pytest.mark.parametrize("holder", ["server", "provider", "extension"])
+    async def test_shutdown_under_cancellation(self, holder: str):
+        events: list[str] = []
+        mcp = self._server(holder, events)
+
+        async with anyio.create_task_group() as tg:
+
+            async def run_and_cancel() -> None:
+                async with mcp._lifespan_manager():
+                    tg.cancel_scope.cancel()
+
+            tg.start_soon(run_and_cancel)
+
+        assert events == ["teardown_complete"]
