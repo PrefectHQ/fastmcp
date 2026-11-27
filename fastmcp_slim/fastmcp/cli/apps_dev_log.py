@@ -6,13 +6,25 @@ import contextlib
 import json
 import time
 from collections import deque
-from typing import Any
+from typing import Any, TypeGuard
 
 _MAX_LOG_ENTRIES = 1000
 _MAX_LOG_BYTES = 8 * 1024 * 1024
 _MAX_LOG_ENTRY_BYTES = 256 * 1024
 _MAX_TRACKED_REQUESTS = 1000
 _MAX_JSONRPC_ID_LENGTH = 128
+
+
+def _is_trackable_id(jsonrpc_id: object) -> TypeGuard[int | str]:
+    """Whether a JSON-RPC id can be used as a dict key and tracked.
+
+    Proxied messages come from an upstream server whose JSON is untrusted, so
+    ``id`` may be any JSON value; unhashable values (lists, dicts) would crash
+    the dict lookups below, and bools would alias integer ids.
+    """
+    if isinstance(jsonrpc_id, bool) or not isinstance(jsonrpc_id, (int, str)):
+        return False
+    return len(str(jsonrpc_id)) <= _MAX_JSONRPC_ID_LENGTH
 
 
 class _MessageLog:
@@ -88,13 +100,7 @@ class _MessageLog:
     def _remember_request(
         self, jsonrpc_id: int | str | None, method: str, timestamp: float
     ) -> None:
-        if (
-            jsonrpc_id is None
-            or isinstance(jsonrpc_id, bool)
-            or not isinstance(jsonrpc_id, (int, str))
-            or len(str(jsonrpc_id)) > _MAX_JSONRPC_ID_LENGTH
-            or self._max_tracked_requests == 0
-        ):
+        if not _is_trackable_id(jsonrpc_id) or self._max_tracked_requests == 0:
             return
 
         # Repeated IDs replace their older timing record and move to the newest
@@ -140,16 +146,9 @@ class _MessageLog:
             return
 
         jsonrpc_id = body.get("id")
-        method = (
-            self._request_methods.pop(jsonrpc_id, None)
-            if jsonrpc_id is not None
-            else None
-        )
-        request_time = (
-            self._request_times.pop(jsonrpc_id, None)
-            if jsonrpc_id is not None
-            else None
-        )
+        tracked = _is_trackable_id(jsonrpc_id)
+        method = self._request_methods.pop(jsonrpc_id, None) if tracked else None
+        request_time = self._request_times.pop(jsonrpc_id, None) if tracked else None
         timestamp = time.time()
         duration_ms = (
             round((timestamp - request_time) * 1000, 1) if request_time else None
