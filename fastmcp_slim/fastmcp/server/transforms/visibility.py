@@ -336,6 +336,8 @@ async def get_visibility_rules(context: Context) -> list[dict[str, Any]]:
         return []
     if key is None:
         return []
+    if not context.fastmcp._has_state_store:
+        return []
     result = await context.fastmcp._state_store.get(key=key)
     return result.value if result is not None else []
 

@@ -320,3 +320,64 @@ class TestMalformedKeyWarning:
         Visibility(False, tags={"internal"})
         Visibility(False, match_all=True)
         assert [w for w in recwarn if issubclass(w.category, UserWarning)] == []
+
+
+class TestLazyStateStoreOnVisibilityLookup:
+    """Listing components without session state must not initialize _state_store."""
+
+    async def test_list_tools_does_not_initialize_state_store(self):
+        """tools/list skips _state_store when no state store is configured or used."""
+        from fastmcp import Client, FastMCP
+
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        assert mcp._has_state_store is False
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+
+        assert [t.name for t in tools] == ["add"]
+        assert mcp._has_state_store is False
+
+    async def test_visibility_rules_work_when_session_state_is_used(self):
+        """Disabling/enabling components in a session initializes _state_store and applies rules."""
+        from fastmcp import Client, Context, FastMCP
+
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        def secret() -> str:
+            return "secret"
+
+        @mcp.tool
+        async def hide_secret(ctx: Context) -> str:
+            await ctx.disable_components(names={"secret"})
+            return "hidden"
+
+        @mcp.tool
+        async def show_secret(ctx: Context) -> str:
+            await ctx.enable_components(names={"secret"})
+            return "shown"
+
+        async with Client(mcp) as client:
+            before = await client.list_tools()
+            assert {t.name for t in before} == {"secret", "hide_secret", "show_secret"}
+            assert mcp._has_state_store is False
+
+            await client.call_tool("hide_secret", {})
+            assert mcp._has_state_store is True
+
+            after_disable = await client.list_tools()
+            assert {t.name for t in after_disable} == {"hide_secret", "show_secret"}
+
+            await client.call_tool("show_secret", {})
+            after_enable = await client.list_tools()
+            assert {t.name for t in after_enable} == {
+                "secret",
+                "hide_secret",
+                "show_secret",
+            }

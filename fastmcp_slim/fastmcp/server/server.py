@@ -710,6 +710,10 @@ class FastMCP(
         return f"{type(self).__name__}({self.name!r})"
 
     @property
+    def _has_state_store(self) -> bool:
+        return self.__state_store is not None or self._state_storage is not None
+
+    @property
     def _state_store(self) -> PydanticAdapter[StateValue]:
         """Create the session-state adapter only when state is first used."""
         if self.__state_store is None:
