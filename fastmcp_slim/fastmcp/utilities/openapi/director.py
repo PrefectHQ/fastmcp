@@ -24,6 +24,9 @@ _PATH_TEMPLATE_PARAM = re.compile(r"\{([^{}]+)\}")
 # RFC 6265 cookie-octets left as-is in a cookie value (`%` is not, so the
 # encoding stays unambiguous). Everything else is percent-encoded.
 _COOKIE_SAFE = "!#$&'()*+-./:<=>?@[]^_`{|}~"
+# None denotes an absent body internally. Keep an explicitly supplied JSON
+# null distinct until serialization, since httpx's json=None also means absent.
+_JSON_NULL = object()
 
 
 def _query_scalar_to_str(value: Any) -> str:
@@ -420,7 +423,11 @@ class RequestDirector:
         # but all accept None, so we set exactly one and pass all to Request().
         files: list[tuple[str, Any]] | None = None
         data: dict[str, Any] | None = None
-        if body is not None:
+        if body is _JSON_NULL:
+            content = b"null"
+            headers = dict(headers) if headers else {}
+            headers["Content-Type"] = raw_content_type or "application/json"
+        elif body is not None:
             if declared_content_type == "multipart/form-data" and isinstance(
                 body, dict
             ):
@@ -621,6 +628,8 @@ class RequestDirector:
                     # Free-form objects, arrays, and primitives use a single
                     # argument containing the entire body.
                     body = next(iter(body_props.values()))
+                    if body is None:
+                        body = _JSON_NULL
                 else:
                     body = body_props
             else:
