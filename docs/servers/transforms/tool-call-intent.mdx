@@ -39,3 +39,5 @@ The agent can call `get_returns` with just `month="October"`, or it can include 
 Apply the transform to the server to request intent across its catalog, including mounted tools. Apply it to an individual [provider](/servers/transforms/transforms#provider-level-transforms) when only one set of tools needs explanations. This also works for proxied tools: the gateway consumes the added argument before forwarding the call, so the upstream server can keep its existing API.
 
 If a tool already declares a parameter named `intent`, the transform leaves that tool alone. Its parameter keeps its original type and the function receives its value directly.
+
+Some providers describe their inputs through a reference, alternatives, or rules for property names. When those rules appear at the root of a tool’s schema, FastMCP preserves the original inputs because the provider may already assign a meaning to `intent`. A nested object parameter can use alternatives or references without affecting the transform.

@@ -34,7 +34,26 @@ async def _capture_intent(
 
 
 def _with_intent(tool: Tool) -> Tool:
-    if "intent" in tool.parameters.get("properties", {}):
+    # A root subschema can own or forbid this argument even when the outer
+    # properties do not mention it. Preserve those contracts as authored.
+    schema = tool.parameters
+    if (
+        "intent" in schema.get("properties", {})
+        or "intent" in schema.get("required", ())
+        or schema.keys()
+        & {
+            "$ref",
+            "$dynamicRef",
+            "allOf",
+            "anyOf",
+            "oneOf",
+            "not",
+            "if",
+            "dependentSchemas",
+            "patternProperties",
+            "propertyNames",
+        }
+    ):
         return tool
     transformed = TransformedTool.from_tool(
         tool, transform_fn=_capture_intent, output_schema=tool.output_schema

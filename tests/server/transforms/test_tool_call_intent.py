@@ -76,3 +76,25 @@ async def test_schema_keeps_provider_constraints():
     expected["properties"] = properties
     assert expected == schema
     assert "intent" not in source.parameters["properties"]
+
+
+@pytest.mark.parametrize("composition", ["allOf", "anyOf", "oneOf"])
+async def test_composed_intent_belongs_to_tool(composition: str):
+    def select(intent: int) -> int:
+        return intent
+
+    source = Tool.from_function(select)
+    source.parameters = {
+        "type": "object",
+        composition: [
+            {"properties": {"intent": {"type": "integer"}}, "required": ["intent"]}
+        ],
+    }
+    server = FastMCP("composed")
+    server.add_tool(source)
+    server.add_transform(ToolCallIntent())
+
+    async with Client(server) as client:
+        (tool,) = await client.list_tools()
+        assert tool.input_schema == source.parameters
+        assert (await client.call_tool("select", {"intent": 12})).data == 12
