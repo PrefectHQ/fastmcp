@@ -127,6 +127,7 @@
                       "servers/visibility",
                       "servers/transforms/resources-as-tools",
                       "servers/transforms/prompts-as-tools",
+                      "servers/agent-feedback",
                       "servers/tool-fingerprinting"
                     ]
                   },

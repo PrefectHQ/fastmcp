@@ -19,6 +19,8 @@ Tools in FastMCP transform regular Python functions into capabilities that LLMs 
 This allows LLMs to perform tasks like querying databases, calling APIs, making calculations, or accessing files—extending their capabilities beyond what's in their training data.
 
 
+An agent can also use a tool to tell you where it got stuck. Add [Agent Feedback](/servers/agent-feedback) to collect reports about missing capabilities and workarounds.
+
 ## The `@tool` Decorator
 
 Creating a tool is as simple as decorating a Python function with `@mcp.tool`:
@@ -1195,26 +1197,3 @@ mcp.local_provider.remove_tool("calculate_sum")
 <VersionBadge version="3.0.0" />
 
 Tools support versioning, allowing you to maintain multiple implementations under the same name while clients automatically receive the highest version. See [Versioning](/servers/versioning) for complete documentation on version comparison, retrieval, and migration patterns.
-
-## Collect feedback from agents
-
-Add a `submit_feedback` tool so agents can report a missing capability, describe a workaround, or suggest an improvement. You supply the function that receives the report. This example records feedback in the application log.
-
-```python
-import logging
-
-from fastmcp import FastMCP
-from fastmcp.tools.feedback import FeedbackReport, create_feedback_tool
-
-mcp = FastMCP("Orders")
-logger = logging.getLogger("orders.feedback")
-
-
-def save_report(report: FeedbackReport) -> None:
-    logger.info("Agent feedback: %s", report)
-
-
-mcp.add_tool(create_feedback_tool(handler=save_report))
-```
-
-Each report includes a task and description. The agent can also supply a tool name and a suggested change. To deliver reports to a team inbox or Slack channel, pass an async handler that awaits delivery. The tool acknowledges a submission after the handler completes.
