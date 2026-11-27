@@ -19,6 +19,8 @@ Tools in FastMCP transform regular Python functions into capabilities that LLMs 
 This allows LLMs to perform tasks like querying databases, calling APIs, making calculations, or accessing files—extending their capabilities beyond what's in their training data.
 
 
+An agent can also use a tool to tell you where it got stuck. Add [Agent Feedback](/servers/agent-feedback) to collect reports about missing capabilities and workarounds.
+
 ## The `@tool` Decorator
 
 Creating a tool is as simple as decorating a Python function with `@mcp.tool`:

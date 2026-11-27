@@ -1,0 +1,48 @@
+---
+title: Agent Feedback
+description: Give agents a tool to report missing capabilities, workarounds, and suggested improvements to your team.
+icon: comment
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="unreleased" />
+
+Suppose an agent finds an order by paging through your entire catalog. Every call succeeds, and the user gets the right order. From your server logs, you might never learn that the agent needed a way to look up an order by tracking number.
+
+The `submit_feedback` tool gives the agent a way to tell you. When it encounters a problem worth reporting, it can make a separate tool call describing the task and what happened. It can report a missing tool as easily as a problem with one you already provide.
+
+## What you receive
+
+A report from the order lookup might read:
+
+> I needed to find an order by tracking number. I called `list_orders` eight times before I found it. A tracking-number filter would let me find it in one call.
+
+Your handler receives a `FeedbackReport`. Its `task` field explains what the agent hoped to do, and `description` tells you what it tried and what happened. The agent can also name the relevant tool in `tool_name` and propose a change in `suggestion`. Those last two fields are optional. An agent can describe a gap even when it has no fix to offer.
+
+## Deliver reports
+
+Choose where your team will actually read feedback. Pass a handler to `create_feedback_tool`, then register the returned tool with `mcp.add_tool`. Agents discover it alongside your other tools. Its description invites them to report specific feedback once per task and to omit credentials and personal details.
+
+For example, this handler appends one JSON report per line to a local file:
+
+```python
+import json
+from dataclasses import asdict
+from pathlib import Path
+
+from fastmcp import FastMCP
+from fastmcp.tools.feedback import FeedbackReport, create_feedback_tool
+
+mcp = FastMCP("Orders")
+
+
+def save_report(report: FeedbackReport) -> None:
+    with Path("feedback.jsonl").open("a", encoding="utf-8") as inbox:
+        inbox.write(json.dumps(asdict(report)) + "\n")
+
+
+mcp.add_tool(create_feedback_tool(handler=save_report))
+```
+
+For a shared team inbox, supply an async handler that sends each report to your Slack channel or issue tracker. FastMCP waits for the handler to finish before acknowledging receipt. If delivery raises an exception, the agent receives a tool error. Your team can review the report and decide whether the suggested change solves the problem.
