@@ -24,6 +24,7 @@ class ParameterInfo(FastMCPBaseModel):
     description: str | None = None
     explode: bool | None = None  # OpenAPI explode property for array parameters
     style: str | None = None  # OpenAPI style property for parameter serialization
+    content_type: str | None = None  # Media type for content-based parameters
 
 
 class RequestBodyInfo(FastMCPBaseModel):
