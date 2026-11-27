@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 import pytest
 from pydantic import BaseModel, Field, ValidationError
@@ -636,3 +637,39 @@ def test_scalar_elicitation_schema_omits_wrapper_title() -> None:
 
     assert "title" not in schema
     assert schema["properties"]["value"]["enum"] == ["yes", "no"]
+
+
+class TestSingleOptionChoices:
+    """Single-option choices must emit `enum` instead of `const` per MCP 2025-11-25."""
+
+    def test_single_option_list_shorthand_uses_enum(self) -> None:
+        prop = parse_elicit_response_type(["a"]).schema["properties"]["value"]
+        assert prop["type"] == "string"
+        assert prop["enum"] == ["a"]
+        assert "const" not in prop
+
+    def test_single_literal_uses_enum(self) -> None:
+        prop = parse_elicit_response_type(Literal["a"]).schema["properties"]["value"]
+        assert prop["type"] == "string"
+        assert prop["enum"] == ["a"]
+        assert "const" not in prop
+
+    def test_single_option_multi_select_literal_accepted(self) -> None:
+        prop = parse_elicit_response_type(list[Literal["a"]]).schema["properties"][
+            "value"
+        ]
+        assert prop["type"] == "array"
+        assert prop["items"] == {"type": "string", "enum": ["a"]}
+
+    def test_model_with_single_option_literal_fields(self) -> None:
+        class SingleChoiceModel(BaseModel):
+            single: Literal["a"]
+            multi: list[Literal["a"]]
+
+        schema = get_elicitation_schema(SingleChoiceModel)
+        props = schema["properties"]
+        assert props["single"]["type"] == "string"
+        assert props["single"]["enum"] == ["a"]
+        assert "const" not in props["single"]
+        assert props["multi"]["type"] == "array"
+        assert props["multi"]["items"] == {"type": "string", "enum": ["a"]}
