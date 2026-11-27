@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
@@ -9,12 +10,18 @@ from typing import Annotated, Any, Literal, LiteralString, cast
 
 import mcp_types
 from mcp_types import ToolAnnotations
-from pydantic import ConfigDict
+from pydantic import ConfigDict, PrivateAttr
 from pydantic import ValidationError as PydanticValidationError
-from pydantic.fields import Field
+from pydantic.fields import Field, FieldInfo
 from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
-from pydantic_core import InitErrorDetails, PydanticCustomError
+from pydantic_core import (
+    InitErrorDetails,
+    PydanticCustomError,
+    PydanticSerializationError,
+    PydanticUndefined,
+    to_jsonable_python,
+)
 
 from fastmcp.exceptions import ValidationError
 from fastmcp.tools.base import (
@@ -23,7 +30,13 @@ from fastmcp.tools.base import (
     ToolResult,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _strip_input_required
-from fastmcp.tools.function_tool import FunctionTool, _ToolBodyError, _wrap_body_errors
+from fastmcp.tools.function_tool import (
+    FunctionTool,
+    _strict_input_validation,
+    _ToolBodyError,
+    _validate_input,
+    _wrap_body_errors,
+)
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -397,6 +410,79 @@ def _apply_meta_override(
     return merged
 
 
+def _with_parameter_overrides(
+    fn: Callable[..., Any], types: dict[str, Any], defaults: dict[str, Any]
+) -> Callable[..., Any]:
+    """Return a wrapper of `fn` that validates as if its signature declared
+    the given parameter types and defaults.
+
+    Validating against the wrapper checks the named parameters as `types` and
+    fills omitted ones from `defaults` without validating them, then calls `fn`.
+    Arguments arrive by keyword, so the parameters are made keyword-only, which
+    lets any of them take a default.
+    """
+    sig = inspect.signature(fn)
+    annotations = dict(getattr(fn, "__annotations__", {}))
+
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        return fn(*args, **kwargs)
+
+    parameters = []
+    for name, param in sig.parameters.items():
+        if param.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD:
+            param = param.replace(kind=inspect.Parameter.KEYWORD_ONLY)
+        if name in types:
+            annotations[name] = types[name]
+        if name in defaults:
+            field = param.default
+            if isinstance(field, FieldInfo):
+                # Move the Field's constraints into the annotation, so they
+                # still apply once the override replaces its default.
+                metadata = (field,) if field.default_factory is None else field.metadata
+                base_type: Any = annotations.get(name, Any)
+                annotations[name] = Annotated[base_type, *metadata]
+            param = param.replace(default=defaults[name])
+        if name in annotations:
+            param = param.replace(annotation=annotations[name])
+        parameters.append(param)
+    # Parameter kinds are ordered as a signature requires them.
+    parameters.sort(key=lambda param: param.kind)
+
+    wrapper.__signature__ = sig.replace(parameters=parameters)  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
+    wrapper.__annotations__ = annotations
+    wrapper.__name__ = getattr(fn, "__name__", "wrapper")
+    wrapper.__qualname__ = getattr(fn, "__qualname__", wrapper.__qualname__)
+    wrapper.__module__ = getattr(fn, "__module__", wrapper.__module__)
+    return wrapper
+
+
+def _is_json_form_of(python_default: Any, schema_default: Any) -> bool:
+    """Whether `schema_default` is the JSON form of a parameter's own default."""
+    if isinstance(python_default, FieldInfo):
+        python_default = python_default.default
+    if python_default is inspect.Parameter.empty or python_default is PydanticUndefined:
+        return False
+    try:
+        return to_jsonable_python(python_default) == schema_default
+    except PydanticSerializationError:
+        return False
+
+
+@dataclass(frozen=True)
+class _ValidationTarget:
+    """The callable a transform_fn's arguments validate against.
+
+    Built from the tool's `parameters` and `transform_args`, and rebuilt if a
+    copy of the tool replaces either.
+    """
+
+    fn: Callable[..., Any]
+    # Parameters whose default the target's signature supplies when omitted.
+    defaulted: frozenset[str]
+    parameters: dict[str, Any]
+    transform_args: dict[str, ArgTransform]
+
+
 class TransformedTool(Tool):
     """A tool that is transformed from another tool.
 
@@ -425,6 +511,11 @@ class TransformedTool(Tool):
         Callable[..., Any]
     ]  # Always present, handles arg transformation
     transform_args: dict[str, ArgTransform]
+    # Validation targets built for the transform_fn, keyed by the callable they
+    # wrap. A dict, so copies made with `model_copy` share it and build once.
+    _validation_targets: dict[Callable[..., Any], _ValidationTarget] = PrivateAttr(
+        default_factory=dict
+    )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool with context set for forward() functions.
@@ -440,12 +531,26 @@ class TransformedTool(Tool):
             ToolResult object containing content and optional structured output.
         """
 
+        from fastmcp.server.dependencies import without_injected_parameters
+
+        body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
+        fn = without_injected_parameters(body_fn)
+        # A custom transform_fn's validation target supplies its own defaults
+        # for omitted arguments, so those are not filled in below.
+        target = (
+            None
+            if self.fn is self.forwarding_fn
+            else self._get_validation_target(_wrap_body_errors(fn))
+        )
+
         # Fill in missing arguments with schema defaults to ensure
         # ArgTransform defaults take precedence over function defaults
         arguments = arguments.copy()
         properties = self.parameters.get("properties", {})
 
         for param_name, param_schema in properties.items():
+            if target is not None and param_name in target.defaulted:
+                continue
             if param_name not in arguments and "default" in param_schema:
                 # Check if this parameter has a default_factory from transform_args
                 # We need to call the factory for each run, not use the cached schema value
@@ -478,15 +583,11 @@ class TransformedTool(Tool):
 
         token = _current_tool.set(self)
         try:
-            from fastmcp.server.dependencies import without_injected_parameters
-
-            body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
-            fn = without_injected_parameters(body_fn)
             try:
-                if is_coroutine_function(fn):
+                if target is None:
                     result = await fn(**arguments)
                 else:
-                    result = await call_sync_fn_in_threadpool(fn, **arguments)
+                    result = await self._validate_and_call(fn, target, arguments)
                     if inspect.isawaitable(result):
                         result = await result
                 result = await FunctionTool._materialize_generator(result)
@@ -527,6 +628,126 @@ class TransformedTool(Tool):
             return self.convert_result(result)
         finally:
             _current_tool.reset(token)
+
+    async def _validate_and_call(
+        self,
+        fn: Callable[..., Any],
+        target: _ValidationTarget,
+        arguments: dict[str, Any],
+    ) -> Any:
+        """Validate a custom transform_fn's arguments, then call it.
+
+        Mirrors `FunctionTool`: the arguments are validated against the
+        function's signature before its body runs, so a bare pydantic error
+        here is a bad call. The target fills omitted arguments from their
+        advertised defaults unvalidated, as a plain tool's defaults are. The
+        body's own pydantic errors are tagged by `_wrap_body_errors` and stay
+        server-side errors. An async body's coroutine is returned unawaited, so
+        the caller awaits it under its body-error handling.
+        """
+        type_adapter = get_cached_typeadapter(target.fn)
+        strict = _strict_input_validation()
+        try:
+            if is_coroutine_function(fn):
+                return _validate_input(type_adapter, arguments, strict=strict)
+            return await call_sync_fn_in_threadpool(
+                _validate_input, type_adapter, arguments, strict=strict
+            )
+        except PydanticValidationError as exc:
+            raise ValidationError(str(exc), log_level=logging.WARNING) from exc
+
+    def _get_validation_target(self, exec_fn: Callable[..., Any]) -> _ValidationTarget:
+        """The signature the transform_fn's arguments validate against.
+
+        A parameter covered by `ArgTransform(type=...)` validates as that
+        advertised type. A parameter whose default the parent or an
+        `ArgTransform` advertises takes that default, unless it is the JSON form
+        of the function's own; otherwise the function's own default applies.
+        """
+        cached = self._validation_targets.get(exec_fn)
+        if (
+            cached is not None
+            and cached.parameters is self.parameters
+            and cached.transform_args is self.transform_args
+        ):
+            return cached
+
+        parameters = inspect.signature(exec_fn).parameters
+        types = {
+            name: arg_type
+            for name, arg_type in self._arg_transform_types(self.transform_args).items()
+            if name in parameters
+        }
+        transform_defaults = {
+            name: transform.default
+            for name, transform in self._visible_arg_transforms(self.transform_args)
+            if transform.default is not NotSet
+        }
+        forwarded_schema, _ = self._create_forwarding_transform(
+            self.parent_tool, self.transform_args
+        )
+        forwarded_properties = forwarded_schema.get("properties", {})
+        defaults: dict[str, Any] = {}
+        defaulted: set[str] = set()
+        for name, schema in self.parameters.get("properties", {}).items():
+            param = parameters.get(name)
+            if (
+                "default" not in schema
+                or param is None
+                or param.kind
+                not in (
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                )
+            ):
+                continue
+            defaulted.add(name)
+            if name in transform_defaults:
+                defaults[name] = transform_defaults[name]
+            elif "default" in forwarded_properties.get(
+                name, {}
+            ) and not _is_json_form_of(param.default, schema["default"]):
+                defaults[name] = schema["default"]
+
+        if types or defaults:
+            target_fn = _with_parameter_overrides(exec_fn, types, defaults)
+        else:
+            target_fn = exec_fn
+        target = _ValidationTarget(
+            fn=target_fn,
+            defaulted=frozenset(defaulted),
+            parameters=self.parameters,
+            transform_args=self.transform_args,
+        )
+        self._validation_targets[exec_fn] = target
+        return target
+
+    @staticmethod
+    def _visible_arg_transforms(
+        transform_args: dict[str, ArgTransform] | None,
+    ) -> list[tuple[str, ArgTransform]]:
+        """Each non-hidden ArgTransform with the name its argument is shown under."""
+        visible: list[tuple[str, ArgTransform]] = []
+        for old_name, transform in (transform_args or {}).items():
+            if transform.hide:
+                continue
+            if transform.name is not NotSet and transform.name is not None:
+                visible.append((transform.name, transform))
+            else:
+                visible.append((old_name, transform))
+        return visible
+
+    @classmethod
+    def _arg_transform_types(
+        cls,
+        transform_args: dict[str, ArgTransform] | None,
+    ) -> dict[str, Any]:
+        """Types set by `ArgTransform(type=...)`, keyed by visible argument name."""
+        return {
+            name: transform.type
+            for name, transform in cls._visible_arg_transforms(transform_args)
+            if transform.type is not NotSet
+        }
 
     @classmethod
     def from_tool(
@@ -1006,21 +1227,12 @@ class TransformedTool(Tool):
 
         return new_name, new_schema, is_required, extracted_defs
 
-    @staticmethod
+    @classmethod
     def _arg_transform_type_override_names(
+        cls,
         transform_args: dict[str, ArgTransform] | None,
     ) -> frozenset[str]:
-        if not transform_args:
-            return frozenset()
-        names: set[str] = set()
-        for old_name, transform in transform_args.items():
-            if transform.hide or transform.type is NotSet:
-                continue
-            if transform.name is not NotSet and transform.name is not None:
-                names.add(transform.name)
-            else:
-                names.add(old_name)
-        return frozenset(names)
+        return frozenset(cls._arg_transform_types(transform_args))
 
     @staticmethod
     def _arg_transform_explicit_required_names(
