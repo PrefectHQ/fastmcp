@@ -360,7 +360,11 @@ def test_load_and_merge_config_anchors_paths_to_config_dir(tmp_path, monkeypatch
         json.dumps(
             {
                 "source": {"path": "../src/server.py"},
-                "environment": {"requirements": "requirements.txt"},
+                "environment": {
+                    "requirements": "requirements.txt",
+                    "project": ".",
+                    "editable": ["../pkg"],
+                },
             }
         )
     )
@@ -370,6 +374,16 @@ def test_load_and_merge_config_anchors_paths_to_config_dir(tmp_path, monkeypatch
 
     assert config.source.path == os.path.abspath(tmp_path / "project/src/server.py")
     assert config.environment.requirements == config_dir / "requirements.txt"
+    assert config.environment.project == Path(os.path.abspath(config_dir))
+    assert config.environment.editable == [
+        Path(os.path.abspath(tmp_path / "project/pkg"))
+    ]
+
+    uv_cmd = config.environment.build_command(["fastmcp", "run", config.source.path])
+    assert uv_cmd[uv_cmd.index("--project") + 1] == str(config_dir.resolve())
+    assert uv_cmd[uv_cmd.index("--with-editable") + 1] == str(
+        (tmp_path / "project/pkg").resolve()
+    )
 
 
 def test_symlinked_config_anchors_paths_beside_the_link(tmp_path, monkeypatch):

@@ -366,7 +366,11 @@ class TestMCPServerConfig:
             json.dumps(
                 {
                     "source": source,
-                    "environment": {"requirements": "requirements.txt"},
+                    "environment": {
+                        "requirements": "requirements.txt",
+                        "project": ".",
+                        "editable": ["../pkg"],
+                    },
                     "deployment": {"cwd": "runtime"},
                 }
             )
@@ -378,17 +382,27 @@ class TestMCPServerConfig:
         assert config.source.path == os.path.abspath(tmp_path / "project/src/server.py")
         assert config.source.entrypoint == "mcp"
         assert config.environment.requirements == config_dir / "requirements.txt"
+        assert config.environment.project == Path(os.path.abspath(config_dir))
+        assert config.environment.editable == [
+            Path(os.path.abspath(tmp_path / "project/pkg"))
+        ]
         assert config.deployment.cwd == "runtime"
 
     def test_from_file_preserves_absolute_paths(self, tmp_path):
         source_path = (tmp_path / "server.py").resolve()
         requirements = (tmp_path / "requirements.txt").resolve()
+        project = (tmp_path / "proj").resolve()
+        editable = (tmp_path / "pkg").resolve()
         config_file = tmp_path / "fastmcp.json"
         config_file.write_text(
             json.dumps(
                 {
                     "source": {"path": str(source_path)},
-                    "environment": {"requirements": str(requirements)},
+                    "environment": {
+                        "requirements": str(requirements),
+                        "project": str(project),
+                        "editable": [str(editable)],
+                    },
                 }
             )
         )
@@ -397,6 +411,8 @@ class TestMCPServerConfig:
 
         assert config.source.path == str(source_path)
         assert config.environment.requirements == requirements
+        assert config.environment.project == project
+        assert config.environment.editable == [editable]
 
     def test_find_config_in_current_dir(self, tmp_path):
         """Test finding config in current directory."""

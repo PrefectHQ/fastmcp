@@ -131,6 +131,14 @@ class Deployment(BaseModel):
         return re.sub(r"\$\{([^}]+)\}", replace_var, value)
 
 
+def _anchor_path(path: Path, config_dir: Path) -> Path:
+    """Make a relative path absolute against `config_dir` without following symlinks."""
+    expanded = path.expanduser()
+    if expanded.is_absolute():
+        return expanded
+    return Path(os.path.abspath(config_dir / expanded))
+
+
 class MCPServerConfig(BaseModel):
     """Configuration for a FastMCP server.
 
@@ -223,8 +231,9 @@ class MCPServerConfig(BaseModel):
     def from_file(cls, file_path: Path) -> MCPServerConfig:
         """Load configuration from a JSON file.
 
-        Relative `source.path` and `environment.requirements` values are
-        anchored to the configuration file's directory (see `anchor_paths`).
+        Relative `source.path` and `environment` path values (`requirements`,
+        `project`, `editable`) are anchored to the configuration file's
+        directory (see `anchor_paths`).
 
         Args:
             file_path: Path to the configuration file
@@ -250,11 +259,11 @@ class MCPServerConfig(BaseModel):
     def anchor_paths(self, config_dir: Path) -> None:
         """Make relative file paths absolute against the config file's directory.
 
-        Anchors `source.path` and `environment.requirements`, so a config
-        loaded from another working directory still finds its files. Paths are
-        made absolute without following symlinks, so a symlinked `fastmcp.json`
-        resolves paths beside the link. Other paths, such as `deployment.cwd`,
-        keep their own resolution rules.
+        Anchors `source.path` and `environment` paths (`requirements`, `project`,
+        `editable`), so a config loaded from another working directory still
+        finds its files. Paths are made absolute without following symlinks, so
+        a symlinked `fastmcp.json` resolves paths beside the link. Other paths,
+        such as `deployment.cwd`, keep their own resolution rules.
 
         Args:
             config_dir: Directory containing the configuration file
@@ -265,12 +274,20 @@ class MCPServerConfig(BaseModel):
         if not source_path.is_absolute():
             self.source.path = os.path.abspath(config_dir / source_path)
 
-        requirements = self.environment.requirements
-        if requirements is not None:
-            requirements = requirements.expanduser()
-            if not requirements.is_absolute():
-                requirements = Path(os.path.abspath(config_dir / requirements))
-            self.environment.requirements = requirements
+        if self.environment.requirements is not None:
+            self.environment.requirements = _anchor_path(
+                self.environment.requirements, config_dir
+            )
+
+        if self.environment.project is not None:
+            self.environment.project = _anchor_path(
+                self.environment.project, config_dir
+            )
+
+        if self.environment.editable is not None:
+            self.environment.editable = [
+                _anchor_path(p, config_dir) for p in self.environment.editable
+            ]
 
     @classmethod
     def from_cli_args(
