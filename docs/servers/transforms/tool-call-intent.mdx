@@ -4,6 +4,10 @@ description: Ask agents why they chose a tool and read their explanation while t
 icon: comment-dots
 ---
 
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="unreleased" />
+
 An agent asks your orders server for October’s returns. The month tells you which records to fetch. It leaves open why the agent wants them. If someone is reviewing the request, “I’m comparing return rates before and after the packaging change” gives them something the arguments alone cannot.
 
 `ToolCallIntent()` lets you ask for that explanation on the call itself. Add the transform to a server and agents see an optional `intent` argument on its tools. The argument asks for one sentence about what this call should accomplish, omitting personal details. The caller decides whether to supply it.
