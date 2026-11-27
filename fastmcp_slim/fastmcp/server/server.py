@@ -108,6 +108,7 @@ from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.providers.base import hashed_lookup_target
 from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
+    ReadOnly,
     ToolTransform,
     Transform,
 )
@@ -833,6 +834,14 @@ class FastMCP(
                     by_name.setdefault(tool.name, tool)
         return list(by_name.values())
 
+    def _allows_injected_tool(self, tool: Tool) -> bool:
+        """Injected tools bypass catalog transforms but obey a read-only server view."""
+        return all(
+            transform.allows_tool(tool)
+            for transform in self.transforms
+            if isinstance(transform, ReadOnly)
+        )
+
     def _get_injected_tool(self, name: str) -> Tool | None:
         """The injected tool with this name from the outermost middleware that has one."""
         for middleware in self.middleware:
@@ -999,7 +1008,11 @@ class FastMCP(
         claimed = {tool.name for tool in injected}
 
         return [
-            *[t for t in injected if t.task_config.supports_tasks()],
+            *[
+                t
+                for t in injected
+                if t.task_config.supports_tasks() and self._allows_injected_tool(t)
+            ],
             *[
                 c
                 for c in components
@@ -1078,7 +1091,10 @@ class FastMCP(
                 # listed, matching what `get_tool()` resolves.
                 injected = self._injected_tools()
                 claimed = {tool.name for tool in injected}
-                tools = [*injected, *(t for t in tools if t.name not in claimed)]
+                tools = [
+                    *(t for t in injected if self._allows_injected_tool(t)),
+                    *(t for t in tools if t.name not in claimed),
+                ]
 
                 return [tool for tool in tools if await _component_auth_allows(tool)]
 
@@ -1126,7 +1142,7 @@ class FastMCP(
         A tool from `ToolInjectionMiddleware` takes precedence over a provider
         tool with the same name. It is matched by name alone, so a requested
         version is ignored, and it is subject to its own `auth` check but not
-        to transforms or visibility.
+        to general catalog transforms or visibility. Server-level ReadOnly filters apply.
 
         Args:
             name: The tool name.
@@ -1142,7 +1158,12 @@ class FastMCP(
             else None
         )
         if injected is not None:
-            return injected if await _component_auth_allows(injected) else None
+            return (
+                injected
+                if self._allows_injected_tool(injected)
+                and await _component_auth_allows(injected)
+                else None
+            )
 
         tool = await super().get_tool(name, version)
         if tool is not None:

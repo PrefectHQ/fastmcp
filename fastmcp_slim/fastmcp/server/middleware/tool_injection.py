@@ -18,7 +18,8 @@ class ToolInjectionMiddleware(Middleware):
     tool's `auth` check and every middleware in the chain, including
     `AuthMiddleware`, apply to them as they do to registered tools, wherever
     this middleware sits in the chain. Server and session visibility settings
-    do not apply to injected tools.
+    do not apply to injected tools. A server-level `ReadOnly` transform also
+    requires injected tools to declare `readOnlyHint=True`.
 
     Injected tools are matched by name alone; a requested version is ignored.
     An injected tool takes precedence over a registered tool with the same

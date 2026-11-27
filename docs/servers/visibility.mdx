@@ -56,6 +56,69 @@ mcp.enable(tags={"admin"})
 # Clients now see all three tools
 ```
 
+## Read-only tool views
+
+Suppose your notes server lets agents list notes and add new ones. A research assistant only needs to read them. You can give it a catalog containing just the tools marked `readOnlyHint=True`. Calling a write tool by name through that view also fails, even if the caller knows its name.
+
+`ReadOnly()` selects tools using the annotation their authors supplied. A tool with no read-only annotation stays out of the view. Check that the tools you mark read-only really do leave data unchanged. The transform controls which tools a client can call through this view.
+
+In `notes.py`, give the reader its own server object and mount the full notes server inside it. Applying the transform to the reader leaves both operations available through the original server.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms import ReadOnly
+
+notes = FastMCP("Notes")
+entries: list[str] = []
+
+
+@notes.tool(annotations={"readOnlyHint": True})
+def list_notes() -> list[str]:
+    return entries.copy()
+
+
+@notes.tool
+def add_note(text: str) -> None:
+    entries.append(text)
+
+
+reader = FastMCP("Browse notes")
+reader.mount(notes)
+reader.add_transform(ReadOnly())
+```
+
+### A read-only URL
+
+Expose the two views at different URLs. A client connected to `/mcp` can add a note, and a client connected to `/read-only/mcp` can immediately list it. Both requests reach the same underlying notes list.
+
+In `server.py`, import the two servers from `notes.py` and create an HTTP app for each. Starlette routes the more specific reader path first, then sends other requests to the full app. The parent lifespan starts both apps so each can accept connections.
+
+```python
+from contextlib import asynccontextmanager
+
+from starlette.applications import Starlette
+from starlette.routing import Mount
+
+from notes import notes, reader
+
+full_app = notes.http_app(path="/mcp")
+reader_app = reader.http_app(path="/mcp")
+
+
+@asynccontextmanager
+async def lifespan(app: Starlette):
+    async with full_app.lifespan(app), reader_app.lifespan(app):
+        yield
+
+
+app = Starlette(
+    routes=[Mount("/read-only", app=reader_app), Mount("/", app=full_app)],
+    lifespan=lifespan,
+)
+```
+
+Run `uvicorn server:app` and give the research assistant the `/read-only/mcp` URL. Configure authentication and access on each endpoint for the clients who should use it.
+
 ## Targeting Components
 
 Every filter parameter narrows the same way: `enable()` and `disable()` act on the components matching all the criteria you supply. Reach for the simplest one that expresses your intent — usually names or tags.

@@ -45,6 +45,7 @@ class FastMCPProviderTool(Tool):
 
     _server: Any = None  # FastMCP, but Any to avoid circular import
     _original_name: str | None = None
+    _lookup_version: VersionSpec | None = None
 
     def __init__(
         self,
@@ -87,7 +88,7 @@ class FastMCPProviderTool(Tool):
         from fastmcp.server.extensions import _delegate_extension_interceptors
 
         # Pass exact version so child executes the correct version
-        version = VersionSpec(eq=self.version) if self.version else None
+        version = VersionSpec(eq=self.version) if self.version else self._lookup_version
 
         with (
             _delegate_extension_interceptors(self._server),
@@ -113,7 +114,7 @@ class FastMCPProviderTool(Tool):
         from fastmcp.server.extensions import _delegate_extension_interceptors
 
         # Pass exact version so child executes the correct version
-        version = VersionSpec(eq=self.version) if self.version else None
+        version = VersionSpec(eq=self.version) if self.version else self._lookup_version
 
         with _delegate_extension_interceptors(self._server):
             return await self._server.call_tool(
@@ -460,7 +461,11 @@ class FastMCPProvider(Provider):
             raw_tool = await self.server.get_tool(name, version)
         if raw_tool is None:
             return None
-        return FastMCPProviderTool.wrap(self.server, raw_tool)
+        wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
+        # Unversioned components also match constrained lookups. Forward the
+        # selection to the child so it cannot pick an excluded higher version.
+        wrapped._lookup_version = version
+        return wrapped
 
     async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
         """Delegate to nested server's get_app_tool, wrapping for middleware."""

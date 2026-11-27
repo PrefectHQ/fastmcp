@@ -223,6 +223,7 @@ class Transform:
 from fastmcp.server.transforms.visibility import Visibility, is_enabled  # noqa: E402
 from fastmcp.server.transforms.namespace import Namespace  # noqa: E402
 from fastmcp.server.transforms.prompts_as_tools import PromptsAsTools  # noqa: E402
+from fastmcp.server.transforms.read_only import ReadOnly  # noqa: E402
 from fastmcp.server.transforms.resources_as_tools import ResourcesAsTools  # noqa: E402
 from fastmcp.server.transforms.tool_transform import ToolTransform  # noqa: E402
 from fastmcp.server.transforms.version_filter import VersionFilter  # noqa: E402
@@ -230,6 +231,7 @@ from fastmcp.server.transforms.version_filter import VersionFilter  # noqa: E402
 __all__ = [
     "Namespace",
     "PromptsAsTools",
+    "ReadOnly",
     "ResourcesAsTools",
     "ToolTransform",
     "Transform",
