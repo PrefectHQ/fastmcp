@@ -1,4 +1,4 @@
-"""FastMCP server implementation of the MCP Events extension (poll and push).
+"""FastMCP server implementation of the MCP Events extension.
 
 Experimental: this API may change in any release without a deprecation period.
 """
@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar, cast
@@ -31,7 +31,7 @@ from pydantic import BaseModel
 from fastmcp import _install_hints
 
 try:
-    from fastmcp.server.dependencies import get_http_headers
+    from fastmcp.server.dependencies import get_access_token, get_http_headers
     from fastmcp.server.extensions import MethodBinding, ServerExtension
 except ImportError as exc:  # pragma: no cover - exercised by wheel installs
     raise ImportError(_install_hints.SERVER_SUPPORT) from exc
@@ -53,11 +53,16 @@ from fastmcp_events.models import (
     StreamEventsResult,
     StreamFrame,
     StreamNotification,
+    SubscribeEventsParams,
+    SubscribeEventsResult,
+    UnsubscribeEventsParams,
+    UnsubscribeEventsResult,
 )
 
 if TYPE_CHECKING:
     from fastmcp_events.log import EventLog
     from fastmcp_events.registration import EventRegistration
+    from fastmcp_events.webhook_delivery import WebhookDelivery
 
 logger = get_logger(__name__)
 
@@ -118,7 +123,7 @@ ModelT = TypeVar("ModelT", bound=type[BaseModel])
 
 
 class EventsExtension(ServerExtension):
-    """Serve event types over SEP-3415 poll and push delivery.
+    """Serve event types over SEP-3415 poll, push and webhook delivery.
 
     Experimental: this API may change in any release without a deprecation
     period.
@@ -131,7 +136,8 @@ class EventsExtension(ServerExtension):
     answers each request on its own, so the server keeps no subscription
     state; `events/stream` holds the request open and sends events as they
     arrive. Pass `push=False` on a host that cannot keep a response stream
-    open.
+    open, and `webhooks=WebhookDelivery(...)` to also POST events to
+    clients that subscribe with a callback URL.
 
     ```python
     from pydantic import BaseModel
@@ -169,6 +175,7 @@ class EventsExtension(ServerExtension):
         push: bool = True,
         emit_buffer: int = 1_000,
         log: EventLog | None = None,
+        webhooks: WebhookDelivery | None = None,
     ) -> None:
         """
         Args:
@@ -180,6 +187,8 @@ class EventsExtension(ServerExtension):
             log: Where emitted events are kept. Defaults to an
                 `InMemoryEventLog`; pass a `DocketEventLog` to keep them in
                 Redis, shared across replicas and restarts.
+            webhooks: Offer webhook delivery (`events/subscribe`), keeping
+                subscriptions in the delivery's store.
         """
         from fastmcp_events.log import InMemoryEventLog
 
@@ -188,6 +197,7 @@ class EventsExtension(ServerExtension):
         self._poll_interval_ms = poll_interval_ms
         self._push = push
         self._log = log if log is not None else InMemoryEventLog(emit_buffer)
+        self._webhooks = webhooks
         self._registrations: dict[str, EventRegistration] = {}
         self._models: dict[type[BaseModel], EventRegistration] = {}
 
@@ -288,6 +298,19 @@ class EventsExtension(ServerExtension):
         await registration.emit(
             payload, event_id=event_id, timestamp=timestamp, meta=meta
         )
+        if self._webhooks is not None:
+            self._webhooks.wake()
+
+    async def deliver_webhooks(self) -> None:
+        """Send every webhook subscription the events it is owed, once.
+
+        The sender runs this in a loop with the server. Call it yourself, on
+        a schedule, where no server process lives long enough for that, or
+        where `WebhookDelivery(sender=False)` keeps sending elsewhere.
+        """
+        if self._webhooks is None:
+            raise RuntimeError("Webhook delivery is not configured")
+        await self._webhooks.deliver(self._registrations)
 
     def _registration_for(self, model: type[BaseModel]) -> EventRegistration:
         registration = self._models.get(model)
@@ -299,10 +322,40 @@ class EventsExtension(ServerExtension):
         return registration
 
     def lifespan(self) -> AbstractAsyncContextManager[None]:
-        return self._log.lifespan()
+        return self._lifespan()
+
+    @asynccontextmanager
+    async def _lifespan(self) -> AsyncGenerator[None]:
+        async with self._log.lifespan():
+            webhooks = self._webhooks
+            if webhooks is None or not webhooks.sender:
+                yield
+                return
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(webhooks.run, lambda: self._registrations)
+                try:
+                    yield
+                finally:
+                    tg.cancel_scope.cancel()
 
     def methods(self) -> Sequence[MethodBinding]:
-        return (
+        webhook_methods: tuple[MethodBinding, ...] = ()
+        if self._webhooks is not None:
+            webhook_methods = (
+                MethodBinding(
+                    method="events/subscribe",
+                    params_type=SubscribeEventsParams,
+                    handler=self._handle_subscribe,
+                    protocol_versions=_EVENTS_METHOD_VERSIONS,
+                ),
+                MethodBinding(
+                    method="events/unsubscribe",
+                    params_type=UnsubscribeEventsParams,
+                    handler=self._handle_unsubscribe,
+                    protocol_versions=_EVENTS_METHOD_VERSIONS,
+                ),
+            )
+        return webhook_methods + (
             MethodBinding(
                 method="events/list",
                 params_type=ListEventsParams,
@@ -329,7 +382,10 @@ class EventsExtension(ServerExtension):
         params: ListEventsParams,
     ) -> ListEventsResult:
         descriptors = sorted(
-            (r.descriptor(push=self._push) for r in self._registrations.values()),
+            (
+                r.descriptor(push=self._push, webhook=self._webhooks is not None)
+                for r in self._registrations.values()
+            ),
             key=lambda descriptor: descriptor.name,
         )
         page, next_cursor = paginate_request(
@@ -362,6 +418,28 @@ class EventsExtension(ServerExtension):
             if rejection is not None:
                 raise MCPError(code=HEADER_MISMATCH, message=rejection.message)
         return registration, arguments
+
+    async def _handle_subscribe(
+        self,
+        context: ServerRequestContext[Any, Any],
+        params: SubscribeEventsParams,
+    ) -> SubscribeEventsResult:
+        assert self._webhooks is not None
+        registration, arguments = self._subscription(params.name, params.arguments)
+        params = params.model_copy(update={"arguments": arguments})
+        return await self._webhooks.subscribe(registration, params, _principal())
+
+    async def _handle_unsubscribe(
+        self,
+        context: ServerRequestContext[Any, Any],
+        params: UnsubscribeEventsParams,
+    ) -> UnsubscribeEventsResult:
+        assert self._webhooks is not None
+        registration, arguments = self._subscription(params.name, params.arguments)
+        await self._webhooks.unsubscribe(
+            registration, params.delivery.url, arguments, _principal()
+        )
+        return UnsubscribeEventsResult()
 
     def _occurrence(self, name: str, event: Event) -> EventOccurrence:
         return EventOccurrence(
@@ -530,3 +608,12 @@ class EventsExtension(ServerExtension):
                     truncated=True,
                     heartbeat_ms=heartbeat_ms,
                 )
+
+
+def _principal() -> str | None:
+    """Who is asking, as webhook subscriptions are keyed: the token's subject."""
+    token = get_access_token()
+    if token is None:
+        return None
+    subject = token.claims.get("sub")
+    return str(subject) if subject else token.client_id

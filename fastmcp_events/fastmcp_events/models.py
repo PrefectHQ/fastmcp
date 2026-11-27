@@ -1,4 +1,4 @@
-"""Wire models for the MCP Events extension (SEP-3415), poll and push delivery.
+"""Wire models for the MCP Events extension (SEP-3415).
 
 Experimental: this API may change in any release without a deprecation period.
 """
@@ -133,3 +133,86 @@ class StreamNotification(BaseModel):
 
     method: str
     params: StreamFrame
+
+
+class WebhookTarget(BaseModel):
+    """Where and how a webhook subscription delivers: `delivery` in `events/subscribe`."""
+
+    mode: Literal["webhook"] = "webhook"
+    url: str
+    secret: str
+
+
+class WebhookAddress(BaseModel):
+    """The callback URL that names a subscription in `events/unsubscribe`."""
+
+    url: str
+
+
+class SubscribeEventsParams(mcp_types.RequestParams):
+    """Parameters for `events/subscribe`: create or refresh one webhook subscription."""
+
+    name: str
+    arguments: dict[str, Any] | None = None
+    delivery: WebhookTarget
+    cursor: str | None = None
+    max_age_ms: int | None = Field(default=None, ge=0)
+    ttl_ms: int | None = Field(default=None, ge=0)
+
+
+class DeliveryStatus(BaseModel):
+    """How deliveries to a webhook subscription are going, on a refresh."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    active: bool = True
+    last_delivery_at: str | None = Field(default=None, alias="lastDeliveryAt")
+    last_error: str | None = Field(default=None, alias="lastError")
+    failed_since: str | None = Field(default=None, alias="failedSince")
+
+
+class SubscribeEventsResult(mcp_types.Result):
+    """Result of `events/subscribe`."""
+
+    id: str
+    refresh_before: str | None
+    cursor: str | None = None
+    truncated: bool = False
+    delivery_status: DeliveryStatus | None = None
+    result_type: Literal["complete"] = "complete"
+
+
+class SubscribeEventsRequest(
+    mcp_types.Request[SubscribeEventsParams, Literal["events/subscribe"]]
+):
+    """Request for `events/subscribe`."""
+
+    method: Literal["events/subscribe"] = "events/subscribe"
+    params: SubscribeEventsParams
+
+    name_param = "name"
+
+
+class UnsubscribeEventsParams(mcp_types.RequestParams):
+    """Parameters for `events/unsubscribe`."""
+
+    name: str
+    arguments: dict[str, Any] | None = None
+    delivery: WebhookAddress
+
+
+class UnsubscribeEventsResult(mcp_types.Result):
+    """The empty result of `events/unsubscribe`."""
+
+    result_type: Literal["complete"] = "complete"
+
+
+class UnsubscribeEventsRequest(
+    mcp_types.Request[UnsubscribeEventsParams, Literal["events/unsubscribe"]]
+):
+    """Request for `events/unsubscribe`."""
+
+    method: Literal["events/unsubscribe"] = "events/unsubscribe"
+    params: UnsubscribeEventsParams
+
+    name_param = "name"

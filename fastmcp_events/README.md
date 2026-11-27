@@ -1,6 +1,6 @@
 # fastmcp-events
 
-Events for FastMCP servers and clients: the `io.modelcontextprotocol/events` extension defined in [SEP-3415](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415), with poll and push delivery.
+Events for FastMCP servers and clients: the `io.modelcontextprotocol/events` extension defined in [SEP-3415](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415), with poll, push and webhook delivery.
 
 Experimental: the API may change in any release without a deprecation period.
 

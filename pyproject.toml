@@ -119,6 +119,7 @@ dev = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
     "pytest-examples>=0.0.18",
     "hypothesis>=6.170.15",
+    "standardwebhooks>=1.3.0",
 ]
 
 [tool.uv.sources]

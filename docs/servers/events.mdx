@@ -7,14 +7,14 @@ tag: EXPERIMENTAL
 ---
 
 <Warning>
-Events support is experimental and ships as the `fastmcp-events` package, installed with the `events` extra (`pip install "fastmcp[events]"`). The extension is new, and the names and signatures here may change in any release, without a deprecation period, as the specification and its clients settle. Webhook delivery (`events/subscribe`) is not implemented.
+Events support is experimental and ships as the `fastmcp-events` package, installed with the `events` extra (`pip install "fastmcp[events]"`). The extension is new, and the names and signatures here may change in any release, without a deprecation period, as the specification and its clients settle.
 
 Before the `fastmcp-events` package, Events lived at `fastmcp.experimental.events`. That module is gone; install the `events` extra and import from `fastmcp_events` instead.
 </Warning>
 
-Tools answer when a client asks. Events cover the other direction: an alert fired, a build finished, an email arrived, and a client that is not in the middle of a request should find out. The MCP Events extension ([SEP-3415](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415)) defines event types a client can subscribe to, and FastMCP serves two of its delivery modes for you.
+Tools answer when a client asks. Events cover the other direction: an alert fired, a build finished, an email arrived, and a client that is not in the middle of a request should find out. The MCP Events extension ([SEP-3415](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415)) defines event types a client can subscribe to, and FastMCP serves its three delivery modes for you.
 
-In poll delivery the client asks "what happened since this cursor?" on an interval. In push delivery the client opens one long-lived request per subscription and your server writes events to it as they happen. The client chooses the mode; you declare the event once and FastMCP serves both.
+In poll delivery the client asks "what happened since this cursor?" on an interval. In push delivery the client opens one long-lived request per subscription and your server writes events to it as they happen. In webhook delivery the client gives your server a URL and goes away, and your server POSTs each event to it, signed. The client chooses the mode; you declare the event once and FastMCP serves all of them. Webhook delivery is off until you configure it.
 
 Every event type is declared as a model of its payload, and its events come from one of two places. When your own code knows the moment something happens, in a tool or a webhook handler, emit them. When they already live in an upstream you can read from a position, such as a database table, a history API or an event log, give the model a reader.
 
@@ -258,6 +258,116 @@ Poll works everywhere, because each poll is an ordinary request.
 
 The extension serves the event types of the server it is added to. A server mounted into another does not expose its event types through the parent, and a proxy does not forward them, so add the extension to the server that clients connect to.
 
+## Webhook delivery
+
+With webhooks, the client hands your server an `https` URL and a secret and goes away. Your server POSTs each event to that URL, signed with [Standard Webhooks](https://www.standardwebhooks.com/), until the client stops renewing. Three pieces: the server turns on `WebhookDelivery`, the client subscribes once, and the receiver checks each POST.
+
+<CodeGroup>
+```python server.py
+from pydantic import BaseModel
+
+from fastmcp import FastMCP
+from fastmcp_events import EventsExtension, WebhookDelivery
+
+mcp = FastMCP("Alerts", auth=...)
+events = EventsExtension(webhooks=WebhookDelivery())
+mcp.add_extension(events)
+
+
+@events.event("alert.fired")
+class AlertFired(BaseModel):
+    """An alert fired."""
+
+    service: str
+    severity: str
+
+
+@mcp.tool
+async def fire_alert(service: str, severity: str) -> str:
+    await events.emit(AlertFired(service=service, severity=severity))
+    return "fired"
+```
+
+```python subscribe.py
+import asyncio
+import os
+
+from fastmcp import Client
+from fastmcp_events import EventsClientExtension, subscribe_webhook
+
+
+async def main() -> None:
+    async with Client(
+        "https://alerts.example.com/mcp",
+        auth=os.environ["ALERTS_TOKEN"],
+        extensions=[EventsClientExtension()],
+    ) as client:
+        subscription = await subscribe_webhook(
+            client,
+            "alert.fired",
+            url="https://hooks.example.com/alerts",
+            secret=os.environ["WEBHOOK_SECRET"],
+        )
+    print("renew before", subscription.refresh_before)
+
+
+asyncio.run(main())
+```
+
+```python receiver.py
+import os
+
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
+
+from fastmcp_events import WebhookVerificationError, verify_webhook
+
+SECRET = os.environ["WEBHOOK_SECRET"]
+
+
+async def alerts(request: Request) -> Response:
+    try:
+        message = verify_webhook(SECRET, request.headers, await request.body())
+    except WebhookVerificationError:
+        return Response(status_code=401)
+    if message.get("type") == "verification":
+        return JSONResponse({"challenge": message["challenge"]})
+    print(message["data"])
+    return Response(status_code=204)
+
+
+app = Starlette(routes=[Route("/alerts", alerts, methods=["POST"])])
+```
+</CodeGroup>
+
+Make the secret once with `new_webhook_secret()` and give the same value to the subscriber and the receiver. The first POST to a new URL is a `verification` challenge, which the receiver echoes; after that, each POST is one event. The server needs an auth provider, because a subscription belongs to whoever made it.
+
+The server refuses private and loopback addresses (`allow_private_addresses=True` for local development), and never follows redirects.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `min_ttl`, `max_ttl` | 1 minute, 1 hour | Range of lease lengths granted |
+| `retry_window` | 10 minutes | How long a failing event is retried before it's skipped |
+| `interval` | 5 seconds | Time between sender passes (an emit in the same process wakes it at once) |
+| `sender` | `True` | Whether this process sends deliveries |
+| `store` | memory | Where subscriptions are kept |
+
+### Running more than one replica
+
+Give every replica the same `store`, which can be any [py-key-value](https://github.com/strawgate/py-key-value) store:
+
+```python
+from key_value.aio.stores.redis import RedisStore
+
+from fastmcp_events import WebhookDelivery
+
+webhooks = WebhookDelivery(store=RedisStore(url="redis://localhost:6379/0"))
+```
+
+The replicas also need a shared event log, as described [above](#sharing-events-across-replicas-with-docket). Any replica can then accept a subscribe, a refresh or an unsubscribe. One replica at a time sends each subscription's deliveries, and a delivery has the same `webhook-id` whichever replica sends it, so receivers can drop the rare duplicate. On hosts that can't run background work, such as Lambda, set `sender=False` and call `await events.deliver_webhooks()` on a schedule.
+
 ## Subscribing from a client
 
 A client opts into the extension with `EventsClientExtension`. The event calls are functions that take the client, not methods on it. `list_events()` returns the event types the server offers, and `subscribe_events()` subscribes to one of them. It uses push when the event type offers it and polls otherwise, and either way it skips events it has already yielded. Pass `delivery="poll"` or `delivery="push"` to choose.
@@ -292,6 +402,10 @@ The subscription lasts as long as the `async for` does. Its `cursor` attribute i
 A push stream that is cut off, for example when a load balancer closes the connection or another replica takes over, is reopened from the subscription's cursor after a short random wait, and so is a stream that sends nothing for three heartbeat intervals. Events the new stream repeats are dropped by their `eventId`. The client tries up to four times in a row, waiting a random half to all of 1, 2, 4 and then 8 seconds, and a stream that delivered new events or stayed healthy for ten seconds resets the count; after that the `async for` raises the `MCPError` (`-32000`). The reopened stream uses the same client session, so this covers a stream that drops while the server stays reachable. A stdio server that exits ends the subscription at once. If an HTTP server cannot be reached, or it no longer knows the session after a restart, the error ends the subscription as it would end any other request, and you resubscribe from `cursor` with a new client.
 
 A push subscription can also end with an error that is not retried. When the server terminates it because a reader reported `NotFound`, `Forbidden` or `Unsupported`, the `async for` raises that `MCPError`; rediscover the event type with `list_events()` before subscribing again. Any other error response, including one to a reopened stream, is raised as it is, except that a stream refused as `Unsupported` falls back to polling when you did not ask for push. When your loop falls so far behind that the client's buffer of pushed events overflows, it raises `EventBacklogFullError`. Events were lost, but `cursor` still points before them, so subscribing again from it repeats events rather than skipping them. Retrying with push does not get past a single batch larger than the buffer, because the cursor only advances when a batch completes, so a consumer that cannot keep up with a large backlog should use `delivery="poll"` with `max_events`.
+
+### Receiving webhooks
+
+`subscribe_webhook()` and `verify_webhook()` are shown together in [Webhook delivery](#webhook-delivery). Call `subscribe_webhook()` again before `refresh_before` to keep the subscription, and store the `cursor` each event carries: subscribing with it after a lapse replays what you missed. Answer `2xx` once an event is stored, and drop any `webhook-id` you've already seen. `unsubscribe_webhook()` ends a subscription right away; otherwise it lapses when you stop renewing.
 
 To try a server from the terminal, `fastmcp experimental events watch` does the same thing and prints each event; see [the CLI](/cli/client#watching-events).
 
