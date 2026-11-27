@@ -66,6 +66,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass, make_dataclass
 from datetime import date, datetime, time, timedelta
+from fractions import Fraction
 from functools import lru_cache
 from types import MappingProxyType
 from typing import (
@@ -709,6 +710,23 @@ def _inclusive_bound(
     return value
 
 
+def _normalize_int_constraint(key: str, value: Any) -> Any:
+    """Convert finite float bounds and multipleOf to exact integer equivalents.
+
+    JSON Schema permits arbitrary numbers on ``integer`` schemas, whereas
+    Pydantic rejects non-integral floats on ``int`` fields.
+    """
+    if not isinstance(value, float) or not math.isfinite(value):
+        return value
+    if key in ("gt", "le"):
+        return math.floor(value)
+    if key in ("ge", "lt"):
+        return math.ceil(value)
+    if key == "multiple_of":
+        return Fraction(str(value)).numerator
+    return value
+
+
 def _create_numeric_type(
     base: type[int | float], schema: Mapping[str, Any]
 ) -> type | Annotated[Any, ...]:
@@ -717,7 +735,7 @@ def _create_numeric_type(
         return Literal[schema["const"]]  # type: ignore
 
     constraints = {
-        k: v
+        k: _normalize_int_constraint(k, v) if base is int else v
         for k, v in {
             "gt": _exclusive_bound(schema, "exclusiveMinimum", "minimum"),
             "ge": _inclusive_bound(schema, "exclusiveMinimum", "minimum", lower=True),

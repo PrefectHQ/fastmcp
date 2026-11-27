@@ -344,3 +344,37 @@ class TestHugeCounts:
     def test_huge_minimum_still_rejects(self, schema, value):
         with pytest.raises(ValidationError):
             TypeAdapter(json_schema_to_type(schema)).validate_python(value)
+
+
+class TestFractionalIntegerConstraints:
+    """Fractional bounds and multipleOf on integer schemas convert to exact integer equivalents."""
+
+    @pytest.mark.parametrize(
+        ("schema", "valid", "invalid"),
+        [
+            ({"type": "integer", "minimum": 1.5}, [2, 3], [1, 0]),
+            ({"type": "integer", "minimum": -1.5}, [-1, 0], [-2, -3]),
+            ({"type": "integer", "exclusiveMinimum": 0.5}, [1, 2], [0, -1]),
+            ({"type": "integer", "exclusiveMinimum": -1.5}, [-1, 0], [-2, -3]),
+            ({"type": "integer", "maximum": 4.5}, [4, 3], [5, 6]),
+            ({"type": "integer", "maximum": -1.5}, [-2, -3], [-1, 0]),
+            ({"type": "integer", "exclusiveMaximum": 9.5}, [9, 8], [10, 11]),
+            ({"type": "integer", "exclusiveMaximum": -1.5}, [-2, -3], [-1, 0]),
+            ({"type": "integer", "multipleOf": 0.5}, [-2, 0, 1, 3], []),
+            ({"type": "integer", "multipleOf": 1.5}, [-3, 0, 3, 6], [1, 2, 4, 5]),
+            ({"type": "integer", "multipleOf": 0.3}, [-3, 0, 3, 6], [1, 2, 4]),
+            ({"type": "integer", "multipleOf": 2.5}, [-5, 0, 5, 10], [1, 2, 3, 4]),
+            (
+                {"type": "integer", "minimum": 0, "maximum": 4.5},
+                [0, 4],
+                [-1, 5],
+            ),
+        ],
+    )
+    def test_fractional_constraints_on_integer(self, schema, valid, invalid):
+        validator = TypeAdapter(json_schema_to_type(schema))
+        for value in valid:
+            assert validator.validate_python(value) == value
+        for value in invalid:
+            with pytest.raises(ValidationError):
+                validator.validate_python(value)
