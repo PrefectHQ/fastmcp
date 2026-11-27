@@ -1,0 +1,47 @@
+---
+title: Tool-Call Intent
+description: Ask agents why they chose a tool and read their explanation while the tool runs.
+icon: comment-dots
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="unreleased" />
+
+An agent asks your orders server for October’s returns. The month tells you which records to fetch. It leaves open why the agent wants them. If someone is reviewing the request, “I’m comparing return rates before and after the packaging change” gives them something the arguments alone cannot.
+
+`ToolCallIntent()` lets you ask for that explanation on the call itself. Add the transform to a server and agents see an optional `intent` argument on its tools. The argument asks for one sentence about what this call should accomplish, omitting personal details. The caller decides whether to supply it.
+
+## Read the explanation
+
+FastMCP consumes the added argument before running the underlying function. The function still takes its usual inputs, and code running inside the tool can read the explanation from `ctx.tool_call_intent`. When the caller omits it, the property returns `None`. You decide whether to display or record the text.
+
+For example, a report tool can include the caller’s explanation in an application log when one is available:
+
+```python
+import logging
+
+from fastmcp import Context, FastMCP
+from fastmcp.server.transforms import ToolCallIntent
+
+mcp = FastMCP("Orders")
+mcp.add_transform(ToolCallIntent())
+logger = logging.getLogger("orders.reports")
+
+
+@mcp.tool
+def get_returns(month: str, ctx: Context) -> list[str]:
+    if ctx.tool_call_intent:
+        logger.info("Returns for %s requested: %s", month, ctx.tool_call_intent)
+    return {"October": ["order-1042"]}.get(month, [])
+```
+
+The agent can call `get_returns` with just `month="October"`, or it can include its reason for choosing October. Both calls retrieve the same orders. Treat the explanation as the caller’s account of its purpose. Enforce access to the underlying records through your usual authorization checks.
+
+## Choose the scope
+
+Apply the transform to the server to request intent across its catalog, including mounted tools. Apply it to an individual [provider](/servers/transforms/transforms#provider-level-transforms) when only one set of tools needs explanations. This also works for proxied tools: the gateway consumes the added argument before forwarding the call, so the upstream server can keep its existing API.
+
+If a tool already declares a parameter named `intent`, the transform leaves that tool alone. Its parameter keeps its original type and the function receives its value directly.
+
+Some providers describe their inputs through a reference, alternatives, or rules for property names. When those rules appear at the root of a tool’s schema, FastMCP preserves the original inputs because the provider may already assign a meaning to `intent`. A nested object parameter can use alternatives or references without affecting the transform.

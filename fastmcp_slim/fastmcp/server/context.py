@@ -252,6 +252,13 @@ class Context:
         return self._task_id
 
     @property
+    def tool_call_intent(self) -> str | None:
+        """The agent's stated purpose while a ToolCallIntent-wrapped tool runs."""
+        from fastmcp.server.transforms.tool_call_intent import _current_intent
+
+        return _current_intent.get()
+
+    @property
     def origin_request_id(self) -> str | None:
         """Get the request ID that originated this execution, if available.
 

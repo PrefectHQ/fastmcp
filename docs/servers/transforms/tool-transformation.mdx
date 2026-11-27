@@ -235,3 +235,5 @@ mcp.add_tool(create_user_tool(current_user_id))
 ```
 
 This pattern is useful for multi-tenant servers where each connection gets tools pre-configured with their identity, or for wrapping generic tools with environment-specific defaults.
+
+To ask why an agent chose a tool, apply the built-in [Tool-Call Intent](/servers/transforms/tool-call-intent) transform.

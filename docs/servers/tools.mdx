@@ -227,6 +227,8 @@ mcp = FastMCP("my-server", dereference_schemas=False)
 ```
 </Note>
 
+To ask the agent why it chose a tool, see [Tool-Call Intent](/servers/transforms/tool-call-intent). One transform adds the optional argument across a server or provider.
+
 ### Type Annotations
 
 MCP tools have typed arguments, and FastMCP uses type annotations to determine those types. Therefore, you should use standard Python type annotations for tool arguments:

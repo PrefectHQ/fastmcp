@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import pytest
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError, ValidationError
-from fastmcp.server.transforms import ToolTransform
+from fastmcp.server.transforms import ToolCallIntent, ToolTransform
 from fastmcp.tools import Tool
 from fastmcp.tools.tool_transform import ArgTransform, ToolTransformConfig
 from fastmcp_tasks import TasksExtension
@@ -103,3 +103,18 @@ async def test_renamed_argument_submission_uses_the_transformed_name():
     assert final.status == "completed"
     assert final.result is not None
     assert final.result["structuredContent"] == {"result": 6}
+
+
+async def test_task_receives_tool_call_intent():
+    mcp = FastMCP("intent")
+    mcp.add_extension(TasksExtension())
+    mcp.add_transform(ToolCallIntent())
+
+    @mcp.tool(task=True)
+    async def inspect_call(ctx: Context) -> str:
+        return ctx.tool_call_intent or "no intent"
+
+    async with running_task_server(mcp):
+        final = await run_task(mcp, "inspect_call", {"intent": "Check progress"})
+    assert final.result is not None
+    assert final.result["structuredContent"] == {"result": "Check progress"}
