@@ -224,6 +224,7 @@ from fastmcp.server.transforms.visibility import Visibility, is_enabled  # noqa:
 from fastmcp.server.transforms.namespace import Namespace  # noqa: E402
 from fastmcp.server.transforms.prompts_as_tools import PromptsAsTools  # noqa: E402
 from fastmcp.server.transforms.resources_as_tools import ResourcesAsTools  # noqa: E402
+from fastmcp.server.transforms.tool_call_intent import ToolCallIntent  # noqa: E402
 from fastmcp.server.transforms.tool_transform import ToolTransform  # noqa: E402
 from fastmcp.server.transforms.version_filter import VersionFilter  # noqa: E402
 
@@ -231,6 +232,7 @@ __all__ = [
     "Namespace",
     "PromptsAsTools",
     "ResourcesAsTools",
+    "ToolCallIntent",
     "ToolTransform",
     "Transform",
     "VersionFilter",
