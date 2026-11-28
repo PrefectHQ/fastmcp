@@ -182,11 +182,13 @@ def test_multipart_arrays_preserve_other_parts(kind: str) -> None:
             part.get_param("name", header="content-disposition") for part in parts
         ] == ["tags", "tags", "other"]
         assert [part.get_payload(decode=True) for part in parts[:2]] == [b"a", b"b"]
-        expected = (
-            b"payload"
-            if kind in {"tuple", "bytes", "stream"}
-            else ("true" if kind == "boolean" else str(values[kind])).encode()
-        )
+        expected = {
+            "tuple": b"payload",
+            "bytes": b"payload",
+            "stream": b"payload",
+            "object": b'{"name": "alice"}',
+            "boolean": b"true",
+        }.get(kind, str(values[kind]).encode())
         assert parts[2].get_payload(decode=True) == expected
         if kind == "tuple":
             assert parts[2].get_filename() == "sample.txt"
