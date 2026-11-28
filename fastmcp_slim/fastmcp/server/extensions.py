@@ -33,12 +33,14 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 
+from mcp.server.caching import CacheHint, apply_cache_hint
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
 from mcp.shared.extension import validate_extension_identifier
 from mcp_types import (
     CLIENT_CAPABILITIES_META_KEY,
     METHOD_NOT_FOUND,
+    CacheableResult,
     CallToolRequestParams,
 )
 from mcp_types.methods import SPEC_CLIENT_METHODS
@@ -317,13 +319,18 @@ def read_client_extension_settings(
     return _extract_client_extension_settings(_lift_meta(ctx), identifier)
 
 
-def build_method_handler(binding: MethodBinding) -> ExtensionRequestHandler:
+def build_method_handler(
+    binding: MethodBinding,
+    *,
+    cache_hint: CacheHint | None = None,
+) -> ExtensionRequestHandler:
     """Wrap a `MethodBinding` into a low-level request handler.
 
     The adapter enforces `protocol_versions` gating (rejecting other versions as
     `METHOD_NOT_FOUND`, since `add_request_handler` registers unconditionally)
     and binds the FastMCP request context so the handler can use `get_context()`,
-    auth, and other request-scoped dependencies.
+    auth, and other request-scoped dependencies. When `cache_hint` is provided,
+    it fills unset `ttl_ms`/`cache_scope` fields on `CacheableResult` returns.
     """
 
     async def handler(
@@ -341,7 +348,10 @@ def build_method_handler(binding: MethodBinding) -> ExtensionRequestHandler:
                 ),
             )
         with bind_request_context(ctx):
-            return await binding.handler(ctx, params)
+            result = await binding.handler(ctx, params)
+        if cache_hint is not None and isinstance(result, CacheableResult):
+            result = apply_cache_hint(result, cache_hint)
+        return result
 
     return handler
 

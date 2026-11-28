@@ -441,3 +441,32 @@ async def test_transform_added_after_registration_keeps_unrelated_reads() -> Non
 
     assert isinstance(result[0], TextResourceContents)
     assert result[0].text == "plain"
+
+
+async def test_server_cache_ttl_applies_to_skills_list_and_get() -> None:
+    skill = make_skill("review")
+    provider = MemorySkillProvider(listed=[skill])
+    server = FastMCP("skills", providers=[provider], cache_ttl=300, cache_scope="public")
+    server.add_extension(SkillsExtension(providers=[provider]))
+
+    async with skills_client(server) as client:
+        listed = await client.list_skills_mcp()
+        fetched = await client.get_skill_mcp(skill.uri)
+
+    assert listed.ttl_ms == fetched.ttl_ms == 300_000
+    assert listed.cache_scope == fetched.cache_scope == "public"
+
+
+async def test_explicit_skill_cache_hint_overrides_server_cache_ttl() -> None:
+    skill = make_skill("review")
+    provider = MemorySkillProvider(listed=[skill])
+    server = FastMCP("skills", providers=[provider], cache_ttl=300)
+    server.add_extension(CachedSkillsExtension(providers=[provider]))
+
+    async with skills_client(server) as client:
+        listed = await client.list_skills_mcp()
+        fetched = await client.get_skill_mcp(skill.uri)
+
+    assert listed.ttl_ms == fetched.ttl_ms == 60_000
+    assert listed.cache_scope == fetched.cache_scope == "public"
+

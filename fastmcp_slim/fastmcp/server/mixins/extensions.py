@@ -142,9 +142,12 @@ class ExtensionsMixin:
                 # old bindings is necessary when explicit configuration disables
                 # an optional method from the bundled extension.
                 self._mcp_server._request_handlers.pop(method, None)
+            cache_hint = next(iter(self._mcp_server.cache_hints.values()), None)
             for binding in bindings:
                 self._mcp_server.add_request_handler(
-                    binding.method, binding.params_type, build_method_handler(binding)
+                    binding.method,
+                    binding.params_type,
+                    build_method_handler(binding, cache_hint=cache_hint),
                 )
             self._extensions[identifier] = extension
             self._extension_methods[identifier] = tuple(b.method for b in bindings)
