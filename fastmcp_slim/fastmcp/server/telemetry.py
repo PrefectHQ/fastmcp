@@ -5,10 +5,12 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 
+from mcp.server.context import ServerRequestContext
 from opentelemetry import context as otel_context
 from opentelemetry.context import Context
 from opentelemetry.trace import (
     INVALID_SPAN,
+    Link,
     Span,
     SpanKind,
     Status,
@@ -17,8 +19,8 @@ from opentelemetry.trace import (
 )
 
 from fastmcp.telemetry import (
+    _extract_meta_trace_context,
     error_span_attributes,
-    extract_trace_context,
     get_tracer,
     restore_dropped_attributes,
     telemetry_mode,
@@ -31,6 +33,10 @@ from fastmcp.telemetry import (
 # attribute is set for observability; enrichment detection uses the ContextVar
 # below (the API `Span` type does not expose readable attributes).
 SEAM_SPAN_MARKER = "fastmcp.span.seam"
+
+# Set on the link to the span active during an HTTP request that `_meta` displaced as parent.
+LINK_KIND_ATTRIBUTE = "fastmcp.link.kind"
+HTTP_AMBIENT_LINK_KIND = "http_ambient"
 
 
 # Tracks the SERVER span opened at the current request's seam. When the
@@ -53,6 +59,10 @@ _active_seam_span: ContextVar[_SeamSpan | None] = ContextVar(
 # consumers see one request no matter how deep the call goes.
 _server_span_open: ContextVar[bool] = ContextVar(
     "fastmcp_server_span_open", default=False
+)
+
+_propagated_request: ContextVar[ServerRequestContext | None] = ContextVar(
+    "fastmcp_propagated_request", default=None
 )
 
 
@@ -131,14 +141,35 @@ def get_network_span_attributes() -> dict[str, str]:
     return attrs
 
 
-def _get_parent_trace_context() -> Context | None:
-    """Get parent trace context from request meta for distributed tracing."""
+def _get_parent_trace_context() -> tuple[Context | None, list[Link]]:
+    """Return the SERVER span's parent and links.
+
+    `_meta` trace context is the parent when present; a different current span
+    (e.g. an HTTP request span) is kept as a link. Otherwise the parent is
+    `None`, so the current context applies.
+    """
     from fastmcp.server.dependencies import fastmcp_request_ctx
 
     req_ctx = fastmcp_request_ctx.get()
-    if req_ctx is not None and req_ctx.meta:
-        return extract_trace_context(req_ctx.meta)
-    return None
+    if req_ctx is None:
+        return None, []
+    parent_context = _extract_meta_trace_context(req_ctx.meta)
+    if parent_context is None:
+        return None, []
+
+    ambient = get_current_span().get_span_context()
+    parent = get_current_span(parent_context).get_span_context()
+    if not ambient.is_valid or (
+        ambient.trace_id == parent.trace_id and ambient.span_id == parent.span_id
+    ):
+        return parent_context, []
+
+    attributes = (
+        {LINK_KIND_ATTRIBUTE: HTTP_AMBIENT_LINK_KIND}
+        if req_ctx.request is not None
+        else None
+    )
+    return parent_context, [Link(ambient, attributes=attributes)]
 
 
 @contextmanager
@@ -156,14 +187,25 @@ def _propagation_only_span() -> Generator[Span, None, None]:
     Yields `INVALID_SPAN`, which is non-recording, so callers' `is_recording()`
     guards skip attribute and error bookkeeping on it.
     """
-    parent_context = _get_parent_trace_context()
+    from fastmcp.server.dependencies import fastmcp_request_ctx
+
+    request = fastmcp_request_ctx.get()
+    # The dispatcher and handler each wrap the same SDK request. Preserve any
+    # middleware spans created after its trace context was already attached.
+    if request is None or _propagated_request.get() is request._srctx:
+        yield INVALID_SPAN
+        return
+
+    parent_context = _extract_meta_trace_context(request.meta)
     if parent_context is None:
         yield INVALID_SPAN
         return
     token = otel_context.attach(parent_context)
+    request_token = _propagated_request.set(request._srctx)
     try:
         yield INVALID_SPAN
     finally:
+        _propagated_request.reset(request_token)
         otel_context.detach(token)
 
 
@@ -223,6 +265,8 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
     that has to know the difference, because the seam is where the incoming
     `_meta` parent context is applied for the whole request.
     """
+    from fastmcp.server.dependencies import fastmcp_request_ctx
+
     if telemetry_mode() == "propagation_only":
         with _propagation_only_span() as span:
             yield span
@@ -236,12 +280,14 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
         **get_auth_span_attributes(),
         **get_session_span_attributes(),
     }
+    parent_context, links = _get_parent_trace_context()
     tracer = get_tracer()
     with tracer.start_as_current_span(
         method,
-        context=_get_parent_trace_context(),
+        context=parent_context,
         kind=SpanKind.SERVER,
         attributes=attrs,
+        links=links or None,
         record_exception=False,
         set_status_on_exception=False,
     ) as span:
@@ -259,6 +305,10 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
             restore_dropped_attributes(span, attrs)
         seam = _SeamSpan(span)
         token = _active_seam_span.set(seam)
+        # Middleware can enter scoped suppression after this native span has
+        # already applied the incoming parent.
+        request = fastmcp_request_ctx.get()
+        request_token = _propagated_request.set(request._srctx if request else None)
         # A seam is a new inbound request, even one an in-process proxy sends
         # from inside another server's tool call.
         open_token = _server_span_open.set(False)
@@ -271,6 +321,7 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
             if seam.error is not None:
                 record_span_exception(span, seam.error)
             _server_span_open.reset(open_token)
+            _propagated_request.reset(request_token)
             _active_seam_span.reset(token)
 
 
@@ -302,9 +353,9 @@ def server_span(
     Automatically records any exception on the span and sets error status.
 
     In `propagation_only` mode no span is opened or enriched. The seam has
-    normally already attached the incoming parent context for this request;
-    doing it again here is a no-op, and covers the in-process callers that
-    bypass the dispatcher and so never reach the seam at all.
+    normally already attached the incoming parent context for this request,
+    so the active context (including middleware spans) is preserved. Calls
+    that bypass the dispatcher can still attach incoming context here.
     """
     if telemetry_mode() == "propagation_only":
         with _propagation_only_span() as span:
@@ -361,12 +412,16 @@ def server_span(
             _server_span_open.reset(token)
         return
 
+    # When the seam is already open, a fallback span stays under the active
+    # context. The seam already resolved the remote parent and transport link.
+    parent_context, links = _get_parent_trace_context() if seam is None else (None, [])
     tracer = get_tracer()
     with tracer.start_as_current_span(
         name,
-        context=_get_parent_trace_context(),
+        context=parent_context,
         kind=SpanKind.SERVER,
         attributes=attrs,
+        links=links or None,
         record_exception=False,
         set_status_on_exception=False,
     ) as span:
