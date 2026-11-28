@@ -15,7 +15,6 @@ import httpx2
 import mcp_types
 import pydantic_core
 from mcp import MCPError
-from rich.console import Console
 
 from fastmcp.cli.client import _build_client, resolve_server_spec
 from fastmcp.client.auth.bearer import BearerAuth
@@ -24,10 +23,11 @@ from fastmcp.client.transports.base import ClientTransport
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
+from fastmcp.utilities.cli import SafeConsole
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli.generate")
-console = Console()
+console = SafeConsole()
 
 # ---------------------------------------------------------------------------
 # JSON Schema type → Python type string

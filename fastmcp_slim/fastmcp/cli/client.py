@@ -19,7 +19,6 @@ from key_value.aio.stores.filetree import (
     FileTreeV1KeySanitizationStrategy,
 )
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from rich.console import Console
 from rich.markup import escape as escape_rich_markup
 
 from fastmcp import settings
@@ -33,10 +32,11 @@ from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import NodeStdioTransport, StdioTransport
 from fastmcp.skills.client import SkillsClientExtension
 from fastmcp.skills.models import MCPSkill
+from fastmcp.utilities.cli import SafeConsole
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli.client")
-console = Console()
+console = SafeConsole()
 
 _MEMORY_TOKEN_WARNING = r"Using in-memory token storage\b"
 

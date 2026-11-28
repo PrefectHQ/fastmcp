@@ -103,6 +103,25 @@ class TestVersionCommand:
             "[green]✓[/green] Version information copied to clipboard"
         )
 
+    @patch("fastmcp.cli.cli.pyperclip.copy")
+    def test_version_copy_does_not_fail_on_cp1252_stdout(
+        self, mock_pyperclip_copy, monkeypatch
+    ):
+        """Test that version --copy does not raise UnicodeEncodeError on cp1252 stdout."""
+        import io
+        import sys
+
+        buf = io.BytesIO()
+        cp1252_stdout = io.TextIOWrapper(buf, encoding="cp1252")
+        monkeypatch.setattr(sys, "stdout", cp1252_stdout)
+
+        command, bound, _ = app.parse_args(["version", "--copy"])
+        command(**bound.arguments)
+        cp1252_stdout.flush()
+
+        output = buf.getvalue().decode("cp1252")
+        assert "Version information copied to clipboard" in output
+
 
 class TestDevCommand:
     """Test the dev command."""

@@ -8,7 +8,7 @@ from typing import Literal
 
 from rich import box
 from rich.align import Align
-from rich.console import Console, Group
+from rich.console import Group
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.status import Status
@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from fastmcp.cli.deploy.horizon_client import DeviceAuthorization, HorizonUser
+from fastmcp.utilities.cli import SafeConsole
 
 CommandName = Literal["login", "logout", "whoami"]
 ErrorCategory = Literal[
@@ -31,8 +32,8 @@ ErrorCategory = Literal[
     "state_error",
 ]
 
-console = Console()
-error_console = Console(stderr=True)
+console = SafeConsole()
+error_console = SafeConsole(stderr=True)
 
 
 def _write_json(payload: object, *, stderr: bool = False) -> None:

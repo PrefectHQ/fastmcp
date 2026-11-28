@@ -16,10 +16,11 @@ from fastmcp.server.auth.cimd import (
     CIMDFetchError,
     CIMDValidationError,
 )
+from fastmcp.utilities.cli import SafeConsole
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli.cimd")
-console = Console()
+console = SafeConsole()
 
 
 cimd_app = cyclopts.App(

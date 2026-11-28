@@ -8,14 +8,15 @@ from typing import Annotated
 
 import cyclopts
 import pyperclip
-from rich import print as rich_print
 
+from fastmcp.utilities.cli import SafeConsole
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 from .shared import process_common_args
 
 logger = get_logger(__name__)
+console = SafeConsole()
 
 
 def install_stdio(
@@ -64,14 +65,14 @@ def install_stdio(
 
         if copy:
             pyperclip.copy(command_str)
-            rich_print("[green]✓ Command copied to clipboard[/green]")
+            console.print("[green]✓ Command copied to clipboard[/green]")
         else:
             builtins.print(command_str)
 
         return True
 
     except (OSError, ValueError, pyperclip.PyperclipException) as e:
-        rich_print(f"[red]Failed to generate stdio command: {e}[/red]")
+        console.print(f"[red]Failed to generate stdio command: {e}[/red]")
         return False
 
 

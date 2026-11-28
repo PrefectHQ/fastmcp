@@ -25,6 +25,27 @@ if TYPE_CHECKING:
 logger = get_logger("cli.config")
 
 
+class SafeConsole(Console):
+    """Rich Console that degrades gracefully on non-UTF-8 redirected streams."""
+
+    def print(self, *objects: Any, **kwargs: Any) -> None:
+        encoding = self.encoding
+        is_utf = encoding.lower().replace("-", "") in (
+            "utf8",
+            "utf16",
+            "utf32",
+            "cp65001",
+        )
+        if not is_utf and not (self.is_terminal and self.legacy_windows):
+            with self.capture() as capture:
+                super().print(*objects, **kwargs)
+            text = capture.get().replace("\u2713", "+")
+            safe = text.encode(encoding, errors="replace").decode(encoding)
+            self.file.write(safe)
+            return
+        super().print(*objects, **kwargs)
+
+
 def is_already_in_uv_subprocess() -> bool:
     """Check if we're already running in a FastMCP uv subprocess."""
     return bool(os.environ.get("FASTMCP_UV_SPAWNED"))

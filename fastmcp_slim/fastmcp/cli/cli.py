@@ -25,7 +25,11 @@ from fastmcp.cli.client import call_command, discover_command, list_command
 from fastmcp.cli.deploy.command import login, logout, whoami
 from fastmcp.cli.generate import generate_cli_command
 from fastmcp.cli.install import install_app
-from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
+from fastmcp.utilities.cli import (
+    SafeConsole,
+    is_already_in_uv_subprocess,
+    load_and_merge_config,
+)
 from fastmcp.utilities.inspect import (
     InspectFormat,
     format_info,
@@ -36,7 +40,7 @@ from fastmcp.utilities.mcp_server_config import MCPServerConfig
 from fastmcp.utilities.version_check import check_for_newer_version
 
 logger = get_logger("cli")
-console = Console()
+console = SafeConsole()
 
 app = cyclopts.App(
     name="fastmcp",

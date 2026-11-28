@@ -1151,3 +1151,34 @@ class TestSkillParameterTableRows:
         rows = self._rows({"z": {"type": {"nested": "string"}}, "w": {"type": [{}]}})
         assert len(rows) == 2
         assert all("| any |" in row for row in rows)
+
+
+class TestGenerateCliCp1252Stdout:
+    async def test_generate_cli_does_not_fail_on_cp1252_stdout(
+        self, tmp_path: Path, monkeypatch
+    ):
+        import io
+
+        server_file = tmp_path / "server.py"
+        server_file.write_text(
+            'from fastmcp import FastMCP\nmcp = FastMCP("demo")\n'
+            '@mcp.tool\ndef ping() -> str:\n    return "pong"\n',
+            encoding="utf-8",
+        )
+        output_file = tmp_path / "cli.py"
+
+        buf = io.BytesIO()
+        cp1252_stdout = io.TextIOWrapper(buf, encoding="cp1252")
+        monkeypatch.setattr(sys, "stdout", cp1252_stdout)
+
+        await generate_cli_command(
+            str(server_file),
+            output=output_file,
+            force=True,
+        )
+        cp1252_stdout.flush()
+
+        output = buf.getvalue().decode("cp1252")
+        assert output_file.exists()
+        assert (tmp_path / "SKILL.md").exists()
+        assert "Wrote" in output
