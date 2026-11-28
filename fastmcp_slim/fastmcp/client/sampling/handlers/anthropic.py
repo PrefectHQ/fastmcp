@@ -84,13 +84,21 @@ def _image_content_to_anthropic_block(content: ImageContent) -> ImageBlockParam:
 def _tool_result_content_to_anthropic(
     content: Sequence[Any],
 ) -> str | list[TextBlockParam | ImageBlockParam]:
-    """Preserve text and image blocks inside Anthropic tool results."""
+    """Preserve text and image blocks inside Anthropic tool results.
+
+    Anthropic tool results accept text and image blocks only, so audio is
+    rejected rather than silently dropped.
+    """
     content_blocks: list[TextBlockParam | ImageBlockParam] = []
     for item in content:
         if isinstance(item, TextContent):
             content_blocks.append(TextBlockParam(type="text", text=item.text))
         elif isinstance(item, ImageContent):
             content_blocks.append(_image_content_to_anthropic_block(item))
+        elif isinstance(item, AudioContent):
+            raise ValueError(
+                "AudioContent in tool results is not supported by Anthropic"
+            )
 
     if not content_blocks:
         return ""

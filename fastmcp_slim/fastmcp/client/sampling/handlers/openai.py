@@ -104,11 +104,18 @@ def _audio_content_to_openai_part(
 
 
 def _tool_result_content_to_openai_text(content: Sequence[Any]) -> str:
-    """Convert text-only OpenAI tool output and reject images explicitly."""
+    """Convert text-only OpenAI tool output and reject unsupported media.
+
+    OpenAI tool messages carry text only, so images and audio nested in a tool
+    result are rejected instead of being silently dropped.
+    """
     result_texts: list[str] = []
     for item in content:
         if isinstance(item, ImageContent):
             msg = "ImageContent in tool results is not supported by OpenAI"
+            raise ValueError(msg)
+        if isinstance(item, AudioContent):
+            msg = "AudioContent in tool results is not supported by OpenAI"
             raise ValueError(msg)
         if isinstance(item, TextContent):
             result_texts.append(item.text)
