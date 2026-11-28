@@ -27,6 +27,7 @@ from fastmcp.cli.discovery import DiscoveredServer, discover_servers, resolve_na
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.elicitation import ElicitResult
+from fastmcp.client.mixins.tools import _wrapped_result_schema
 from fastmcp.client.transports.base import ClientTransport
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
@@ -552,7 +553,12 @@ def format_tool_signature(tool: mcp_types.Tool) -> str:
     sig = f"{tool.name}({', '.join(params)})"
 
     if tool.output_schema:
-        ret = _json_schema_type_to_str(tool.output_schema)
+        output_schema = tool.output_schema
+        if output_schema.get("x-fastmcp-wrap-result"):
+            unwrapped = _wrapped_result_schema(output_schema)
+            if isinstance(unwrapped, dict):
+                output_schema = unwrapped
+        ret = _json_schema_type_to_str(output_schema)
         sig += f" -> {ret}"
 
     return sig

@@ -376,6 +376,30 @@ class TestFormatToolSignature:
         )
         assert format_tool_signature(tool) == "my_tool(value: str | int)"
 
+    @pytest.mark.parametrize(
+        "result_schema,expected_ret",
+        [
+            ({"type": "integer"}, "int"),
+            ({"type": "string"}, "str"),
+            ({"type": "array", "items": {"type": "string"}}, "list"),
+            ({"anyOf": [{"type": "integer"}, {"type": "null"}]}, "int | None"),
+        ],
+    )
+    def test_wrapped_output_schema_unwraps_return_type(
+        self, result_schema: dict[str, Any], expected_ret: str
+    ):
+        tool = self._make_tool(
+            properties={"sku": {"type": "string"}},
+            required=["sku"],
+            output_schema={
+                "type": "object",
+                "properties": {"result": result_schema},
+                "required": ["result"],
+                "x-fastmcp-wrap-result": True,
+            },
+        )
+        assert format_tool_signature(tool) == f"my_tool(sku: str) -> {expected_ret}"
+
 
 # ---------------------------------------------------------------------------
 # resolve_server_spec
