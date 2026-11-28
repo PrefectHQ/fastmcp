@@ -14,6 +14,8 @@ from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
 from fastmcp.cli import client as client_module
+from fastmcp.cli.cli import app
+from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp_events import (
     Event,
     EventBatch,
@@ -217,12 +219,168 @@ async def test_watch_escapes_markup_in_a_server_error(
 
 
 def test_events_command_lives_under_experimental():
-    from fastmcp_events.cli import list_events_command
-
-    from fastmcp.cli.cli import app
-
     command, _, _ = app.parse_args(
         ["experimental", "events", "list", "server.py"], exit_on_error=False
     )
     assert command is list_events_command
     assert "events" not in app
+
+
+@pytest.fixture
+def _resolved_targets():
+    log = [{"key": "quiet", "level": 1}, {"key": "loud", "level": 5}]
+    server = make_server(log)
+    resolved: list[Any] = []
+
+    def fake_build_client(target: Any, *, events: bool = False, **_: Any) -> Client:
+        resolved.append(target)
+        return Client(server, extensions=[EventsClientExtension()] if events else None)
+
+    with patch.object(client_module, "_build_client", side_effect=fake_build_client):
+        yield resolved
+
+
+async def _run_watch(*argv: str) -> None:
+    await app.run_async(
+        ["experimental", "events", "watch", *argv],
+        exit_on_error=False,
+        result_action="return_value",
+    )
+
+
+@pytest.mark.usefixtures("_resolved_targets")
+class TestWatchCommandParsing:
+    STDIO_COMMAND = "npx -y @mcp/server"
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            [
+                "--command",
+                STDIO_COMMAND,
+                "alert.fired",
+                "min_level=3",
+                "--cursor",
+                "0",
+                "--count",
+                "1",
+                "--delivery",
+                "poll",
+                "--json",
+            ],
+            [
+                "alert.fired",
+                "min_level=3",
+                "--command",
+                STDIO_COMMAND,
+                "--cursor",
+                "0",
+                "--count",
+                "1",
+                "--delivery",
+                "poll",
+                "--json",
+            ],
+        ],
+    )
+    async def test_command_replaces_server_spec(
+        self,
+        argv: list[str],
+        _resolved_targets: list[Any],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        with anyio.fail_after(10):
+            await _run_watch(*argv)
+
+        record = json.loads(capsys.readouterr().out)
+        assert record["eventId"] == "loud"
+        [transport] = _resolved_targets
+        assert isinstance(transport, StdioTransport)
+        assert transport.command == "npx"
+        assert transport.args == ["-y", "@mcp/server"]
+
+    @pytest.mark.parametrize(
+        ("event_and_arguments", "expected_id"),
+        [
+            (["alert.fired"], "quiet"),
+            (["alert.fired", "min_level=3"], "loud"),
+            (["alert.fired", '{"min_level": 3}'], "loud"),
+        ],
+    )
+    async def test_command_subscription_arguments(
+        self,
+        event_and_arguments: list[str],
+        expected_id: str,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        with anyio.fail_after(10):
+            await _run_watch(
+                "--command",
+                self.STDIO_COMMAND,
+                *event_and_arguments,
+                "--cursor",
+                "0",
+                "--count",
+                "1",
+                "--delivery",
+                "poll",
+                "--json",
+            )
+
+        record = json.loads(capsys.readouterr().out)
+        assert record["eventId"] == expected_id
+
+    async def test_server_spec_is_unchanged_without_command(
+        self,
+        _resolved_targets: list[Any],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        url = "http://localhost:9/mcp"
+
+        with anyio.fail_after(10):
+            await _run_watch(
+                url,
+                "alert.fired",
+                "min_level=3",
+                "--cursor",
+                "0",
+                "--count",
+                "1",
+                "--delivery",
+                "poll",
+                "--json",
+            )
+
+        record = json.loads(capsys.readouterr().out)
+        assert record["eventId"] == "loud"
+        assert _resolved_targets == [url]
+
+    async def test_server_spec_and_command_together_is_an_error(
+        self,
+        _resolved_targets: list[Any],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        with pytest.raises(SystemExit) as exc_info:
+            await _run_watch(
+                "--command",
+                self.STDIO_COMMAND,
+                "http://localhost:9/mcp",
+                "alert.fired",
+                "min_level=3",
+            )
+
+        assert exc_info.value.code == 1
+        assert "Cannot use both a server spec and --command" in capsys.readouterr().out
+        assert _resolved_targets == []
+
+    async def test_command_without_event_name_is_an_error(
+        self,
+        _resolved_targets: list[Any],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        with pytest.raises(SystemExit) as exc_info:
+            await _run_watch("--command", self.STDIO_COMMAND)
+
+        assert exc_info.value.code == 1
+        assert "Missing event name" in capsys.readouterr().out
+        assert _resolved_targets == []

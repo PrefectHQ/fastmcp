@@ -199,6 +199,11 @@ async def watch_command(
         fastmcp experimental events watch http://localhost:8000/mcp alert.fired --cursor 42
         ```
     """
+    if command is not None and server_spec is not None:
+        if not name or "=" in name or name.startswith("{"):
+            arguments = (name, *arguments) if name else arguments
+            server_spec, name = None, server_spec
+
     if not name:
         _fail(
             "Missing event name.\n\n"
