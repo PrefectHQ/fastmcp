@@ -19,16 +19,19 @@ from fastmcp import FastMCP
 mcp = FastMCP("MyServer")
 ```
 
-Instructions help clients (and the LLMs behind them) understand what your server does and how to use it effectively.
+A description summarizes your server's purpose in `serverInfo.description`, which clients can use when presenting or selecting servers. Instructions explain how to use the server. Set either or both explicitly:
 
 ```python
 from fastmcp import FastMCP
 
 mcp = FastMCP(
     "DataAnalysis",
+    description="Analyze numerical datasets and compute summary statistics.",
     instructions="Provides tools for analyzing numerical datasets. Start with get_summary() for an overview.",
 )
 ```
+
+The description is included in both initialization and server discovery responses. Descriptions and instructions are independent and default to `None`; FastMCP does not infer them from module docstrings. Each client decides how to display or use this metadata.
 
 ## Components
 
@@ -124,6 +127,10 @@ These parameters control how your server presents itself to clients.
 
 <ParamField body="instructions" type="str | None">
   Description of how to interact with this server. Clients surface these instructions to help LLMs understand the server's purpose and available functionality
+</ParamField>
+
+<ParamField body="description" type="str | None" default="None">
+  A summary of the server's purpose, advertised as `serverInfo.description`. This does not replace or supply `instructions`
 </ParamField>
 
 <ParamField body="version" type="str | int | float | None">
