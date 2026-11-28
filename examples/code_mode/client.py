@@ -96,7 +96,9 @@ async def main():
         # Step 2: search discovers available tools
         console.print("The LLM calls [bold]search[/bold] to discover available tools:")
         console.print()
-        result = await client.call_tool("search", {"query": "add multiply numbers"})
+        result = await client.call_tool(
+            "search", {"query": "add multiply numbers", "detail": "full"}
+        )
         found = _get_result(result)
         if isinstance(found, str):
             found = json.loads(found)

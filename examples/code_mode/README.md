@@ -4,9 +4,10 @@ CodeMode collapses an entire tool catalog into three meta-tools: `search` (keywo
 
 ## Run
 
+From the repository root, run the client. It starts the server over stdio.
+
 ```bash
-uv run python server.py   # in one terminal
-uv run python client.py   # in another
+uv run python examples/code_mode/client.py
 ```
 
 ## Example Output
