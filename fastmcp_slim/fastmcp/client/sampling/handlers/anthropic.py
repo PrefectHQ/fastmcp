@@ -91,6 +91,8 @@ def _tool_result_content_to_anthropic(
             content_blocks.append(TextBlockParam(type="text", text=item.text))
         elif isinstance(item, ImageContent):
             content_blocks.append(_image_content_to_anthropic_block(item))
+        elif isinstance(item, AudioContent):
+            raise ValueError("AudioContent is not supported by the Anthropic API")
 
     if not content_blocks:
         return ""
