@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
+import dataclasses
 import inspect
 import json
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
@@ -75,7 +77,65 @@ def _default_title(name: str) -> str:
 
 
 def default_serializer(data: Any) -> str:
-    return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
+    try:
+        return _JSONABLE_ADAPTER.dump_json(data, fallback=str).decode()
+    except pydantic_core.PydanticSerializationError:
+        # JSON can't carry bytes that aren't valid UTF-8. Send them as base64,
+        # the same way a bare `bytes` result is sent, and retry once.
+        encoded = _base64_non_utf8_bytes(data)
+        if encoded is data:
+            raise
+        return _JSONABLE_ADAPTER.dump_json(encoded, fallback=str).decode()
+
+
+class _UnsafeToRetry(Exception):
+    pass
+
+
+def _base64_non_utf8_bytes(data: Any) -> Any:
+    """Return `data` with non-UTF-8 `bytes` values base64-encoded.
+
+    Walks plain dicts, lists, tuples, and sets, and returns `data` itself when
+    there is nothing to encode or when encoding would be unsafe. Dict keys are
+    left alone: an encoded key could collide with an existing string key and
+    silently drop an entry. A value holding an iterator, a model, or a
+    dataclass is left alone too, since the failed serialization attempt may
+    already have consumed an iterator inside it.
+    """
+
+    changed = False
+    # Containers on the current path. A circular reference is its own
+    # serialization error, so leave it for the original error to report.
+    active: set[int] = set()
+
+    def encode(value: Any) -> Any:
+        nonlocal changed
+        if isinstance(value, bytes):
+            try:
+                value.decode("utf-8")
+            except UnicodeDecodeError:
+                changed = True
+                return base64.b64encode(value).decode("ascii")
+            return value
+        if isinstance(value, Iterator | BaseModel) or dataclasses.is_dataclass(value):
+            raise _UnsafeToRetry
+        if not isinstance(value, dict | list | tuple | set | frozenset):
+            return value
+        if id(value) in active:
+            raise _UnsafeToRetry
+        active.add(id(value))
+        try:
+            if isinstance(value, dict):
+                return {key: encode(item) for key, item in value.items()}
+            return [encode(item) for item in value]
+        finally:
+            active.discard(id(value))
+
+    try:
+        encoded = encode(data)
+    except _UnsafeToRetry:
+        return data
+    return encoded if changed else data
 
 
 @lru_cache(maxsize=5000)
@@ -523,11 +583,17 @@ class Tool(FastMCPComponent):
                 # (the MCP SDK's client-side validation rejects the result
                 # without it), so a silent content-only fallback would report
                 # success while breaking that contract.
+                bytes_hint = (
+                    " To send bytes that aren't valid UTF-8 in structured "
+                    "output, annotate them as pydantic's Base64Bytes."
+                    if "utf-8" in str(e).lower()
+                    else ""
+                )
                 raise ToolError(
                     f"Could not serialize the return value of tool {self.name!r} "
                     f"for its output schema: {e}. If this is unexpected, set the "
                     "tool's output_schema to None to disable automatic "
-                    "serialization."
+                    f"serialization.{bytes_hint}"
                 ) from e
             return ToolResult(content=content)
 

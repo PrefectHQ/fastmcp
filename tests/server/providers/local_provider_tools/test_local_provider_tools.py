@@ -4,9 +4,11 @@ import base64
 import datetime
 import json
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
 from mcp_types import (
     AudioContent,
     EmbeddedResource,
@@ -16,8 +18,13 @@ from mcp_types import (
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.utilities.types import Audio, File, Image
+
+
+class Rows(BaseModel):
+    rows: Iterable[int]
 
 
 def _normalize_anyof_order(schema):
@@ -70,6 +77,104 @@ class TestToolReturnTypes:
         # bytes can't be represented as structured JSON, so no structured_content
         assert result.structured_content is None
         assert result.content[0].text == "Hello, world!"  # ty:ignore[missing-union-attribute]
+
+    async def test_non_utf8_bytes_in_dict_without_output_schema(self):
+        mcp = FastMCP()
+
+        @mcp.tool(output_schema=None)
+        def blob_tool() -> dict[str, bytes]:
+            return {"data": b"\xff\xfe", "name": b"plain"}
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("blob_tool", {})
+
+        # Same as a bare `bytes` result: bytes that aren't valid UTF-8 are
+        # sent as base64 text.
+        assert result.structured_content is None
+        assert json.loads(result.content[0].text) == {
+            "data": base64.b64encode(b"\xff\xfe").decode(),
+            "name": "plain",
+        }
+
+    async def test_non_utf8_bytes_in_list_without_output_schema(self):
+        mcp = FastMCP()
+
+        @mcp.tool(output_schema=None)
+        def blob_tool() -> list[bytes]:
+            return [b"\xff\xfe", b"plain"]
+
+        result = await mcp.call_tool("blob_tool", {})
+        assert result.structured_content is None
+        assert json.loads(result.content[0].text) == [  # ty:ignore[missing-union-attribute]
+            base64.b64encode(b"\xff\xfe").decode(),
+            "plain",
+        ]
+
+    async def test_non_utf8_bytes_with_output_schema_fails_clearly(self):
+        """A `bytes` field in an output schema is `format: binary`, which
+        means UTF-8 text, so base64 can't silently stand in for it."""
+        mcp = FastMCP()
+
+        @mcp.tool
+        def blob_tool() -> dict[str, bytes]:
+            return {"data": b"\xff\xfe"}
+
+        with pytest.raises(ToolError) as exc_info:
+            await mcp.call_tool("blob_tool", {})
+        assert "output_schema to None" in str(exc_info.value)
+        assert "Base64Bytes" in str(exc_info.value)
+
+    async def test_non_utf8_bytes_in_unannotated_result(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def blob_tool():
+            return {"items": [(1, b"\xff")]}
+
+        result = await mcp.call_tool("blob_tool", {})
+        assert result.structured_content is None
+        assert json.loads(result.content[0].text) == {  # ty:ignore[missing-union-attribute]
+            "items": [[1, base64.b64encode(b"\xff").decode()]]
+        }
+
+    async def test_circular_result_keeps_circular_reference_error(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def blob_tool():
+            result: dict = {"rows": [1, 2]}
+            result["self"] = result
+            return result
+
+        # The retry walk must not recurse forever and replace the original
+        # error with a RecursionError.
+        with pytest.raises(ToolError, match="Circular reference"):
+            await mcp.call_tool("blob_tool", {})
+
+    async def test_non_utf8_bytes_dict_key_still_fails(self):
+        """Encoding a key could collide with an existing string key and
+        silently drop an entry, so binary keys keep failing loudly."""
+        mcp = FastMCP()
+
+        @mcp.tool
+        def blob_tool():
+            return {b"\xff": 1, "/w==": 2}
+
+        with pytest.raises(ToolError, match="utf-8"):
+            await mcp.call_tool("blob_tool", {})
+
+    @pytest.mark.parametrize("wrap", [iter, lambda rows: Rows(rows=iter(rows))])
+    async def test_non_utf8_bytes_next_to_iterator_still_fails(self, wrap):
+        """The failed first attempt consumed the iterator, so a retry would
+        silently send it empty."""
+        mcp = FastMCP()
+
+        @mcp.tool
+        def blob_tool():
+            return {"rows": wrap([1, 2]), "blob": b"\xff"}
+
+        with pytest.raises(ToolError, match="utf-8"):
+            await mcp.call_tool("blob_tool", {})
 
     async def test_uuid(self):
         mcp = FastMCP()
