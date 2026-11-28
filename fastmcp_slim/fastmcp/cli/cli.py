@@ -7,9 +7,9 @@ import os
 import platform
 import subprocess
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import cyclopts
 import pyperclip
@@ -38,7 +38,30 @@ from fastmcp.utilities.version_check import check_for_newer_version
 logger = get_logger("cli")
 console = Console()
 
-app = cyclopts.App(
+
+def _ensure_utf8_stdio() -> None:
+    """Reconfigure redirected non-UTF-8 standard streams to UTF-8 on Windows."""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        encoding = getattr(stream, "encoding", None)
+        if not callable(reconfigure) or not isinstance(encoding, str):
+            continue
+        if not encoding.lower().replace("_", "-").startswith("utf"):
+            with suppress(OSError, ValueError):
+                reconfigure(encoding="utf-8", errors="replace")
+
+
+class _FastMCPApp(cyclopts.App):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        _ensure_utf8_stdio()
+        return super().__call__(*args, **kwargs)
+
+
+app = _FastMCPApp(
     name="fastmcp",
     help="FastMCP - The fast, Pythonic way to build MCP servers and clients.",
     version=fastmcp.__version__,
