@@ -27,6 +27,7 @@ from fastmcp.cli.discovery import DiscoveredServer, discover_servers, resolve_na
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.elicitation import ElicitResult
+from fastmcp.client.mixins.tools import _wrapped_result_schema
 from fastmcp.client.transports.base import ClientTransport
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
@@ -521,8 +522,9 @@ def parse_tool_arguments(
 def _json_schema_type_to_str(schema: dict[str, Any]) -> str:
     """Produce a short Python-style type string from a JSON-Schema fragment."""
 
-    if "anyOf" in schema:
-        parts = [_json_schema_type_to_str(s) for s in schema["anyOf"]]
+    union = schema.get("anyOf") or schema.get("oneOf")
+    if isinstance(union, list):
+        parts = [_json_schema_type_to_str(s) for s in union]
         return " | ".join(parts)
 
     schema_type = schema.get("type", "any")
@@ -552,7 +554,14 @@ def format_tool_signature(tool: mcp_types.Tool) -> str:
     sig = f"{tool.name}({', '.join(params)})"
 
     if tool.output_schema:
-        ret = _json_schema_type_to_str(tool.output_schema)
+        output_schema = tool.output_schema
+        if output_schema.get("x-fastmcp-wrap-result"):
+            unwrapped = _wrapped_result_schema(output_schema)
+            if isinstance(unwrapped, dict):
+                output_schema = unwrapped
+            elif unwrapped is True:
+                output_schema = {}
+        ret = _json_schema_type_to_str(output_schema)
         sig += f" -> {ret}"
 
     return sig

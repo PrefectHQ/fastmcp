@@ -376,6 +376,90 @@ class TestFormatToolSignature:
         )
         assert format_tool_signature(tool) == "my_tool(value: str | int)"
 
+    def test_wrapped_integer_return_type(self):
+        tool = self._make_tool(
+            output_schema={
+                "type": "object",
+                "properties": {"result": {"type": "integer"}},
+                "required": ["result"],
+                "x-fastmcp-wrap-result": True,
+            },
+        )
+        assert format_tool_signature(tool) == "my_tool() -> int"
+
+    def test_wrapped_string_return_type(self):
+        tool = self._make_tool(
+            output_schema={
+                "type": "object",
+                "properties": {"result": {"type": "string"}},
+                "required": ["result"],
+                "x-fastmcp-wrap-result": True,
+            },
+        )
+        assert format_tool_signature(tool) == "my_tool() -> str"
+
+    def test_wrapped_array_return_type(self):
+        tool = self._make_tool(
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["result"],
+                "x-fastmcp-wrap-result": True,
+            },
+        )
+        assert format_tool_signature(tool) == "my_tool() -> list"
+
+    def test_wrapped_boolean_return_type(self):
+        tool = self._make_tool(
+            output_schema={
+                "type": "object",
+                "properties": {"result": {"type": "boolean"}},
+                "required": ["result"],
+                "x-fastmcp-wrap-result": True,
+            },
+        )
+        assert format_tool_signature(tool) == "my_tool() -> bool"
+
+    def test_wrapped_float_return_type(self):
+        tool = self._make_tool(
+            output_schema={
+                "type": "object",
+                "properties": {"result": {"type": "number"}},
+                "required": ["result"],
+                "x-fastmcp-wrap-result": True,
+            },
+        )
+        assert format_tool_signature(tool) == "my_tool() -> float"
+
+    def test_wrapped_nullable_return_type(self):
+        tool = self._make_tool(
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {"anyOf": [{"type": "integer"}, {"type": "null"}]}
+                },
+                "required": ["result"],
+                "x-fastmcp-wrap-result": True,
+            },
+        )
+        assert format_tool_signature(tool) == "my_tool() -> int | None"
+
+    def test_unwrapped_object_return_type(self):
+        tool = self._make_tool(
+            output_schema={
+                "type": "object",
+                "properties": {"sku": {"type": "string"}, "qty": {"type": "integer"}},
+                "required": ["sku", "qty"],
+            },
+        )
+        assert format_tool_signature(tool) == "my_tool() -> dict"
+
+    def test_unannotated_return_type(self):
+        tool = self._make_tool(output_schema=None)
+        assert format_tool_signature(tool) == "my_tool()"
+
 
 # ---------------------------------------------------------------------------
 # resolve_server_spec
@@ -875,6 +959,83 @@ class TestListCommandCLI:
         await list_command("fake://server", prompts=True)
         captured = capsys.readouterr()
         assert "ask" in captured.out
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_list_tools_return_types(self, capsys: pytest.CaptureFixture[str]):
+        await list_command("fake://server")
+        captured = capsys.readouterr()
+        assert "greet(name: str) -> str" in captured.out
+        assert "add(a: int, b: int) -> int" in captured.out
+
+    async def test_list_tools_unwrapped_return_types_all_kinds(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        server = FastMCP("TypesServer")
+
+        class Item(BaseModel):
+            sku: str
+
+        @server.tool
+        def tool_int() -> int:
+            return 1
+
+        @server.tool
+        def tool_str() -> str:
+            return "s"
+
+        @server.tool
+        def tool_list() -> list[str]:
+            return ["a"]
+
+        @server.tool
+        def tool_bool() -> bool:
+            return True
+
+        @server.tool
+        def tool_float() -> float:
+            return 1.0
+
+        @server.tool
+        def tool_dict() -> dict[str, Any]:
+            return {}
+
+        @server.tool
+        def tool_model() -> Item:
+            return Item(sku="x")
+
+        @server.tool
+        def tool_union() -> int | None:
+            return None
+
+        @server.tool
+        def tool_unannotated():
+            pass
+
+        with (
+            patch.object(
+                client_module,
+                "resolve_server_spec",
+                side_effect=lambda *a, **kw: "fake",
+            ),
+            patch.object(
+                client_module,
+                "_build_client",
+                side_effect=lambda *a, **kw: Client(server),
+            ),
+        ):
+            await list_command("fake://server")
+
+        captured = capsys.readouterr()
+        assert "tool_int() -> int" in captured.out
+        assert "tool_str() -> str" in captured.out
+        assert "tool_list() -> list" in captured.out
+        assert "tool_bool() -> bool" in captured.out
+        assert "tool_float() -> float" in captured.out
+        assert "tool_dict() -> dict" in captured.out
+        assert "tool_model() -> dict" in captured.out
+        assert "tool_union() -> int | None" in captured.out
+        assert "tool_unannotated()" in captured.out
+        assert "tool_unannotated() ->" not in captured.out
 
 
 class TestCallCommandCLI:
