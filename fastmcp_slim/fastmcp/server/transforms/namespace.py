@@ -19,7 +19,7 @@ from fastmcp.tools.base import InputRequiredToolResult, ToolResult
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
-    from fastmcp.prompts.base import Prompt
+    from fastmcp.prompts.base import Prompt, PromptResult
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.tools.base import Tool
@@ -119,6 +119,24 @@ class Namespace(Transform):
         # content) and any preserved wire result.
         return result.model_copy(update={"content": content})
 
+    def _transform_prompt_result(self, result: PromptResult) -> PromptResult:
+        """Project resource links returned by a prompt into this namespace."""
+        messages = [
+            message.model_copy(
+                update={
+                    "content": message.content.model_copy(
+                        update={"uri": self._transform_uri(str(message.content.uri))}
+                    )
+                }
+            )
+            if isinstance(message.content, mcp_types.ResourceLink)
+            else message
+            for message in result.messages
+        ]
+        if messages == result.messages:
+            return result
+        return result.model_copy(update={"messages": messages})
+
     # -------------------------------------------------------------------------
     # Tools
     # -------------------------------------------------------------------------
@@ -211,7 +229,10 @@ class Namespace(Transform):
     async def list_prompts(self, prompts: Sequence[Prompt]) -> Sequence[Prompt]:
         """Prefix prompt names with namespace."""
         return [
-            p.model_copy(update={"name": self._transform_name(p.name)}) for p in prompts
+            p.model_copy(
+                update={"name": self._transform_name(p.name)}
+            )._with_result_transform(self._transform_prompt_result)
+            for p in prompts
         ]
 
     async def get_prompt(
@@ -223,5 +244,7 @@ class Namespace(Transform):
             return None
         prompt = await call_next(original, version=version)
         if prompt:
-            return prompt.model_copy(update={"name": name})
+            return prompt.model_copy(update={"name": name})._with_result_transform(
+                self._transform_prompt_result
+            )
         return None

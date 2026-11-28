@@ -2030,7 +2030,8 @@ class FastMCP(
                     raise NotFoundError(f"Unknown prompt: {name!r}")
                 span.set_attributes(prompt.get_span_attributes())
                 try:
-                    return await prompt._render(arguments)
+                    result = await prompt._render(arguments)
+                    return prompt._apply_result_transforms(result)
                 except FastMCPError as e:
                     logger.log(
                         e.log_level, f"Error rendering prompt {name!r}", exc_info=True

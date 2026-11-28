@@ -23,7 +23,7 @@ from mcp_types import (
 )
 from mcp_types import Prompt as SDKPrompt
 from mcp_types import PromptArgument as SDKPromptArgument
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 from pydantic.json_schema import SkipJsonSchema
 
 from fastmcp.utilities.authorization import AuthCheck
@@ -235,6 +235,9 @@ class Prompt(FastMCPComponent):
     """A prompt template that can be rendered with parameters."""
 
     KEY_PREFIX: ClassVar[str] = "prompt"
+    _result_transforms: tuple[Callable[[PromptResult], PromptResult], ...] = (
+        PrivateAttr(default=())
+    )
 
     arguments: list[PromptArgument] | None = Field(
         default=None, description="Arguments that can be passed to the prompt"
@@ -379,6 +382,20 @@ class Prompt(FastMCPComponent):
         """
         result = await self.render(arguments)
         return self.convert_result(result)
+
+    def _with_result_transform(
+        self, transform: Callable[[PromptResult], PromptResult]
+    ) -> Prompt:
+        """Copy this prompt and append a result transform."""
+        prompt = self.model_copy()
+        prompt._result_transforms = (*self._result_transforms, transform)
+        return prompt
+
+    def _apply_result_transforms(self, result: PromptResult) -> PromptResult:
+        """Apply result transforms in the same order as component transforms."""
+        for transform in self._result_transforms:
+            result = transform(result)
+        return result
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {

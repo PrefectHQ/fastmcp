@@ -5,6 +5,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.prompts import Message, PromptResult
 from fastmcp.server import create_proxy
 from fastmcp.server.providers import FastMCPProvider
 from fastmcp.server.transforms import Namespace, ToolTransform
@@ -127,6 +128,54 @@ class TestNamespaceTransform:
         assert result.structured_content == {"source": "upstream"}
         assert result.meta == {"request_id": "123"}
         assert result.is_error
+
+    async def test_namespace_rewrites_resource_links_in_prompt_results(self):
+        """Resource links returned by namespaced prompts use the public URI."""
+        upstream = FastMCP("Upstream")
+
+        @upstream.resource("resource://data")
+        def data() -> str:
+            return "resource"
+
+        @upstream.prompt
+        def get_link() -> PromptResult:
+            return PromptResult(
+                [
+                    Message("Read this:"),
+                    Message(
+                        mcp_types.ResourceLink(
+                            name="data", uri="resource://data", mime_type="text/plain"
+                        ),
+                        role="assistant",
+                    ),
+                ],
+                description="links",
+                meta={"request_id": "123"},
+            )
+
+        main = FastMCP("Main")
+        main.mount(upstream, namespace="ns")
+
+        async with Client(main) as client:
+            result = await client.get_prompt("ns_get_link")
+            link = result.messages[1].content
+            assert isinstance(link, mcp_types.ResourceLink)
+            assert link == mcp_types.ResourceLink(
+                name="data", uri="resource://ns/data", mime_type="text/plain"
+            )
+            assert result.messages[0].content == mcp_types.TextContent(
+                type="text", text="Read this:"
+            )
+            assert result.messages[1].role == "assistant"
+            assert result.description == "links"
+            contents = await client.read_resource(link.uri)
+            assert contents[0].text == "resource"
+
+    def test_namespace_prompt_result_without_links_is_unchanged(self):
+        """A prompt result with no resource links is returned as is."""
+        result = PromptResult("hello")
+
+        assert Namespace("ns")._transform_prompt_result(result) is result
 
     def test_namespace_resource_link_rewrite_keeps_raw_structured_result(self):
         """A proxied non-object structured result keeps its type and value."""
