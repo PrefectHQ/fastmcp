@@ -94,6 +94,22 @@ class TestMessageLog:
         assert len(log._request_times) == 2
         assert set(log._request_times) == {3, 4}
 
+    @pytest.mark.parametrize("bad_id", [{"x": 1}, ["a"], True])
+    def test_unhashable_or_non_trackable_jsonrpc_id_does_not_crash_log_response(
+        self, bad_id
+    ):
+        log = apps_dev._MessageLog()
+        log.log_request({"jsonrpc": "2.0", "id": 1, "method": "tools/call"})
+
+        log.log_response({"jsonrpc": "2.0", "id": bad_id, "result": {}})
+
+        entries = log.get_since()
+        assert len(entries) == 2
+        assert entries[1]["direction"] == "response"
+        assert entries[1]["method"] is None
+        assert entries[1]["duration_ms"] is None
+        assert 1 in log._request_methods
+
 
 def create_launch(client: TestClient, tool: str = "ping") -> str:
     response = client.post("/api/launch", json={"tool": tool, "value": "x"})

@@ -85,16 +85,19 @@ class _MessageLog:
             self._entries.popleft()
             self._retained_bytes -= self._entry_sizes.popleft()
 
+    @staticmethod
+    def _is_trackable_id(jsonrpc_id: Any) -> bool:
+        return (
+            jsonrpc_id is not None
+            and not isinstance(jsonrpc_id, bool)
+            and isinstance(jsonrpc_id, (int, str))
+            and len(str(jsonrpc_id)) <= _MAX_JSONRPC_ID_LENGTH
+        )
+
     def _remember_request(
         self, jsonrpc_id: int | str | None, method: str, timestamp: float
     ) -> None:
-        if (
-            jsonrpc_id is None
-            or isinstance(jsonrpc_id, bool)
-            or not isinstance(jsonrpc_id, (int, str))
-            or len(str(jsonrpc_id)) > _MAX_JSONRPC_ID_LENGTH
-            or self._max_tracked_requests == 0
-        ):
+        if not self._is_trackable_id(jsonrpc_id) or self._max_tracked_requests == 0:
             return
 
         # Repeated IDs replace their older timing record and move to the newest
@@ -140,16 +143,9 @@ class _MessageLog:
             return
 
         jsonrpc_id = body.get("id")
-        method = (
-            self._request_methods.pop(jsonrpc_id, None)
-            if jsonrpc_id is not None
-            else None
-        )
-        request_time = (
-            self._request_times.pop(jsonrpc_id, None)
-            if jsonrpc_id is not None
-            else None
-        )
+        trackable = self._is_trackable_id(jsonrpc_id)
+        method = self._request_methods.pop(jsonrpc_id, None) if trackable else None
+        request_time = self._request_times.pop(jsonrpc_id, None) if trackable else None
         timestamp = time.time()
         duration_ms = (
             round((timestamp - request_time) * 1000, 1) if request_time else None
