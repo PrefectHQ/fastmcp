@@ -349,20 +349,25 @@ class TransportMixin:
             config_kwargs["log_level"] = default_log_level_to_use
 
         with temporary_log_level(log_level):
-            async with self._lifespan_manager():
-                config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
-                server = uvicorn.Server(config)
-                path = getattr(app.state, "path", "").lstrip("/")
-                mode = " (stateless)" if stateless_http else ""
-                display_host = _format_host_for_url(host)
-                logger.info(
-                    f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{display_host}:{port}/{path}"
-                )
+            config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
+            server = uvicorn.Server(config)
+            # `serve()` is `capture_signals()` around `_serve()`, and the capture
+            # replays SIGTERM/SIGINT on exit; SIGTERM's default action would end
+            # the process before the lifespan below tears down. Capture around
+            # the lifespan instead, so the replay waits for teardown.
+            with server.capture_signals():
+                async with self._lifespan_manager():
+                    path = getattr(app.state, "path", "").lstrip("/")
+                    mode = " (stateless)" if stateless_http else ""
+                    display_host = _format_host_for_url(host)
+                    logger.info(
+                        f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{display_host}:{port}/{path}"
+                    )
 
-                if sockets is not None:
-                    await server.serve(sockets=sockets)
-                else:
-                    await server.serve()
+                    if sockets is not None:
+                        await server._serve(sockets=sockets)
+                    else:
+                        await server._serve()
 
     def http_app(
         self: FastMCP,
