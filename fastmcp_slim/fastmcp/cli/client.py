@@ -109,7 +109,17 @@ def resolve_server_spec(
             return StreamableHttpTransport(spec)
         return spec
 
-    # 2. File path (must be a file, not a directory)
+    # 2. File path (must be a file, not a directory), including file.py:object
+    has_windows_drive = len(spec) > 1 and spec[1] == ":"
+    if ":" in (spec[2:] if has_windows_drive else spec):
+        file_part, obj_part = spec.rsplit(":", 1)
+        file_path = Path(file_part)
+        if obj_part and not file_path.is_dir() and file_part.endswith(".py"):
+            return StdioTransport(
+                command="fastmcp",
+                args=["run", f"{file_path.resolve()}:{obj_part}", "--no-banner"],
+            )
+
     path = Path(spec)
     is_file = path.is_file() or (
         not path.is_dir() and spec.endswith((".py", ".js", ".json"))

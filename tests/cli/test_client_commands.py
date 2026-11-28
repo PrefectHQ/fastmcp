@@ -402,6 +402,25 @@ class TestResolveServerSpec:
         assert result.command == "fastmcp"
         assert result.args == ["run", str(py_file.resolve()), "--no-banner"]
 
+    def test_python_file_with_object_suffix(self, tmp_path: Path):
+        py_file = tmp_path / "weather.py"
+        py_file.write_text("# empty")
+        result = resolve_server_spec(f"{py_file}:weather")
+        assert isinstance(result, StdioTransport)
+        assert result.command == "fastmcp"
+        assert result.args == ["run", f"{py_file.resolve()}:weather", "--no-banner"]
+
+    def test_relative_python_file_with_object_suffix(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        py_file = tmp_path / "weather.py"
+        py_file.write_text("# empty")
+        monkeypatch.chdir(tmp_path)
+        result = resolve_server_spec("weather.py:weather")
+        assert isinstance(result, StdioTransport)
+        assert result.command == "fastmcp"
+        assert result.args == ["run", f"{py_file.resolve()}:weather", "--no-banner"]
+
     def test_js_file_builds_client_without_deprecation_warning(self, tmp_path: Path):
         js_file = tmp_path / "server.js"
         js_file.write_text("// empty")
